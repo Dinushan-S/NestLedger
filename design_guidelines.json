@@ -1,0 +1,149 @@
+{
+  "identity": {
+    "name": "NestLedger",
+    "mission": "A shared home expense & shopping manager that feels like a calm, organized home, not a spreadsheet.",
+    "vibes": ["Organic", "Calm", "Collaborative", "Tactile"],
+    "archetype": "Organic & Earthy"
+  },
+  "design_system": {
+    "theme": "light",
+    "colors": {
+      "primary": "#5D7B6F",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#D99F89",
+      "secondary_foreground": "#FFFFFF",
+      "background": "#F6F5F2",
+      "surface": "#FFFFFF",
+      "surface_highlight": "#F9F9F8",
+      "text_main": "#2D312F",
+      "text_muted": "#6E7370",
+      "border": "#E5E5E0",
+      "success": "#8AB096",
+      "destructive": "#D67C7C",
+      "overlay": "rgba(45, 49, 47, 0.4)"
+    },
+    "typography": {
+      "font_family_heading": "Outfit",
+      "font_family_body": "Inter",
+      "font_family_mono": "Space Mono",
+      "scale": {
+        "h1": "text-3xl font-bold tracking-tight",
+        "h2": "text-2xl font-semibold tracking-tight",
+        "h3": "text-xl font-semibold",
+        "body": "text-base font-normal",
+        "small": "text-sm text-muted-foreground",
+        "tiny": "text-xs text-muted-foreground uppercase tracking-widest"
+      }
+    },
+    "spacing": {
+      "base": 4,
+      "container_padding": "p-5",
+      "section_gap": "gap-6",
+      "item_gap": "gap-3"
+    },
+    "radius": {
+      "default": "rounded-2xl",
+      "sm": "rounded-lg",
+      "full": "rounded-full"
+    },
+    "shadows": {
+      "soft": "shadow-sm shadow-stone-200/50",
+      "card": "shadow-md shadow-stone-300/20",
+      "floating": "shadow-xl shadow-stone-900/10"
+    }
+  },
+  "layout_strategy": {
+    "type": "Bento Grid",
+    "implementation": "Flexbox with percentage widths",
+    "rules": [
+      "Use 'w-full' for hero cards (spanning 2 columns)",
+      "Use 'w-[48%]' for standard square cards (1 column)",
+      "Always use 'flex-row flex-wrap justify-between' for the grid container",
+      "Maintain consistent vertical rhythm using 'gap-y-4'",
+      "Cards must have 'bg-white rounded-2xl p-5 shadow-card' styling",
+      "Content inside cards should be aligned 'flex-col justify-between' to fill space"
+    ]
+  },
+  "components_to_build": [
+    {
+      "name": "TheBentoCard",
+      "description": "Base container for all dashboard items. Supports 'variant' prop for different sizes (span-1, span-2).",
+      "path": "/app/frontend/components/ui/BentoCard.tsx"
+    },
+    {
+      "name": "ModernButton",
+      "description": "Pill-shaped, tactile button with scale animation on press.",
+      "path": "/app/frontend/components/ui/Button.tsx"
+    },
+    {
+      "name": "AmountInput",
+      "description": "Large text input for entering currency. Auto-formats with 'Rs.' prefix.",
+      "path": "/app/frontend/components/ui/AmountInput.tsx"
+    },
+    {
+      "name": "ProgressBar",
+      "description": "Minimal rounded progress bar for budget tracking. Green -> Yellow -> Red based on %.",
+      "path": "/app/frontend/components/ui/ProgressBar.tsx"
+    },
+    {
+      "name": "AvatarGroup",
+      "description": "Overlapping circles of user avatars (or initials) for member lists.",
+      "path": "/app/frontend/components/ui/AvatarGroup.tsx"
+    },
+    {
+      "name": "ShoppingItem",
+      "description": "Swipeable row item with checkbox. Strikes through text when bought.",
+      "path": "/app/frontend/components/ui/ShoppingItem.tsx"
+    },
+    {
+      "name": "CategoryChip",
+      "description": "Selectable pill for filtering expenses.",
+      "path": "/app/frontend/components/ui/CategoryChip.tsx"
+    }
+  ],
+  "tech_stack": {
+    "framework": "Expo React Native (SDK 54)",
+    "language": "TypeScript",
+    "styling": "NativeWind (Tailwind CSS)",
+    "icons": "Lucide React Native",
+    "state_management": "Zustand",
+    "backend": "Supabase (Auth, DB, Realtime)",
+    "navigation": "Expo Router"
+  },
+  "universal_guidelines": [
+    "Use 'SafeAreaView' from 'react-native-safe-area-context' for all screen containers.",
+    "Avoid 'ScrollView' inside 'FlatList'. Use 'ListHeaderComponent' instead.",
+    "All interactive elements must have 'hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}' if small.",
+    "Use 'KeyboardAvoidingView' with behavior 'padding' on iOS and 'height' on Android for forms.",
+    "Never use generic 'gray' colors. Use the 'stone' or 'zinc' palette defined in theme.",
+    "Animations: Use 'react-native-reanimated' for layout transitions (e.g., adding/removing items)."
+  ],
+  "folder_structure": {
+    "app": "/app/frontend/app",
+    "components": "/app/frontend/components",
+    "lib": "/app/frontend/lib",
+    "store": "/app/frontend/store",
+    "constants": "/app/frontend/constants",
+    "assets": "/app/frontend/assets"
+  },
+  "setup_instructions": [
+    "npx expo install nativewind tailwindcss react-native-reanimated react-native-safe-area-context expo-router expo-linking expo-constants expo-status-bar expo-image expo-font @supabase/supabase-js @react-native-async-storage/async-storage lucide-react-native clsx tailwind-merge zustand date-fns react-native-url-polyfill",
+    "npx tailwindcss init",
+    "Configure babel.config.js for NativeWind and Reanimated",
+    "Create tailwind.config.js with custom colors and fonts",
+    "Ensure 'global.css' is imported in 'app/_layout.tsx'"
+  ],
+  "database_schema": {
+    "profiles": "id (uuid), name (text), emoji_avatar (text), created_by (uuid), created_at (timestamp)",
+    "profile_members": "id (uuid), profile_id (uuid), user_id (uuid), joined_at (timestamp)",
+    "invitations": "id (uuid), profile_id (uuid), invited_email (text), invite_token (text), status (text), created_at (timestamp)",
+    "budget_plans": "id (uuid), profile_id (uuid), name (text), total_amount (numeric), start_date (date), end_date (date), created_by (uuid), created_at (timestamp)",
+    "expenses": "id (uuid), plan_id (uuid), profile_id (uuid), title (text), category (text), price (numeric), date (timestamp), added_by (uuid), created_at (timestamp)",
+    "buy_list_items": "id (uuid), profile_id (uuid), name (text), quantity (text), category (text), added_by (uuid), is_bought (boolean), bought_by (uuid), bought_at (timestamp), created_at (timestamp)",
+    "notifications": "id (uuid), profile_id (uuid), user_id (uuid), message (text), type (text), is_read (boolean), created_at (timestamp)"
+  },
+  "assets_required": {
+    "fonts": ["Outfit-Regular", "Outfit-Bold", "Inter-Regular", "Inter-Medium", "SpaceMono-Regular"],
+    "images": []
+  }
+}
