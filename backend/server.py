@@ -1,7 +1,9 @@
 import logging
 import os
+import smtplib
 import uuid
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,10 @@ APP_PUBLIC_URL = os.getenv("APP_PUBLIC_URL", "")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "NestLedger")
 BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_LOGIN = os.getenv("SMTP_LOGIN", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -123,7 +129,7 @@ def ensure_profile_member(profile_id: str, user_id: str) -> None:
 
 
 def send_brevo_invite(recipient_email: str, inviter_name: str, profile_name: str, invite_link: str, fallback_link: str) -> None:
-    if not BREVO_API_KEY or not BREVO_FROM_EMAIL:
+    if not SMTP_HOST or not SMTP_LOGIN or not SMTP_PASSWORD or not BREVO_FROM_EMAIL:
         raise HTTPException(status_code=500, detail="Brevo email config is missing.")
 
     html = f"""
@@ -136,21 +142,23 @@ def send_brevo_invite(recipient_email: str, inviter_name: str, profile_name: str
     </div>
     """
 
-    response = requests.post(
-        "https://api.brevo.com/v3/smtp/email",
-        headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
-        json={
-            "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
-            "to": [{"email": recipient_email}],
-            "subject": f"{inviter_name} invited you to join {profile_name} on NestLedger",
-            "htmlContent": html,
-        },
-        timeout=25,
+    message = EmailMessage()
+    message["Subject"] = f"{inviter_name} invited you to join {profile_name} on NestLedger"
+    message["From"] = f"{BREVO_FROM_NAME} <{BREVO_FROM_EMAIL}>"
+    message["To"] = recipient_email
+    message.set_content(
+        f"{inviter_name} invited you to join {profile_name} on NestLedger. Open the app using {invite_link} or use {fallback_link}.",
     )
+    message.add_alternative(html, subtype="html")
 
-    if not response.ok:
-        logger.error("Brevo error: %s", response.text)
-        raise HTTPException(status_code=500, detail="Brevo failed to send the invite email.")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=25) as smtp:
+            smtp.starttls()
+            smtp.login(SMTP_LOGIN, SMTP_PASSWORD)
+            smtp.send_message(message)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Brevo SMTP error: %s", exc)
+        raise HTTPException(status_code=500, detail="Brevo failed to send the invite email.") from exc
 
 
 def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:

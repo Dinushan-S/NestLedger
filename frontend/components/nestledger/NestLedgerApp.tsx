@@ -1009,14 +1009,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
               {activeTab === 'budget' ? (
                 <View style={styles.sectionGap}>
-                  <View style={styles.rowBetween}>
-                    <View>
+                  <View style={styles.headerBlock}>
+                    <View style={styles.headerContent}>
                       <Text style={styles.sectionTitle}>Budget plans</Text>
                       <Text style={styles.bodyMuted}>Track spend, remaining balance, and shared expenses.</Text>
                     </View>
-                    <Pressable hitSlop={10} onPress={() => setShowBudgetComposer(true)}>
-                      <Ionicons color={theme.primary} name="add-circle-outline" size={30} />
-                    </Pressable>
+                    <ModernButton onPress={() => setShowBudgetComposer(true)} secondary text="New plan" />
                   </View>
 
                   {plans.map((plan) => {
@@ -1053,14 +1051,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
               {activeTab === 'shopping' ? (
                 <View style={styles.sectionGap}>
-                  <View style={styles.rowBetween}>
-                    <View>
+                  <View style={styles.headerBlock}>
+                    <View style={styles.headerContent}>
                       <Text style={styles.sectionTitle}>Shopping list</Text>
                       <Text style={styles.bodyMuted}>Shared in real time with bought timestamps and member names.</Text>
                     </View>
-                    <Pressable hitSlop={10} onPress={() => setShowShoppingComposer(true)}>
-                      <Ionicons color={theme.primary} name="add-circle-outline" size={30} />
-                    </Pressable>
+                    <ModernButton onPress={() => setShowShoppingComposer(true)} secondary text="Add item" />
                   </View>
 
                   <View style={styles.segmentRow}>
@@ -1616,6 +1612,13 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     fontSize: 12,
     lineHeight: 18,
+  },
+  headerBlock: {
+    gap: 14,
+  },
+  headerContent: {
+    flex: 1,
+    gap: 4,
   },
   heroTitle: {
     color: theme.text,

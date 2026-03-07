@@ -108,17 +108,72 @@ alter table public.buy_list_items enable row level security;
 alter table public.notifications enable row level security;
 alter table public.device_tokens enable row level security;
 
+create or replace function public.is_profile_member(target_profile uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profile_members
+    where profile_id = target_profile and user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.is_profile_owner(target_profile uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = target_profile and created_by = auth.uid()
+  );
+$$;
+
+create or replace function public.is_user_in_profile(target_profile uuid, target_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profile_members
+    where profile_id = target_profile and user_id = target_user
+  );
+$$;
+
+create or replace function public.has_shared_profile(target_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profile_members me
+    join public.profile_members them on me.profile_id = them.profile_id
+    where me.user_id = auth.uid() and them.user_id = target_user
+  );
+$$;
+
+grant execute on function public.is_profile_member(uuid) to authenticated;
+grant execute on function public.is_profile_owner(uuid) to authenticated;
+grant execute on function public.is_user_in_profile(uuid, uuid) to authenticated;
+grant execute on function public.has_shared_profile(uuid) to authenticated;
+
 drop policy if exists "user profile own select" on public.user_profiles;
 create policy "user profile own select" on public.user_profiles
 for select using (
-  auth.uid() = user_id
-  or exists (
-    select 1
-    from public.profile_members self_member
-    join public.profile_members target_member on self_member.profile_id = target_member.profile_id
-    where self_member.user_id = auth.uid()
-      and target_member.user_id = user_profiles.user_id
-  )
+  auth.uid() = user_id or public.has_shared_profile(user_id)
 );
 
 drop policy if exists "user profile own insert" on public.user_profiles;
@@ -131,7 +186,7 @@ for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "profiles members select" on public.profiles;
 create policy "profiles members select" on public.profiles
-for select using (exists (select 1 from public.profile_members where profile_id = profiles.id and user_id = auth.uid()));
+for select using (created_by = auth.uid() or public.is_profile_member(id));
 
 drop policy if exists "profiles creator insert" on public.profiles;
 create policy "profiles creator insert" on public.profiles
@@ -139,67 +194,63 @@ for insert with check (created_by = auth.uid());
 
 drop policy if exists "profiles member update" on public.profiles;
 create policy "profiles member update" on public.profiles
-for update using (exists (select 1 from public.profile_members where profile_id = profiles.id and user_id = auth.uid()));
+for update using (created_by = auth.uid() or public.is_profile_member(id));
 
 drop policy if exists "profile members same profile select" on public.profile_members;
 create policy "profile members same profile select" on public.profile_members
-for select using (exists (select 1 from public.profile_members pm where pm.profile_id = profile_members.profile_id and pm.user_id = auth.uid()));
+for select using (public.is_profile_member(profile_id));
 
 drop policy if exists "profile members owner insert" on public.profile_members;
 create policy "profile members owner insert" on public.profile_members
 for insert with check (
-  auth.uid() = user_id
-  and exists (select 1 from public.profiles where id = profile_id and created_by = auth.uid())
+  auth.uid() = user_id and public.is_profile_owner(profile_id)
 );
 
 drop policy if exists "budget plans member select" on public.budget_plans;
 create policy "budget plans member select" on public.budget_plans
-for select using (exists (select 1 from public.profile_members where profile_id = budget_plans.profile_id and user_id = auth.uid()));
+for select using (public.is_profile_member(profile_id));
 
 drop policy if exists "budget plans member insert" on public.budget_plans;
 create policy "budget plans member insert" on public.budget_plans
 for insert with check (
-  created_by = auth.uid()
-  and exists (select 1 from public.profile_members where profile_id = budget_plans.profile_id and user_id = auth.uid())
+  created_by = auth.uid() and public.is_profile_member(profile_id)
 );
 
 drop policy if exists "budget plans member update" on public.budget_plans;
 create policy "budget plans member update" on public.budget_plans
-for update using (exists (select 1 from public.profile_members where profile_id = budget_plans.profile_id and user_id = auth.uid()));
+for update using (public.is_profile_member(profile_id));
 
 drop policy if exists "budget plans member delete" on public.budget_plans;
 create policy "budget plans member delete" on public.budget_plans
-for delete using (exists (select 1 from public.profile_members where profile_id = budget_plans.profile_id and user_id = auth.uid()));
+for delete using (public.is_profile_member(profile_id));
 
 drop policy if exists "expenses member select" on public.expenses;
 create policy "expenses member select" on public.expenses
-for select using (exists (select 1 from public.profile_members where profile_id = expenses.profile_id and user_id = auth.uid()));
+for select using (public.is_profile_member(profile_id));
 
 drop policy if exists "expenses member insert" on public.expenses;
 create policy "expenses member insert" on public.expenses
 for insert with check (
-  added_by = auth.uid()
-  and exists (select 1 from public.profile_members where profile_id = expenses.profile_id and user_id = auth.uid())
+  added_by = auth.uid() and public.is_profile_member(profile_id)
 );
 
 drop policy if exists "buy list member select" on public.buy_list_items;
 create policy "buy list member select" on public.buy_list_items
-for select using (exists (select 1 from public.profile_members where profile_id = buy_list_items.profile_id and user_id = auth.uid()));
+for select using (public.is_profile_member(profile_id));
 
 drop policy if exists "buy list member insert" on public.buy_list_items;
 create policy "buy list member insert" on public.buy_list_items
 for insert with check (
-  added_by = auth.uid()
-  and exists (select 1 from public.profile_members where profile_id = buy_list_items.profile_id and user_id = auth.uid())
+  added_by = auth.uid() and public.is_profile_member(profile_id)
 );
 
 drop policy if exists "buy list member update" on public.buy_list_items;
 create policy "buy list member update" on public.buy_list_items
-for update using (exists (select 1 from public.profile_members where profile_id = buy_list_items.profile_id and user_id = auth.uid()));
+for update using (public.is_profile_member(profile_id));
 
 drop policy if exists "buy list member delete" on public.buy_list_items;
 create policy "buy list member delete" on public.buy_list_items
-for delete using (exists (select 1 from public.profile_members where profile_id = buy_list_items.profile_id and user_id = auth.uid()));
+for delete using (public.is_profile_member(profile_id));
 
 drop policy if exists "notifications own select" on public.notifications;
 create policy "notifications own select" on public.notifications
@@ -208,8 +259,7 @@ for select using (auth.uid() = user_id);
 drop policy if exists "notifications member insert" on public.notifications;
 create policy "notifications member insert" on public.notifications
 for insert with check (
-  exists (select 1 from public.profile_members self_pm where self_pm.profile_id = notifications.profile_id and self_pm.user_id = auth.uid())
-  and exists (select 1 from public.profile_members target_pm where target_pm.profile_id = notifications.profile_id and target_pm.user_id = notifications.user_id)
+  public.is_profile_member(profile_id) and public.is_user_in_profile(profile_id, user_id)
 );
 
 drop policy if exists "notifications own update" on public.notifications;
