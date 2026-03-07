@@ -36,6 +36,27 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+def validate_runtime_config() -> None:
+    required = {
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_ANON_KEY": SUPABASE_ANON_KEY,
+        "SUPABASE_SERVICE_ROLE_KEY": SUPABASE_SERVICE_ROLE_KEY,
+        "APP_PUBLIC_URL": APP_PUBLIC_URL,
+        "BREVO_FROM_EMAIL": BREVO_FROM_EMAIL,
+        "SMTP_HOST": SMTP_HOST,
+        "SMTP_LOGIN": SMTP_LOGIN,
+        "SMTP_PASSWORD": SMTP_PASSWORD,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise RuntimeError(f"Missing backend configuration: {', '.join(missing)}")
+
+
+@app.on_event("startup")
+def startup_checks() -> None:
+    validate_runtime_config()
+
+
 class InviteRequest(BaseModel):
     invited_email: EmailStr
     inviter_name: str

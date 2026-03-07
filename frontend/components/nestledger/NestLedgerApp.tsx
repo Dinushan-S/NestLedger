@@ -831,21 +831,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   active={authMode === mode}
                   label={mode === 'signin' ? 'Sign in' : 'Register'}
                   onPress={() => setAuthMode(mode)}
+                  testID={`auth-mode-${mode}`}
                 />
               ))}
             </View>
 
-            <LabeledInput label="Email" onChangeText={(value) => setAuthForm((current) => ({ ...current, email: value }))} value={authForm.email} />
+            <LabeledInput label="Email" onChangeText={(value) => setAuthForm((current) => ({ ...current, email: value }))} testID="auth-email-input" value={authForm.email} />
             <LabeledInput
               label="Password"
               onChangeText={(value) => setAuthForm((current) => ({ ...current, password: value }))}
               secureTextEntry
+              testID="auth-password-input"
               value={authForm.password}
             />
 
             {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
 
-            <ModernButton loading={authBusy} onPress={handleAuth} text={authMode === 'signin' ? 'Continue' : 'Create account'} />
+            <ModernButton loading={authBusy} onPress={handleAuth} testID="auth-submit-button" text={authMode === 'signin' ? 'Continue' : 'Create account'} />
             <Text style={styles.footnote}>Supabase email confirmation is currently enabled for new registrations.</Text>
           </BentoCard>
         </ScrollView>
@@ -863,7 +865,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             <Text style={styles.bodyMuted}>This creates your member identity and the first family/home space.</Text>
             <ProfileFormFields form={profileForm} onChange={setProfileForm} />
             {setupMessage ? <Text style={styles.errorText}>{setupMessage}</Text> : null}
-            <ModernButton loading={actionBusy} onPress={handleCreateProfile} text="Create NestLedger space" />
+            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text="Create NestLedger space" />
           </BentoCard>
         </ScrollView>
       </SafeAreaView>
@@ -898,8 +900,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             </Pressable>
           ))}
 
-          <ModernButton onPress={() => setShowCreateProfile(true)} secondary text="Create another profile" />
-          <ModernButton onPress={() => authApi.signOut()} secondary text="Sign out" />
+            <ModernButton onPress={() => setShowCreateProfile(true)} secondary testID="profile-switcher-create" text="Create another profile" />
+          <ModernButton onPress={() => authApi.signOut()} secondary testID="profile-switcher-signout" text="Sign out" />
         </ScrollView>
       </SafeAreaView>
     );
@@ -910,7 +912,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.screen}>
         <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}> 
           <View style={styles.topBar}>
-            <Pressable hitSlop={10} onPress={() => setShowProfileSwitcher(true)} style={styles.profileSwitcherButton}>
+            <Pressable hitSlop={10} onPress={() => setShowProfileSwitcher(true)} style={styles.profileSwitcherButton} testID="open-profile-switcher">
               <Text style={styles.switcherEmoji}>{activeProfile.emoji_avatar ?? '🏡'}</Text>
               <View>
                 <Text style={styles.topBarTitle}>{activeProfile.name}</Text>
@@ -919,7 +921,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               <Ionicons color={theme.textMuted} name="chevron-down" size={16} />
             </Pressable>
 
-            <Pressable hitSlop={10} onPress={() => setShowNotifications(true)} style={styles.bellButton}>
+            <Pressable hitSlop={10} onPress={() => setShowNotifications(true)} style={styles.bellButton} testID="open-notifications">
               <Ionicons color={theme.text} name="notifications-outline" size={22} />
               {unreadCount ? (
                 <View style={styles.badge}>
@@ -1014,14 +1016,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       <Text style={styles.sectionTitle}>Budget plans</Text>
                       <Text style={styles.bodyMuted}>Track spend, remaining balance, and shared expenses.</Text>
                     </View>
-                    <ModernButton onPress={() => setShowBudgetComposer(true)} secondary text="New plan" />
+                    <ModernButton onPress={() => setShowBudgetComposer(true)} secondary testID="budget-new-plan" text="New plan" />
                   </View>
 
                   {plans.map((plan) => {
                     const spent = spentByPlan[plan.id] ?? 0;
                     const remaining = Math.max(plan.total_amount - spent, 0);
                     return (
-                      <Pressable key={plan.id} onPress={() => setSelectedPlanId(plan.id)}>
+                      <Pressable key={plan.id} onPress={() => setSelectedPlanId(plan.id)} testID={`budget-plan-${plan.id}`}>
                         <BentoCard style={styles.planCard}>
                           <View style={styles.rowBetween}>
                             <View>
@@ -1056,7 +1058,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       <Text style={styles.sectionTitle}>Shopping list</Text>
                       <Text style={styles.bodyMuted}>Shared in real time with bought timestamps and member names.</Text>
                     </View>
-                    <ModernButton onPress={() => setShowShoppingComposer(true)} secondary text="Add item" />
+                    <ModernButton onPress={() => setShowShoppingComposer(true)} secondary testID="shopping-open-add" text="Add item" />
                   </View>
 
                   <View style={styles.segmentRow}>
@@ -1086,7 +1088,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                 {item.is_bought ? ` • Bought by ${actor?.name ?? 'Member'} on ${formatShortDate(item.bought_at)}` : ''}
                               </Text>
                             </View>
-                            <Pressable hitSlop={12} onPress={() => (!item.is_bought ? handleMarkBought(item) : undefined)}>
+                            <Pressable hitSlop={12} onPress={() => (!item.is_bought ? handleMarkBought(item) : undefined)} testID={`shopping-mark-bought-${item.id}`}>
                               <Ionicons
                                 color={item.is_bought ? theme.success : theme.primary}
                                 name={item.is_bought ? 'checkmark-circle' : 'checkmark-circle-outline'}
@@ -1115,10 +1117,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   </BentoCard>
 
                   <View style={styles.quickActionGrid}>
-                    <QuickActionCard icon="people-outline" label="Members" onPress={() => setShowMembers(true)} />
-                    <QuickActionCard icon="person-add-outline" label="Invite" onPress={() => setShowInvite(true)} />
-                    <QuickActionCard icon="settings-outline" label="Settings" onPress={primeSettingsForm} />
-                    <QuickActionCard icon="swap-horizontal-outline" label="Switch" onPress={() => setShowProfileSwitcher(true)} />
+                    <QuickActionCard icon="people-outline" label="Members" onPress={() => setShowMembers(true)} testID="profile-open-members" />
+                    <QuickActionCard icon="person-add-outline" label="Invite" onPress={() => setShowInvite(true)} testID="profile-open-invite" />
+                    <QuickActionCard icon="settings-outline" label="Settings" onPress={primeSettingsForm} testID="profile-open-settings" />
+                    <QuickActionCard icon="swap-horizontal-outline" label="Switch" onPress={() => setShowProfileSwitcher(true)} testID="profile-open-switcher" />
                   </View>
                 </View>
               ) : null}
@@ -1126,26 +1128,26 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           )}
 
           <View style={styles.bottomTabs}>
-            <TabButton active={activeTab === 'dashboard'} badge={0} icon="grid-outline" label="Dashboard" onPress={() => setActiveTab('dashboard')} />
-            <TabButton active={activeTab === 'budget'} badge={0} icon="wallet-outline" label="Budget" onPress={() => setActiveTab('budget')} />
-            <TabButton active={activeTab === 'shopping'} badge={shoppingBadgeCount} icon="cart-outline" label="Shopping" onPress={() => setActiveTab('shopping')} />
-            <TabButton active={activeTab === 'profile'} badge={0} icon="person-outline" label="Profile" onPress={() => setActiveTab('profile')} />
+            <TabButton active={activeTab === 'dashboard'} badge={0} icon="grid-outline" label="Dashboard" onPress={() => setActiveTab('dashboard')} testID="tab-dashboard" />
+            <TabButton active={activeTab === 'budget'} badge={0} icon="wallet-outline" label="Budget" onPress={() => setActiveTab('budget')} testID="tab-budget" />
+            <TabButton active={activeTab === 'shopping'} badge={shoppingBadgeCount} icon="cart-outline" label="Shopping" onPress={() => setActiveTab('shopping')} testID="tab-shopping" />
+            <TabButton active={activeTab === 'profile'} badge={0} icon="person-outline" label="Profile" onPress={() => setActiveTab('profile')} testID="tab-profile" />
           </View>
         </View>
       </KeyboardAvoidingView>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showBudgetComposer}>
-        <ModalScaffold onClose={() => setShowBudgetComposer(false)} title="Create Budget Plan">
-          <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} value={budgetForm.name} />
-          <LabeledInput keyboardType="numeric" label="Total budget (Rs.)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} value={budgetForm.totalAmount} />
-          <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} value={budgetForm.startDate} />
-          <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} value={budgetForm.endDate} />
-          <ModernButton loading={actionBusy} onPress={handleCreateBudget} text="Save plan" />
+        <ModalScaffold closeTestID="close-budget-modal" onClose={() => setShowBudgetComposer(false)} title="Create Budget Plan">
+          <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="budget-plan-name-input" value={budgetForm.name} />
+          <LabeledInput keyboardType="numeric" label="Total budget (Rs.)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="budget-plan-total-input" value={budgetForm.totalAmount} />
+          <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="budget-plan-start-input" value={budgetForm.startDate} />
+          <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="budget-plan-end-input" value={budgetForm.endDate} />
+          <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text="Save plan" />
         </ModalScaffold>
       </Modal>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedPlan)}>
-        <ModalScaffold onClose={() => setSelectedPlanId(null)} title={selectedPlan?.name ?? 'Budget plan'}>
+        <ModalScaffold closeTestID="close-budget-detail-modal" onClose={() => setSelectedPlanId(null)} title={selectedPlan?.name ?? 'Budget plan'}>
           {selectedPlan ? (
             <>
               <BentoCard tone="highlight">
@@ -1168,6 +1170,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               <ModernButton
                 icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
                 onPress={() => setShowExpenseComposer(true)}
+                testID="open-add-expense"
                 text="Add expense"
               />
 
@@ -1197,32 +1200,32 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showExpenseComposer}>
         <BottomSheet onClose={() => setShowExpenseComposer(false)}>
           <Text style={styles.sectionTitle}>Add Expense</Text>
-          <LabeledInput label="Title" onChangeText={(value) => setExpenseForm((current) => ({ ...current, title: value }))} value={expenseForm.title} />
-          <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, price: value }))} value={expenseForm.price} />
+          <LabeledInput label="Title" onChangeText={(value) => setExpenseForm((current) => ({ ...current, title: value }))} testID="expense-title-input" value={expenseForm.title} />
+          <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, price: value }))} testID="expense-price-input" value={expenseForm.price} />
           <Text style={styles.inputLabel}>Category</Text>
           <View style={styles.segmentRow}>
             {expenseCategories.slice(0, 5).map((category) => (
               <CategoryChip key={category.key} active={expenseForm.category === category.key} label={category.key} onPress={() => setExpenseForm((current) => ({ ...current, category: category.key }))} />
             ))}
           </View>
-          <LabeledInput label="Custom category (optional)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} value={expenseForm.customCategory} />
-          <LabeledInput label="Date (YYYY-MM-DD)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, date: value }))} value={expenseForm.date} />
-          <ModernButton loading={actionBusy} onPress={handleAddExpense} text="Save expense" />
+          <LabeledInput label="Custom category (optional)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
+          <LabeledInput label="Date (YYYY-MM-DD)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" value={expenseForm.date} />
+          <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text="Save expense" />
         </BottomSheet>
       </Modal>
 
       <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showShoppingComposer}>
         <BottomSheet onClose={() => setShowShoppingComposer(false)}>
           <Text style={styles.sectionTitle}>Add Shopping Item</Text>
-          <LabeledInput label="Product name" onChangeText={(value) => setShoppingForm((current) => ({ ...current, name: value }))} value={shoppingForm.name} />
-          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} value={shoppingForm.quantity} />
-          <LabeledInput label="Category (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, category: value }))} value={shoppingForm.category} />
-          <ModernButton loading={actionBusy} onPress={handleAddShoppingItem} text="Add item" />
+          <LabeledInput label="Product name" onChangeText={(value) => setShoppingForm((current) => ({ ...current, name: value }))} testID="shopping-name-input" value={shoppingForm.name} />
+          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shopping-quantity-input" value={shoppingForm.quantity} />
+          <LabeledInput label="Category (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, category: value }))} testID="shopping-category-input" value={shoppingForm.category} />
+          <ModernButton loading={actionBusy} onPress={handleAddShoppingItem} testID="shopping-save-button" text="Add item" />
         </BottomSheet>
       </Modal>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showMembers}>
-        <ModalScaffold onClose={() => setShowMembers(false)} title="Members">
+        <ModalScaffold closeTestID="close-members-modal" onClose={() => setShowMembers(false)} title="Members">
           {members.map((member) => (
             <BentoCard key={member.id}>
               <View style={styles.rowBetween}>
@@ -1241,10 +1244,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       </Modal>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showInvite}>
-        <ModalScaffold onClose={() => setShowInvite(false)} title="Invite Member">
+        <ModalScaffold closeTestID="close-invite-modal" onClose={() => setShowInvite(false)} title="Invite Member">
           <Text style={styles.bodyMuted}>Send an email invite or share the generated link. The invite opens NestLedger and joins the selected profile.</Text>
-          <LabeledInput label="Invitee email" onChangeText={setInviteEmail} value={inviteEmail} />
-          <ModernButton loading={actionBusy} onPress={handleSendInvite} text="Send invite email" />
+          <LabeledInput label="Invitee email" onChangeText={setInviteEmail} testID="invite-email-input" value={inviteEmail} />
+          <ModernButton loading={actionBusy} onPress={handleSendInvite} testID="invite-send-email" text="Send invite email" />
           {lastInviteLink ? (
             <BentoCard>
               <Text style={styles.cardTitle}>Shareable invite link</Text>
@@ -1253,9 +1256,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 <ModernButton
                   onPress={() => Clipboard.setStringAsync(lastInviteLink).then(() => announce('Invite link copied.'))}
                   secondary
+                  testID="invite-copy-link"
                   text="Copy link"
                 />
-                <ModernButton onPress={() => Share.share({ message: lastInviteLink })} text="Share link" />
+                <ModernButton onPress={() => Share.share({ message: lastInviteLink })} testID="invite-share-link" text="Share link" />
               </View>
             </BentoCard>
           ) : null}
@@ -1264,9 +1268,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showNotifications}>
         <ModalScaffold
+          closeTestID="close-notifications-modal"
           onClose={() => setShowNotifications(false)}
           rightAction={
-            <Pressable hitSlop={10} onPress={() => activeProfile && session?.user && notificationApi.markAllRead(activeProfile.id, session.user.id).then(() => refreshProfileData(activeProfile.id))}>
+            <Pressable hitSlop={10} onPress={() => activeProfile && session?.user && notificationApi.markAllRead(activeProfile.id, session.user.id).then(() => refreshProfileData(activeProfile.id))} testID="notifications-mark-all-read">
               <Text style={styles.linkText}>Mark all read</Text>
             </Pressable>
           }
@@ -1274,7 +1279,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         >
           {notifications.length ? (
             notifications.map((item) => (
-              <Pressable key={item.id} onPress={() => notificationApi.markRead(item.id).then(() => activeProfile && refreshProfileData(activeProfile.id))}>
+              <Pressable key={item.id} onPress={() => notificationApi.markRead(item.id).then(() => activeProfile && refreshProfileData(activeProfile.id))} testID={`notification-item-${item.id}`}>
                 <BentoCard tone={item.is_read ? 'default' : 'highlight'}>
                   <Text style={styles.listTitle}>{item.message}</Text>
                   <Text style={styles.listSubtitle}>{formatShortDate(item.created_at)}</Text>
@@ -1288,19 +1293,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       </Modal>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showProfileSettings}>
-        <ModalScaffold onClose={() => setShowProfileSettings(false)} title="Profile Settings">
+        <ModalScaffold closeTestID="close-settings-modal" onClose={() => setShowProfileSettings(false)} title="Profile Settings">
           <Text style={styles.inputLabel}>Your profile</Text>
           <ProfileFormFields form={profileForm} onChange={setProfileForm} userOnly />
-          <LabeledInput label="Family profile name" onChangeText={(value) => setProfileForm((current) => ({ ...current, familyName: value }))} value={profileForm.familyName} />
+          <LabeledInput label="Family profile name" onChangeText={(value) => setProfileForm((current) => ({ ...current, familyName: value }))} testID="settings-family-name-input" value={profileForm.familyName} />
           <Text style={styles.inputLabel}>Family avatar</Text>
           <AvatarPicker selected={profileForm.familyEmoji} onPick={(value) => setProfileForm((current) => ({ ...current, familyEmoji: value }))} />
-          <ModernButton loading={actionBusy} onPress={handleSaveSettings} text="Save changes" />
-          <ModernButton onPress={() => authApi.signOut()} secondary text="Sign out" />
+          <ModernButton loading={actionBusy} onPress={handleSaveSettings} testID="settings-save-button" text="Save changes" />
+          <ModernButton onPress={() => authApi.signOut()} secondary testID="settings-signout-button" text="Sign out" />
         </ModalScaffold>
       </Modal>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showExpenseFilters}>
-        <ModalScaffold onClose={() => setShowExpenseFilters(false)} title="Filter Expenses">
+        <ModalScaffold closeTestID="close-expense-filters-modal" onClose={() => setShowExpenseFilters(false)} title="Filter Expenses">
           <Text style={styles.inputLabel}>Time window</Text>
           <View style={styles.segmentRow}>
             {expenseFilters.map((filter) => (
@@ -1372,15 +1377,17 @@ function TabButton({
   icon,
   label,
   onPress,
+  testID,
 }: {
   active: boolean;
   badge: number;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
+  testID: string;
 }) {
   return (
-    <Pressable hitSlop={10} onPress={onPress} style={styles.tabButton}>
+    <Pressable hitSlop={10} onPress={onPress} style={styles.tabButton} testID={testID}>
       <View>
         <Ionicons color={active ? theme.primary : theme.textMuted} name={icon} size={22} />
         {badge ? (
@@ -1394,9 +1401,19 @@ function TabButton({
   );
 }
 
-function QuickActionCard({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+function QuickActionCard({
+  icon,
+  label,
+  onPress,
+  testID,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  testID: string;
+}) {
   return (
-    <Pressable onPress={onPress} style={styles.quickActionCard}>
+    <Pressable onPress={onPress} style={styles.quickActionCard} testID={testID}>
       <Ionicons color={theme.primary} name={icon} size={22} />
       <Text style={styles.quickActionText}>{label}</Text>
     </Pressable>
@@ -1406,34 +1423,38 @@ function QuickActionCard({ icon, label, onPress }: { icon: keyof typeof Ionicons
 function ProfileFormFields({
   form,
   onChange,
+  testIDPrefix,
   userOnly,
 }: {
   form: CreateProfileForm;
   onChange: (value: CreateProfileForm) => void;
+  testIDPrefix?: string;
   userOnly?: boolean;
 }) {
+  const prefix = testIDPrefix ?? (userOnly ? 'settings' : 'create-profile');
+
   return (
     <>
-      <LabeledInput label="Your name" onChangeText={(value: string) => onChange({ ...form, name: value })} value={form.name} />
+      <LabeledInput label="Your name" onChangeText={(value: string) => onChange({ ...form, name: value })} testID={`${prefix}-name-input`} value={form.name} />
       <Text style={styles.inputLabel}>Choose your avatar</Text>
-      <AvatarPicker selected={form.avatarEmoji} onPick={(value) => onChange({ ...form, avatarEmoji: value })} />
+      <AvatarPicker selected={form.avatarEmoji} testIDPrefix={`${prefix}-avatar`} onPick={(value) => onChange({ ...form, avatarEmoji: value })} />
 
       {!userOnly ? (
         <>
-          <LabeledInput label="Family / home name" onChangeText={(value: string) => onChange({ ...form, familyName: value })} value={form.familyName} />
+          <LabeledInput label="Family / home name" onChangeText={(value: string) => onChange({ ...form, familyName: value })} testID={`${prefix}-family-name-input`} value={form.familyName} />
           <Text style={styles.inputLabel}>Family avatar</Text>
-          <AvatarPicker selected={form.familyEmoji} onPick={(value) => onChange({ ...form, familyEmoji: value })} />
+          <AvatarPicker selected={form.familyEmoji} testIDPrefix={`${prefix}-family-avatar`} onPick={(value) => onChange({ ...form, familyEmoji: value })} />
         </>
       ) : null}
     </>
   );
 }
 
-function AvatarPicker({ onPick, selected }: { onPick: (value: string) => void; selected: string }) {
+function AvatarPicker({ onPick, selected, testIDPrefix }: { onPick: (value: string) => void; selected: string; testIDPrefix?: string }) {
   return (
     <View style={styles.avatarGrid}>
       {avatarChoices.map((choice) => (
-        <Pressable key={choice} onPress={() => onPick(choice)} style={[styles.avatarChoice, selected === choice && styles.avatarChoiceActive]}>
+        <Pressable key={choice} onPress={() => onPick(choice)} style={[styles.avatarChoice, selected === choice && styles.avatarChoiceActive]} testID={testIDPrefix ? `${testIDPrefix}-${choice}` : undefined}>
           <Text style={styles.avatarChoiceText}>{choice}</Text>
         </Pressable>
       ))}
@@ -1443,11 +1464,13 @@ function AvatarPicker({ onPick, selected }: { onPick: (value: string) => void; s
 
 function ModalScaffold({
   children,
+  closeTestID,
   onClose,
   rightAction,
   title,
 }: {
   children: ReactNode;
+  closeTestID?: string;
   onClose: () => void;
   rightAction?: ReactNode;
   title: string;
@@ -1455,7 +1478,7 @@ function ModalScaffold({
   return (
     <SafeAreaView style={styles.modalScreen}>
       <View style={styles.modalHeader}>
-        <Pressable hitSlop={10} onPress={onClose}>
+        <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
           <Ionicons color={theme.text} name="close-outline" size={28} />
         </Pressable>
         <Text style={styles.modalTitle}>{title}</Text>

@@ -7,11 +7,12 @@ type Props = {
   label: string;
   onPress: () => void;
   left?: React.ReactNode;
+  testID?: string;
 };
 
-export default function CategoryChip({ active, label, onPress, left }: Props) {
+export default function CategoryChip({ active, label, onPress, left, testID }: Props) {
   return (
-    <Pressable hitSlop={10} onPress={onPress} style={[styles.chip, active ? styles.activeChip : styles.idleChip]}>
+    <Pressable hitSlop={10} onPress={onPress} testID={testID} style={[styles.chip, active ? styles.activeChip : styles.idleChip]}>
       <View style={styles.content}>
         {left}
         <Text style={[styles.label, active ? styles.activeLabel : styles.idleLabel]}>{label}</Text>

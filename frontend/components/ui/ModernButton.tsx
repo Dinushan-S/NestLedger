@@ -17,6 +17,7 @@ type Props = {
   onPress: () => void;
   secondary?: boolean;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
   text: string;
   disabled?: boolean;
 };
@@ -27,6 +28,7 @@ export default function ModernButton({
   onPress,
   secondary,
   style,
+  testID,
   text,
   disabled,
 }: Props) {
@@ -49,6 +51,7 @@ export default function ModernButton({
         onPress={onPress}
         onPressIn={() => animateTo(0.98)}
         onPressOut={() => animateTo(1)}
+        testID={testID}
         style={[styles.button, secondary ? styles.secondary : styles.primary, disabled && styles.disabled]}
       >
         {loading ? (
