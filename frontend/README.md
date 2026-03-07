@@ -1,50 +1,43 @@
-# Welcome to your Expo app 👋
+# NestLedger Frontend
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This folder contains the Expo React Native frontend for NestLedger.
 
-## Get started
+## Main responsibilities
+- Authentication UI
+- Profile creation and switching
+- Dashboard, budgets, expenses, shopping, profile, and notifications UI
+- Supabase session + realtime subscriptions
+- Invite acceptance route handling
 
-1. Install dependencies
+## Key files
+- `app/_layout.tsx` — root Expo Router layout
+- `app/index.tsx` — app entry screen
+- `app/invite.tsx` — invite acceptance entry route
+- `components/nestledger/NestLedgerApp.tsx` — current main app implementation
+- `components/ui/` — shared UI pieces
+- `constants/nestledger.ts` — theme and display constants
+- `lib/config.ts` — frontend runtime config
+- `lib/supabase.ts` — Supabase client
+- `lib/nestledger.ts` — app data access layer
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+## Run locally
 ```bash
-npm run reset-project
+cd /app/frontend
+yarn install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Required public config
+- `EXPO_PUBLIC_BACKEND_URL`
+- `EXPO_PUBLIC_APP_URL`
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 
-## Learn more
+## Notes
+- App scheme: `nestledger`
+- Invite fallback route: `/invite?token=...`
+- Push token registration is wired, but real push delivery must be validated on device
+- For reliable automation, core controls now include `testID` props
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Refactor note
+`components/nestledger/NestLedgerApp.tsx` currently contains most app flows in one file and should be split into smaller feature modules later.
