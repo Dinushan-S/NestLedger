@@ -1,58 +1,336 @@
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List
+import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import requests
+from dotenv import load_dotenv
+from fastapi import APIRouter, FastAPI, Header, HTTPException
+from pydantic import BaseModel, EmailStr
+from starlette.middleware.cors import CORSMiddleware
 
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+APP_PUBLIC_URL = os.getenv("APP_PUBLIC_URL", "")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "NestLedger")
+BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL", "")
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class InviteRequest(BaseModel):
+    invited_email: EmailStr
+    inviter_name: str
+    profile_id: str
+    profile_name: str
 
-# Add your routes to the router instead of directly to app
+
+class AcceptInviteRequest(BaseModel):
+    invite_token: str
+
+
+class PushRegisterRequest(BaseModel):
+    platform: str
+    push_token: str
+
+
+class PushFanoutRequest(BaseModel):
+    exclude_user_id: str | None = None
+    message: str
+    profile_id: str
+    type: str
+
+
+def ensure_backend_config() -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=500, detail="Supabase backend config is missing.")
+
+
+def build_rest_headers(prefer: str | None = None) -> dict[str, str]:
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def supabase_rest(method: str, table: str, *, params: dict[str, Any] | None = None, json_data: Any = None, prefer: str | None = None) -> Any:
+    ensure_backend_config()
+    response = requests.request(
+        method=method,
+        url=f"{SUPABASE_URL}/rest/v1/{table}",
+        headers=build_rest_headers(prefer),
+        params=params,
+        json=json_data,
+        timeout=25,
+    )
+
+    if not response.ok:
+        logger.error("Supabase REST error on %s: %s", table, response.text)
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    if not response.text:
+        return None
+
+    return response.json()
+
+
+def get_current_user(authorization: str | None) -> dict[str, Any]:
+    ensure_backend_config()
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing access token.")
+
+    access_token = authorization.replace("Bearer ", "", 1)
+    response = requests.get(
+        f"{SUPABASE_URL}/auth/v1/user",
+        headers={
+            "apikey": SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {access_token}",
+        },
+        timeout=20,
+    )
+
+    if not response.ok:
+        raise HTTPException(status_code=401, detail="Invalid or expired Supabase session.")
+
+    return response.json()
+
+
+def ensure_profile_member(profile_id: str, user_id: str) -> None:
+    rows = supabase_rest(
+        "GET",
+        "profile_members",
+        params={"profile_id": f"eq.{profile_id}", "user_id": f"eq.{user_id}", "select": "id"},
+    )
+    if not rows:
+        raise HTTPException(status_code=403, detail="You do not have access to this profile.")
+
+
+def send_brevo_invite(recipient_email: str, inviter_name: str, profile_name: str, invite_link: str, fallback_link: str) -> None:
+    if not BREVO_API_KEY or not BREVO_FROM_EMAIL:
+        raise HTTPException(status_code=500, detail="Brevo email config is missing.")
+
+    html = f"""
+    <div style='font-family: Arial, sans-serif; color: #2D312F; line-height: 1.6;'>
+      <h2>{inviter_name} invited you to join {profile_name} on NestLedger</h2>
+      <p>Tap below to open the app and accept the invitation.</p>
+      <p><a href='{invite_link}' style='display:inline-block;padding:12px 18px;background:#5D7B6F;color:#fff;border-radius:999px;text-decoration:none;'>Open NestLedger</a></p>
+      <p>If the app does not open automatically, use this fallback link:</p>
+      <p><a href='{fallback_link}'>{fallback_link}</a></p>
+    </div>
+    """
+
+    response = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
+        json={
+            "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
+            "to": [{"email": recipient_email}],
+            "subject": f"{inviter_name} invited you to join {profile_name} on NestLedger",
+            "htmlContent": html,
+        },
+        timeout=25,
+    )
+
+    if not response.ok:
+        logger.error("Brevo error: %s", response.text)
+        raise HTTPException(status_code=500, detail="Brevo failed to send the invite email.")
+
+
+def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:
+    email = user.get("email") or ""
+    metadata = user.get("user_metadata") or {}
+    display_name = metadata.get("name") or email.split("@")[0] or "NestLedger Member"
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    supabase_rest(
+        "POST",
+        "user_profiles",
+        params={"on_conflict": "user_id"},
+        json_data={
+            "user_id": user["id"],
+            "email": email,
+            "name": display_name,
+            "avatar_emoji": metadata.get("avatar_emoji") or "🏡",
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        },
+        prefer="resolution=merge-duplicates,return=representation",
+    )
+
+
 @api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+def root():
+    return {"message": "NestLedger backend online"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
+@api_router.get("/health")
+def health():
+    return {"ok": True}
 
-# Include the router in the main app
+
+@api_router.post("/invitations/send")
+def send_invitation(payload: InviteRequest, authorization: str | None = Header(default=None)):
+    user = get_current_user(authorization)
+    ensure_profile_member(payload.profile_id, user["id"])
+
+    invite_token = str(uuid.uuid4())
+    fallback_link = f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={invite_token}"
+    deep_link = f"nestledger://invite?token={invite_token}"
+
+    supabase_rest(
+        "POST",
+        "invitations",
+        json_data={
+            "profile_id": payload.profile_id,
+            "invited_email": payload.invited_email,
+            "invite_token": invite_token,
+            "status": "pending",
+        },
+        prefer="return=representation",
+    )
+
+    send_brevo_invite(
+        recipient_email=payload.invited_email,
+        inviter_name=payload.inviter_name,
+        profile_name=payload.profile_name,
+        invite_link=deep_link,
+        fallback_link=fallback_link,
+    )
+
+    return {"invite_token": invite_token, "shareable_link": fallback_link}
+
+
+@api_router.post("/invitations/accept")
+def accept_invitation(payload: AcceptInviteRequest, authorization: str | None = Header(default=None)):
+    user = get_current_user(authorization)
+    upsert_user_profile_from_auth(user)
+
+    invitation_rows = supabase_rest(
+        "GET",
+        "invitations",
+        params={"invite_token": f"eq.{payload.invite_token}", "select": "*", "limit": 1},
+    )
+
+    if not invitation_rows:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+
+    invitation = invitation_rows[0]
+    invited_email = (invitation.get("invited_email") or "").lower()
+    user_email = (user.get("email") or "").lower()
+    if invited_email and invited_email != user_email:
+        raise HTTPException(status_code=403, detail="This invite belongs to a different email address.")
+
+    membership_rows = supabase_rest(
+        "GET",
+        "profile_members",
+        params={"profile_id": f"eq.{invitation['profile_id']}", "user_id": f"eq.{user['id']}", "select": "id"},
+    )
+    if not membership_rows:
+        supabase_rest(
+            "POST",
+            "profile_members",
+            json_data={"profile_id": invitation["profile_id"], "user_id": user["id"]},
+            prefer="return=representation",
+        )
+
+    supabase_rest(
+        "PATCH",
+        "invitations",
+        params={"invite_token": f"eq.{payload.invite_token}"},
+        json_data={"status": "accepted"},
+        prefer="return=representation",
+    )
+
+    member_rows = supabase_rest(
+        "GET",
+        "profile_members",
+        params={"profile_id": f"eq.{invitation['profile_id']}", "select": "user_id"},
+    )
+    other_user_ids = [row["user_id"] for row in member_rows if row["user_id"] != user["id"]]
+    if other_user_ids:
+        notifications = [
+            {
+                "profile_id": invitation["profile_id"],
+                "user_id": member_id,
+                "message": f"{user_email or 'A member'} joined your NestLedger profile.",
+                "type": "member_joined",
+            }
+            for member_id in other_user_ids
+        ]
+        supabase_rest("POST", "notifications", json_data=notifications, prefer="return=representation")
+
+    return {"profile_id": invitation["profile_id"]}
+
+
+@api_router.post("/push/register")
+def register_push_token(payload: PushRegisterRequest, authorization: str | None = Header(default=None)):
+    user = get_current_user(authorization)
+    supabase_rest(
+        "POST",
+        "device_tokens",
+        params={"on_conflict": "push_token"},
+        json_data={"platform": payload.platform, "push_token": payload.push_token, "user_id": user["id"]},
+        prefer="resolution=merge-duplicates,return=representation",
+    )
+    return {"ok": True}
+
+
+@api_router.post("/push/fanout")
+def push_fanout(payload: PushFanoutRequest, authorization: str | None = Header(default=None)):
+    user = get_current_user(authorization)
+    ensure_profile_member(payload.profile_id, user["id"])
+
+    members = supabase_rest(
+        "GET",
+        "profile_members",
+        params={"profile_id": f"eq.{payload.profile_id}", "select": "user_id"},
+    )
+    recipient_ids = [row["user_id"] for row in members if row["user_id"] != payload.exclude_user_id]
+    if not recipient_ids:
+        return {"sent": 0}
+
+    joined_ids = ",".join(recipient_ids)
+    tokens = supabase_rest(
+        "GET",
+        "device_tokens",
+        params={"user_id": f"in.({joined_ids})", "select": "push_token"},
+    )
+
+    expo_tokens = [row["push_token"] for row in tokens if row["push_token"].startswith("ExponentPushToken[")]
+    if not expo_tokens:
+        return {"sent": 0}
+
+    messages = [{"to": token, "title": "NestLedger", "body": payload.message, "sound": "default"} for token in expo_tokens]
+    response = requests.post(
+        "https://exp.host/--/api/v2/push/send",
+        headers={"Content-Type": "application/json"},
+        json=messages,
+        timeout=25,
+    )
+    if not response.ok:
+        logger.error("Expo push error: %s", response.text)
+        return {"sent": 0}
+
+    return {"sent": len(expo_tokens)}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -62,14 +340,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
