@@ -63,20 +63,9 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # Update .env file with all required variables
+            # Update .env file from ENV secret
             cd backend
-            cat > .env << 'EOFENV'
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-            APP_PUBLIC_URL=http://185.216.75.254:8000
-            BREVO_FROM_NAME=NestLedger
-            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
-            SMTP_HOST=${{ secrets.SMTP_HOST }}
-            SMTP_PORT=587
-            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
-            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-            EOFENV
+            printf '%s\n' '${{ secrets.ENV }}' > .env
             
             # Install dependencies
             source venv/bin/activate
