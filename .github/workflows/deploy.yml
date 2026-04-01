@@ -61,20 +61,9 @@ jobs:
             cd /opt/NestLedger
             git pull origin main
             
-            # Update .env file from secrets
+            # Update .env file
             cd backend
-            cat > .env << 'EOFENV'
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-            APP_PUBLIC_URL=${{ secrets.APP_PUBLIC_URL }}
-            BREVO_FROM_NAME=${{ secrets.BREVO_FROM_NAME }}
-            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
-            SMTP_HOST=${{ secrets.SMTP_HOST }}
-            SMTP_PORT=${{ secrets.SMTP_PORT }}
-            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
-            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-            EOFENV
+            echo "${{ secrets.ENV }}" > .env
             
             # Install dependencies
             source venv/bin/activate
