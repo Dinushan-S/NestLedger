@@ -33,7 +33,7 @@ jobs:
               python3 -m venv venv
               source venv/bin/activate
               pip install -r requirements.txt
-              
+            
               # Create systemd service
               cat > /etc/systemd/system/nestledger.service << 'EOFSERVICE'
             [Unit]
@@ -52,9 +52,10 @@ jobs:
             [Install]
             WantedBy=multi-user.target
             EOFSERVICE
-              
+            
               systemctl daemon-reload
               systemctl enable nestledger
+              ufw allow 8000/tcp
             fi
             
             # Pull latest code
@@ -62,9 +63,20 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # Update .env file
+            # Update .env file with all required variables
             cd backend
-            echo "${{ secrets.ENV }}" > .env
+            cat > .env << 'EOFENV'
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            APP_PUBLIC_URL=http://185.216.75.254:8000
+            BREVO_FROM_NAME=NestLedger
+            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=587
+            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            EOFENV
             
             # Install dependencies
             source venv/bin/activate
@@ -78,9 +90,9 @@ jobs:
       - name: Health Check
         run: |
           sleep 15
-          curl -f http://${{ secrets.CONTABO_HOST }}:8000/api/health || exit 1
+          curl -f http://185.216.75.254:8000/api/health || exit 1
           
       - name: Deployment Complete
         run: |
           echo "✅ Deployed successfully!"
-          echo "API URL: http://${{ secrets.CONTABO_HOST }}:8000"
+          echo "API URL: http://185.216.75.254:8000"
