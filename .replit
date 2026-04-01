@@ -1,0 +1,12 @@
+run = "cd backend && pip install -r requirements.txt && uvicorn server:app --host 0.0.0.0 --port 8080"
+
+entrypoint = "backend/server.py"
+
+[nix]
+channel = "stable-23_11"
+
+[pack]
+tools = ["python311", "pip"]
+
+[languages]
+python311 = { version = "3.11" }
