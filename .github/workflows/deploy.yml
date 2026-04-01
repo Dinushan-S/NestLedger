@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
       - name: Deploy to Contabo Server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -19,15 +22,75 @@ jobs:
           key: ${{ secrets.CONTABO_SSH_KEY }}
           port: 22
           script: |
+            # Check if directory exists, clone if not
+            if [ ! -d "/opt/NestLedger" ]; then
+              echo "=== Initial Setup ==="
+              apt update
+              apt install -y python3.11 python3.11-venv python3-pip git
+              cd /opt
+              git clone https://github.com/Dinushan-S/NestLedger.git
+              cd NestLedger/backend
+              python3.11 -m venv venv
+              source venv/bin/activate
+              pip install -r requirements.txt
+              
+              # Create systemd service
+              cat > /etc/systemd/system/nestledger.service << 'EOFSERVICE'
+            [Unit]
+            Description=NestLedger FastAPI Backend
+            After=network.target
+            
+            [Service]
+            Type=simple
+            User=root
+            WorkingDirectory=/opt/NestLedger/backend
+            Environment="PATH=/opt/NestLedger/backend/venv/bin"
+            ExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+            Restart=always
+            RestartSec=10
+            
+            [Install]
+            WantedBy=multi-user.target
+            EOFSERVICE
+              
+              systemctl daemon-reload
+              systemctl enable nestledger
+            fi
+            
+            # Pull latest code
             cd /opt/NestLedger
             git pull origin main
+            
+            # Update .env file from secrets
             cd backend
+            cat > .env << 'EOFENV'
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            APP_PUBLIC_URL=${{ secrets.APP_PUBLIC_URL }}
+            BREVO_FROM_NAME=${{ secrets.BREVO_FROM_NAME }}
+            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            EOFENV
+            
+            # Install dependencies
             source venv/bin/activate
             pip install -r requirements.txt
-            sudo systemctl restart nestledger
-            sudo systemctl status nestledger --no-pager
+            
+            # Restart service
+            systemctl restart nestledger
+            sleep 5
+            systemctl status nestledger --no-pager
             
       - name: Health Check
         run: |
           sleep 10
           curl -f http://${{ secrets.CONTABO_HOST }}:8000/api/health || exit 1
+          
+      - name: Deployment Complete
+        run: |
+          echo "✅ Deployed successfully!"
+          echo "API URL: http://${{ secrets.CONTABO_HOST }}:8000"
