@@ -12,6 +12,7 @@ import {
 import { theme } from '../../constants/nestledger';
 
 type Props = {
+  destructive?: boolean;
   icon?: ReactNode;
   loading?: boolean;
   onPress: () => void;
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export default function ModernButton({
+  destructive,
   icon,
   loading,
   onPress,
@@ -52,14 +54,14 @@ export default function ModernButton({
         onPressIn={() => animateTo(0.98)}
         onPressOut={() => animateTo(1)}
         testID={testID}
-        style={[styles.button, secondary ? styles.secondary : styles.primary, disabled && styles.disabled]}
+        style={[styles.button, secondary ? styles.secondary : styles.primary, destructive && styles.destructive, disabled && styles.disabled]}
       >
         {loading ? (
-          <ActivityIndicator color={secondary ? theme.primary : '#FFFFFF'} />
+          <ActivityIndicator color={secondary || destructive ? theme.danger : '#FFFFFF'} />
         ) : (
           <>
             {icon}
-            <Text style={[styles.label, secondary ? styles.secondaryLabel : styles.primaryLabel]}>{text}</Text>
+            <Text style={[styles.label, secondary ? styles.secondaryLabel : styles.primaryLabel, destructive && styles.destructiveLabel]}>{text}</Text>
           </>
         )}
       </Pressable>
@@ -96,5 +98,13 @@ const styles = StyleSheet.create({
   },
   secondaryLabel: {
     color: theme.primary,
+  },
+  destructive: {
+    backgroundColor: theme.dangerSoft,
+    borderColor: theme.danger,
+    borderWidth: 1,
+  },
+  destructiveLabel: {
+    color: theme.danger,
   },
 });

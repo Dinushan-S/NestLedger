@@ -244,6 +244,9 @@ export const profileApi = {
     if (error) throw error;
     return data as HouseholdProfile;
   },
+  async deleteHousehold(session: Session, profileId: string) {
+    return callBackend('/spaces/delete', session.access_token, { profile_id: profileId });
+  },
 };
 
 export const budgetApi = {

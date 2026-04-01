@@ -781,6 +781,48 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     setShowProfileSettings(true);
   };
 
+  const handleDeleteSpace = async (profileId: string) => {
+    if (!session?.user) {
+      return;
+    }
+
+    const performDelete = async () => {
+      await runAction(async () => {
+        await profileApi.deleteHousehold(validateSession(session), profileId);
+        const nextProfiles = await profileApi.fetchAccessibleProfiles(session.user.id);
+        setProfiles(nextProfiles);
+        if (activeProfileId === profileId) {
+          setActiveProfileId(nextProfiles[0]?.id ?? null);
+        }
+        if (!nextProfiles.length) {
+          setShowProfileSwitcher(false);
+          setShowCreateProfile(true);
+        }
+      });
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = globalThis.confirm?.('Are you sure you want to delete this space? All data will be permanently removed.');
+      if (!confirmed) {
+        return;
+      }
+      await performDelete();
+    } else {
+      Alert.alert(
+        'Delete Space',
+        'Are you sure you want to delete this space? All data will be permanently removed.',
+        [
+          { style: 'cancel', text: 'Cancel' },
+          {
+            onPress: performDelete,
+            style: 'destructive',
+            text: 'Delete',
+          },
+        ],
+      );
+    }
+  };
+
   const monthlySpend = useMemo(() => {
     const monthStart = startOfMonth();
     return profileExpenses
@@ -885,22 +927,24 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           {profiles.map((profile) => (
             <Pressable
               key={profile.id}
+              onLongPress={() => handleDeleteSpace(profile.id)}
               onPress={() => {
                 setActiveProfileId(profile.id);
                 setShowProfileSwitcher(false);
               }}
+              delayLongPress={500}
               style={styles.switcherCard}
             >
               <Text style={styles.switcherEmoji}>{profile.emoji_avatar ?? '🏡'}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{profile.name}</Text>
-                <Text style={styles.bodyMuted}>Created {formatShortDate(profile.created_at)}</Text>
+                <Text style={styles.bodyMuted}>Created {formatShortDate(profile.created_at)} • Hold to delete</Text>
               </View>
               <Ionicons color={theme.primary} name="chevron-forward" size={20} />
             </Pressable>
           ))}
 
-            <ModernButton onPress={() => setShowCreateProfile(true)} secondary testID="profile-switcher-create" text="Create another profile" />
+            <ModernButton onPress={() => setShowCreateProfile(true)} secondary testID="profile-switcher-create" text="Create another space" />
           <ModernButton onPress={() => authApi.signOut()} secondary testID="profile-switcher-signout" text="Sign out" />
         </ScrollView>
       </SafeAreaView>
@@ -1301,6 +1345,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <AvatarPicker selected={profileForm.familyEmoji} onPick={(value) => setProfileForm((current) => ({ ...current, familyEmoji: value }))} />
           <ModernButton loading={actionBusy} onPress={handleSaveSettings} testID="settings-save-button" text="Save changes" />
           <ModernButton onPress={() => authApi.signOut()} secondary testID="settings-signout-button" text="Sign out" />
+          <ModernButton destructive onPress={() => activeProfile && handleDeleteSpace(activeProfile.id)} secondary testID="settings-delete-button" text="Delete space" />
         </ModalScaffold>
       </Modal>
 

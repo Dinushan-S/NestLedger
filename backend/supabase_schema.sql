@@ -206,6 +206,22 @@ for insert with check (
   auth.uid() = user_id and public.is_profile_owner(profile_id)
 );
 
+drop policy if exists "profile members self delete" on public.profile_members;
+create policy "profile members self delete" on public.profile_members
+for delete using (auth.uid() = user_id);
+
+drop policy if exists "profiles owner delete" on public.profiles;
+create policy "profiles owner delete" on public.profiles
+for delete using (created_by = auth.uid());
+
+drop policy if exists "expenses member delete" on public.expenses;
+create policy "expenses member delete" on public.expenses
+for delete using (public.is_profile_member(profile_id));
+
+drop policy if exists "notifications own delete" on public.notifications;
+create policy "notifications own delete" on public.notifications
+for delete using (auth.uid() = user_id);
+
 drop policy if exists "budget plans member select" on public.budget_plans;
 create policy "budget plans member select" on public.budget_plans
 for select using (public.is_profile_member(profile_id));

@@ -32,7 +32,9 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -80,9 +82,15 @@ class PushFanoutRequest(BaseModel):
     type: str
 
 
+class DeleteSpaceRequest(BaseModel):
+    profile_id: str
+
+
 def ensure_backend_config() -> None:
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        raise HTTPException(status_code=500, detail="Supabase backend config is missing.")
+        raise HTTPException(
+            status_code=500, detail="Supabase backend config is missing."
+        )
 
 
 def build_rest_headers(prefer: str | None = None) -> dict[str, str]:
@@ -96,7 +104,14 @@ def build_rest_headers(prefer: str | None = None) -> dict[str, str]:
     return headers
 
 
-def supabase_rest(method: str, table: str, *, params: dict[str, Any] | None = None, json_data: Any = None, prefer: str | None = None) -> Any:
+def supabase_rest(
+    method: str,
+    table: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json_data: Any = None,
+    prefer: str | None = None,
+) -> Any:
     ensure_backend_config()
     response = requests.request(
         method=method,
@@ -134,7 +149,9 @@ def get_current_user(authorization: str | None) -> dict[str, Any]:
     )
 
     if not response.ok:
-        raise HTTPException(status_code=401, detail="Invalid or expired Supabase session.")
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired Supabase session."
+        )
 
     return response.json()
 
@@ -143,13 +160,25 @@ def ensure_profile_member(profile_id: str, user_id: str) -> None:
     rows = supabase_rest(
         "GET",
         "profile_members",
-        params={"profile_id": f"eq.{profile_id}", "user_id": f"eq.{user_id}", "select": "id"},
+        params={
+            "profile_id": f"eq.{profile_id}",
+            "user_id": f"eq.{user_id}",
+            "select": "id",
+        },
     )
     if not rows:
-        raise HTTPException(status_code=403, detail="You do not have access to this profile.")
+        raise HTTPException(
+            status_code=403, detail="You do not have access to this profile."
+        )
 
 
-def send_brevo_invite(recipient_email: str, inviter_name: str, profile_name: str, invite_link: str, fallback_link: str) -> None:
+def send_brevo_invite(
+    recipient_email: str,
+    inviter_name: str,
+    profile_name: str,
+    invite_link: str,
+    fallback_link: str,
+) -> None:
     if not SMTP_HOST or not SMTP_LOGIN or not SMTP_PASSWORD or not BREVO_FROM_EMAIL:
         raise HTTPException(status_code=500, detail="Brevo email config is missing.")
 
@@ -164,7 +193,9 @@ def send_brevo_invite(recipient_email: str, inviter_name: str, profile_name: str
     """
 
     message = EmailMessage()
-    message["Subject"] = f"{inviter_name} invited you to join {profile_name} on NestLedger"
+    message["Subject"] = (
+        f"{inviter_name} invited you to join {profile_name} on NestLedger"
+    )
     message["From"] = f"{BREVO_FROM_NAME} <{BREVO_FROM_EMAIL}>"
     message["To"] = recipient_email
     message.set_content(
@@ -179,7 +210,9 @@ def send_brevo_invite(recipient_email: str, inviter_name: str, profile_name: str
             smtp.send_message(message)
     except Exception as exc:  # noqa: BLE001
         logger.error("Brevo SMTP error: %s", exc)
-        raise HTTPException(status_code=500, detail="Brevo failed to send the invite email.") from exc
+        raise HTTPException(
+            status_code=500, detail="Brevo failed to send the invite email."
+        ) from exc
 
 
 def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:
@@ -215,7 +248,9 @@ def health():
 
 
 @api_router.post("/invitations/send")
-def send_invitation(payload: InviteRequest, authorization: str | None = Header(default=None)):
+def send_invitation(
+    payload: InviteRequest, authorization: str | None = Header(default=None)
+):
     user = get_current_user(authorization)
     ensure_profile_member(payload.profile_id, user["id"])
 
@@ -247,14 +282,20 @@ def send_invitation(payload: InviteRequest, authorization: str | None = Header(d
 
 
 @api_router.post("/invitations/accept")
-def accept_invitation(payload: AcceptInviteRequest, authorization: str | None = Header(default=None)):
+def accept_invitation(
+    payload: AcceptInviteRequest, authorization: str | None = Header(default=None)
+):
     user = get_current_user(authorization)
     upsert_user_profile_from_auth(user)
 
     invitation_rows = supabase_rest(
         "GET",
         "invitations",
-        params={"invite_token": f"eq.{payload.invite_token}", "select": "*", "limit": 1},
+        params={
+            "invite_token": f"eq.{payload.invite_token}",
+            "select": "*",
+            "limit": 1,
+        },
     )
 
     if not invitation_rows:
@@ -264,12 +305,18 @@ def accept_invitation(payload: AcceptInviteRequest, authorization: str | None = 
     invited_email = (invitation.get("invited_email") or "").lower()
     user_email = (user.get("email") or "").lower()
     if invited_email and invited_email != user_email:
-        raise HTTPException(status_code=403, detail="This invite belongs to a different email address.")
+        raise HTTPException(
+            status_code=403, detail="This invite belongs to a different email address."
+        )
 
     membership_rows = supabase_rest(
         "GET",
         "profile_members",
-        params={"profile_id": f"eq.{invitation['profile_id']}", "user_id": f"eq.{user['id']}", "select": "id"},
+        params={
+            "profile_id": f"eq.{invitation['profile_id']}",
+            "user_id": f"eq.{user['id']}",
+            "select": "id",
+        },
     )
     if not membership_rows:
         supabase_rest(
@@ -292,7 +339,9 @@ def accept_invitation(payload: AcceptInviteRequest, authorization: str | None = 
         "profile_members",
         params={"profile_id": f"eq.{invitation['profile_id']}", "select": "user_id"},
     )
-    other_user_ids = [row["user_id"] for row in member_rows if row["user_id"] != user["id"]]
+    other_user_ids = [
+        row["user_id"] for row in member_rows if row["user_id"] != user["id"]
+    ]
     if other_user_ids:
         notifications = [
             {
@@ -303,26 +352,39 @@ def accept_invitation(payload: AcceptInviteRequest, authorization: str | None = 
             }
             for member_id in other_user_ids
         ]
-        supabase_rest("POST", "notifications", json_data=notifications, prefer="return=representation")
+        supabase_rest(
+            "POST",
+            "notifications",
+            json_data=notifications,
+            prefer="return=representation",
+        )
 
     return {"profile_id": invitation["profile_id"]}
 
 
 @api_router.post("/push/register")
-def register_push_token(payload: PushRegisterRequest, authorization: str | None = Header(default=None)):
+def register_push_token(
+    payload: PushRegisterRequest, authorization: str | None = Header(default=None)
+):
     user = get_current_user(authorization)
     supabase_rest(
         "POST",
         "device_tokens",
         params={"on_conflict": "push_token"},
-        json_data={"platform": payload.platform, "push_token": payload.push_token, "user_id": user["id"]},
+        json_data={
+            "platform": payload.platform,
+            "push_token": payload.push_token,
+            "user_id": user["id"],
+        },
         prefer="resolution=merge-duplicates,return=representation",
     )
     return {"ok": True}
 
 
 @api_router.post("/push/fanout")
-def push_fanout(payload: PushFanoutRequest, authorization: str | None = Header(default=None)):
+def push_fanout(
+    payload: PushFanoutRequest, authorization: str | None = Header(default=None)
+):
     user = get_current_user(authorization)
     ensure_profile_member(payload.profile_id, user["id"])
 
@@ -331,7 +393,9 @@ def push_fanout(payload: PushFanoutRequest, authorization: str | None = Header(d
         "profile_members",
         params={"profile_id": f"eq.{payload.profile_id}", "select": "user_id"},
     )
-    recipient_ids = [row["user_id"] for row in members if row["user_id"] != payload.exclude_user_id]
+    recipient_ids = [
+        row["user_id"] for row in members if row["user_id"] != payload.exclude_user_id
+    ]
     if not recipient_ids:
         return {"sent": 0}
 
@@ -342,11 +406,23 @@ def push_fanout(payload: PushFanoutRequest, authorization: str | None = Header(d
         params={"user_id": f"in.({joined_ids})", "select": "push_token"},
     )
 
-    expo_tokens = [row["push_token"] for row in tokens if row["push_token"].startswith("ExponentPushToken[")]
+    expo_tokens = [
+        row["push_token"]
+        for row in tokens
+        if row["push_token"].startswith("ExponentPushToken[")
+    ]
     if not expo_tokens:
         return {"sent": 0}
 
-    messages = [{"to": token, "title": "NestLedger", "body": payload.message, "sound": "default"} for token in expo_tokens]
+    messages = [
+        {
+            "to": token,
+            "title": "NestLedger",
+            "body": payload.message,
+            "sound": "default",
+        }
+        for token in expo_tokens
+    ]
     response = requests.post(
         "https://exp.host/--/api/v2/push/send",
         headers={"Content-Type": "application/json"},
@@ -358,6 +434,51 @@ def push_fanout(payload: PushFanoutRequest, authorization: str | None = Header(d
         return {"sent": 0}
 
     return {"sent": len(expo_tokens)}
+
+
+@api_router.post("/spaces/delete")
+def delete_space(
+    payload: DeleteSpaceRequest, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(payload.profile_id, user["id"])
+
+    supabase_rest(
+        "DELETE",
+        "profile_members",
+        params={
+            "profile_id": f"eq.{payload.profile_id}",
+            "user_id": f"eq.{user['id']}",
+        },
+    )
+
+    remaining_members = supabase_rest(
+        "GET",
+        "profile_members",
+        params={"profile_id": f"eq.{payload.profile_id}", "select": "id"},
+    )
+
+    if not remaining_members:
+        supabase_rest(
+            "DELETE", "expenses", params={"profile_id": f"eq.{payload.profile_id}"}
+        )
+        supabase_rest(
+            "DELETE",
+            "buy_list_items",
+            params={"profile_id": f"eq.{payload.profile_id}"},
+        )
+        supabase_rest(
+            "DELETE", "budget_plans", params={"profile_id": f"eq.{payload.profile_id}"}
+        )
+        supabase_rest(
+            "DELETE", "notifications", params={"profile_id": f"eq.{payload.profile_id}"}
+        )
+        supabase_rest(
+            "DELETE", "invitations", params={"profile_id": f"eq.{payload.profile_id}"}
+        )
+        supabase_rest("DELETE", "profiles", params={"id": f"eq.{payload.profile_id}"})
+
+    return {"ok": True}
 
 
 app.include_router(api_router)

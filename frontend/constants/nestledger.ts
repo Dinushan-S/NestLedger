@@ -11,6 +11,7 @@ export const theme = {
   border: '#E5E5E0',
   success: '#8AB096',
   danger: '#D67C7C',
+  dangerSoft: '#F5E0E0',
   warning: '#E1B45C',
 };
 
