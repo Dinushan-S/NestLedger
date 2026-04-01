@@ -63,9 +63,11 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # Update .env file from ENV secret
+            # Update .env file from ENV secret (only if ENV secret is set)
             cd backend
-            echo "${{ secrets.ENV }}" > .env
+            if [ -n "${{ secrets.ENV }}" ]; then
+              echo "${{ secrets.ENV }}" > .env
+            fi
             
             # Install dependencies
             source venv/bin/activate
