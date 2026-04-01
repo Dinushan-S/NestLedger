@@ -37,6 +37,7 @@ export type Expense = {
   created_at: string;
   date: string;
   id: string;
+  paid_by: string | null;
   plan_id: string;
   price: number;
   profile_id: string;

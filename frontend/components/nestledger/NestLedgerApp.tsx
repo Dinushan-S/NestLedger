@@ -95,6 +95,7 @@ type ExpenseForm = {
   category: string;
   customCategory: string;
   date: string;
+  paidBy: string | null;
   price: string;
   title: string;
 };
@@ -129,6 +130,7 @@ const defaultExpenseForm = (): ExpenseForm => ({
   category: expenseCategories[0].key,
   customCategory: '',
   date: new Date().toISOString().slice(0, 10),
+  paidBy: null,
   price: '',
   title: '',
 });
@@ -216,6 +218,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('All');
   const [shoppingFilter, setShoppingFilter] = useState<(typeof shoppingFilters)[number]>('All');
 
+  const [deletingProfileIds, setDeletingProfileIds] = useState<Set<string>>(new Set());
+
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId) ?? null,
@@ -244,6 +248,28 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
       return accumulator;
     }, {});
+  }, [profileExpenses]);
+
+  const personalContributions = useMemo(() => {
+    const contributions: Record<string, { member: { avatar: string; name: string }; total: number }> = {};
+    profileExpenses.forEach((expense) => {
+      if (expense.paid_by) {
+        const member = memberMap.get(expense.paid_by);
+        if (member) {
+          if (!contributions[expense.paid_by]) {
+            contributions[expense.paid_by] = { member, total: 0 };
+          }
+          contributions[expense.paid_by].total += Number(expense.price ?? 0);
+        }
+      }
+    });
+    return contributions;
+  }, [profileExpenses, memberMap]);
+
+  const familyBudgetSpent = useMemo(() => {
+    return profileExpenses
+      .filter((expense) => !expense.paid_by)
+      .reduce((total, expense) => total + Number(expense.price ?? 0), 0);
   }, [profileExpenses]);
 
   const filteredShoppingItems = useMemo(() => {
@@ -646,13 +672,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       return;
     }
 
-    const category = expenseForm.customCategory.trim() || expenseForm.category;
+    if (expenseForm.category === 'Other' && !expenseForm.customCategory.trim()) {
+      announce('Please enter a custom category name.');
+      return;
+    }
+
+    const category = expenseForm.category === 'Other' ? expenseForm.customCategory.trim() : expenseForm.category;
 
     await runAction(async () => {
       await expenseApi.addExpense({
         added_by: session.user.id,
         category,
         date: new Date(expenseForm.date).toISOString(),
+        paid_by: expenseForm.paidBy,
         plan_id: selectedPlan.id,
         price: Number(expenseForm.price),
         profile_id: activeProfile.id,
@@ -787,18 +819,32 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     const performDelete = async () => {
-      await runAction(async () => {
+      const previousProfiles = [...profiles];
+      const nextProfiles = profiles.filter((p) => p.id !== profileId);
+      setProfiles(nextProfiles);
+      setDeletingProfileIds((current) => new Set(current).add(profileId));
+
+      if (activeProfileId === profileId) {
+        setActiveProfileId(nextProfiles[0]?.id ?? null);
+      }
+
+      if (!nextProfiles.length) {
+        setShowProfileSwitcher(false);
+        setShowCreateProfile(true);
+      }
+
+      try {
         await profileApi.deleteHousehold(validateSession(session), profileId);
-        const nextProfiles = await profileApi.fetchAccessibleProfiles(session.user.id);
-        setProfiles(nextProfiles);
-        if (activeProfileId === profileId) {
-          setActiveProfileId(nextProfiles[0]?.id ?? null);
-        }
-        if (!nextProfiles.length) {
-          setShowProfileSwitcher(false);
-          setShowCreateProfile(true);
-        }
-      });
+      } catch (error) {
+        setProfiles(previousProfiles);
+        announce(extractError(error));
+      } finally {
+        setDeletingProfileIds((current) => {
+          const next = new Set(current);
+          next.delete(profileId);
+          return next;
+        });
+      }
     };
 
     if (Platform.OS === 'web') {
@@ -806,7 +852,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       if (!confirmed) {
         return;
       }
-      await performDelete();
+      performDelete();
     } else {
       Alert.alert(
         'Delete Space',
@@ -850,7 +896,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   if (!session) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
         <ScrollView contentContainerStyle={styles.authWrap}>
           <BentoCard tone="highlight" style={styles.authCard}>
             <Text style={styles.kicker}>NestLedger</Text>
@@ -898,16 +944,20 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }
 
   if (!userProfile || profiles.length === 0 || showCreateProfile) {
+    const isFirstSetup = !userProfile || profiles.length === 0;
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
         <ScrollView contentContainerStyle={styles.authWrap}>
           <BentoCard tone="highlight" style={styles.authCard}>
-            <Text style={styles.kicker}>Set up your shared home</Text>
-            <Text style={styles.heroTitle}>Create your first NestLedger profile.</Text>
-            <Text style={styles.bodyMuted}>This creates your member identity and the first family/home space.</Text>
+            <Text style={styles.kicker}>{isFirstSetup ? 'Set up your shared home' : 'Create new space'}</Text>
+            <Text style={styles.heroTitle}>{isFirstSetup ? 'Create your first NestLedger profile.' : 'Add another family space.'}</Text>
+            <Text style={styles.bodyMuted}>{isFirstSetup ? 'This creates your member identity and the first family/home space.' : 'Create a separate budget space for another household or family.'}</Text>
             <ProfileFormFields form={profileForm} onChange={setProfileForm} />
             {setupMessage ? <Text style={styles.errorText}>{setupMessage}</Text> : null}
-            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text="Create NestLedger space" />
+            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text={isFirstSetup ? 'Create NestLedger space' : 'Create space'} />
+            {!isFirstSetup ? (
+              <ModernButton onPress={() => setShowCreateProfile(false)} secondary testID="create-profile-cancel" text="Cancel" />
+            ) : null}
           </BentoCard>
         </ScrollView>
       </SafeAreaView>
@@ -916,7 +966,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   if (!activeProfile || showProfileSwitcher) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
         <ScrollView contentContainerStyle={styles.switcherWrap}>
           <View style={styles.switcherHeader}>
             <Text style={styles.kicker}>Choose profile</Text>
@@ -952,7 +1002,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
       <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.screen}>
         <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}> 
           <View style={styles.topBar}>
@@ -1200,6 +1250,17 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 <View style={styles.spacer12} />
                 <ProgressBar progress={(spentByPlan[selectedPlan.id] ?? 0) / Math.max(selectedPlan.total_amount, 1)} />
               </BentoCard>
+
+              <View style={styles.sectionGap}>
+                <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                <View style={styles.statRow}>
+                  <InfoPill label="Family Budget" value={rs(familyBudgetSpent)} />
+                  {Object.values(personalContributions).map((contrib) => (
+                    <InfoPill key={contrib.member.name} label={`${contrib.member.name}`} value={rs(contrib.total)} />
+                  ))}
+                </View>
+              </View>
+
               <View style={styles.rowBetween}>
                 <View style={styles.segmentRow}>
                   {expenseFilters.map((filter) => (
@@ -1227,7 +1288,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                         <Text style={styles.listSubtitle}>
                           {expense.category} • {formatShortDate(expense.date)}
                         </Text>
-                        <Text style={styles.listSubtitle}>Added by {memberMap.get(expense.added_by)?.name ?? 'Member'}</Text>
+                        <Text style={styles.listSubtitle}>
+                          {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
+                        </Text>
                       </View>
                       <Text style={styles.amountText}>{rs(expense.price)}</Text>
                     </View>
@@ -1248,11 +1311,29 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, price: value }))} testID="expense-price-input" value={expenseForm.price} />
           <Text style={styles.inputLabel}>Category</Text>
           <View style={styles.segmentRow}>
-            {expenseCategories.slice(0, 5).map((category) => (
+            {expenseCategories.map((category) => (
               <CategoryChip key={category.key} active={expenseForm.category === category.key} label={category.key} onPress={() => setExpenseForm((current) => ({ ...current, category: category.key }))} />
             ))}
           </View>
-          <LabeledInput label="Custom category (optional)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
+          {expenseForm.category === 'Other' ? (
+            <LabeledInput label="Custom category" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
+          ) : null}
+          <Text style={styles.inputLabel}>Who paid?</Text>
+          <View style={styles.segmentRow}>
+            <CategoryChip
+              active={expenseForm.paidBy === null}
+              label="Family Budget"
+              onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null }))}
+            />
+            {members.map((member) => (
+              <CategoryChip
+                key={member.user_id}
+                active={expenseForm.paidBy === member.user_id}
+                label={member.user_profile?.name ?? 'Member'}
+                onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id }))}
+              />
+            ))}
+          </View>
           <LabeledInput label="Date (YYYY-MM-DD)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" value={expenseForm.date} />
           <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text="Save expense" />
         </BottomSheet>
@@ -1345,7 +1426,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <AvatarPicker selected={profileForm.familyEmoji} onPick={(value) => setProfileForm((current) => ({ ...current, familyEmoji: value }))} />
           <ModernButton loading={actionBusy} onPress={handleSaveSettings} testID="settings-save-button" text="Save changes" />
           <ModernButton onPress={() => authApi.signOut()} secondary testID="settings-signout-button" text="Sign out" />
-          <ModernButton destructive onPress={() => activeProfile && handleDeleteSpace(activeProfile.id)} secondary testID="settings-delete-button" text="Delete space" />
+          <ModernButton destructive loading={activeProfile ? deletingProfileIds.has(activeProfile.id) : false} onPress={() => activeProfile && handleDeleteSpace(activeProfile.id)} secondary testID="settings-delete-button" text="Delete space" />
         </ModalScaffold>
       </Modal>
 
@@ -1371,8 +1452,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 }
 
 function SplashScreen() {
+  const insets = useSafeAreaInsets();
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
       <CenteredState body="Syncing your shared home space..." title="NestLedger" />
     </SafeAreaView>
   );
@@ -1520,8 +1602,9 @@ function ModalScaffold({
   rightAction?: ReactNode;
   title: string;
 }) {
+  const insets = useSafeAreaInsets();
   return (
-    <SafeAreaView style={styles.modalScreen}>
+    <SafeAreaView style={[styles.modalScreen, { paddingTop: insets.top }]}>
       <View style={styles.modalHeader}>
         <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
           <Ionicons color={theme.text} name="close-outline" size={28} />

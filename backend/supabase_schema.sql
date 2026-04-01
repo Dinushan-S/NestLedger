@@ -54,6 +54,7 @@ create table if not exists public.expenses (
   price numeric(12,2) not null,
   date timestamptz not null default now(),
   added_by uuid not null references auth.users(id) on delete cascade,
+  paid_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -93,6 +94,7 @@ create index if not exists idx_profile_members_user_id on public.profile_members
 create index if not exists idx_budget_plans_profile_id on public.budget_plans(profile_id);
 create index if not exists idx_expenses_profile_id on public.expenses(profile_id);
 create index if not exists idx_expenses_plan_id on public.expenses(plan_id);
+create index if not exists idx_expenses_paid_by on public.expenses(paid_by);
 create index if not exists idx_buy_list_items_profile_id on public.buy_list_items(profile_id);
 create index if not exists idx_notifications_profile_id on public.notifications(profile_id);
 create index if not exists idx_notifications_user_id on public.notifications(user_id);
