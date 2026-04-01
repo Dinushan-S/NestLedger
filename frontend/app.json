@@ -8,13 +8,18 @@
     "scheme": "nestledger",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "cli": {
+      "appVersionSource": "remote"
+    },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.nestledger.app",
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "Get shared home updates fast"
       }
     },
     "android": {
+      "package": "com.nestledger.app",
       "permissions": [
         "POST_NOTIFICATIONS"
       ],
