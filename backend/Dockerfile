@@ -7,4 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
 
-CMD sh -c "uvicorn server:app --host 0.0.0.0 --port $PORT"
+RUN chmod +x start.sh
+
+ENTRYPOINT ["./start.sh"]
