@@ -65,7 +65,7 @@ jobs:
             
             # Update .env file from ENV secret
             cd backend
-            printf '%s\n' '${{ secrets.ENV }}' > .env
+            echo "${{ secrets.ENV }}" > .env
             
             # Install dependencies
             source venv/bin/activate
@@ -83,5 +83,5 @@ jobs:
           
       - name: Deployment Complete
         run: |
-          echo "✅ Deployed successfully!"
+          echo "Deployed successfully!"
           echo "API URL: http://185.216.75.254:8000"
