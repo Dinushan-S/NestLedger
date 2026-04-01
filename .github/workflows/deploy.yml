@@ -26,11 +26,11 @@ jobs:
             if [ ! -d "/opt/NestLedger" ]; then
               echo "=== Initial Setup ==="
               apt update
-              apt install -y python3.11 python3.11-venv python3-pip git
+              apt install -y python3 python3-venv python3-pip python3-full git
               cd /opt
-              git clone https://github.com/Dinushan-S/NestLedger.git
+              git clone https://github.com/${{ github.repository }}.git NestLedger
               cd NestLedger/backend
-              python3.11 -m venv venv
+              python3 -m venv venv
               source venv/bin/activate
               pip install -r requirements.txt
               
@@ -59,7 +59,8 @@ jobs:
             
             # Pull latest code
             cd /opt/NestLedger
-            git pull origin main
+            git fetch origin
+            git reset --hard origin/main
             
             # Update .env file
             cd backend
@@ -76,7 +77,7 @@ jobs:
             
       - name: Health Check
         run: |
-          sleep 10
+          sleep 15
           curl -f http://${{ secrets.CONTABO_HOST }}:8000/api/health || exit 1
           
       - name: Deployment Complete
