@@ -22,8 +22,8 @@ jobs:
           key: ${{ secrets.CONTABO_SSH_KEY }}
           port: 22
           script: |
-            # Check if directory exists, clone if not
-            if [ ! -d "/opt/NestLedger" ]; then
+            # Pull latest code
+            cd /opt/NestLedger 2>/dev/null || {
               echo "=== Initial Setup ==="
               apt update
               apt install -y python3 python3-venv python3-pip python3-full git
@@ -56,24 +56,32 @@ jobs:
               systemctl daemon-reload
               systemctl enable nestledger
               ufw allow 8000/tcp
-            fi
+            }
             
-            # Pull latest code
             cd /opt/NestLedger
             git fetch origin
             git reset --hard origin/main
             
-            # Update .env file from ENV secret (only if ENV secret is set)
             cd backend
-            if [ -n "${{ secrets.ENV }}" ]; then
-              echo "${{ secrets.ENV }}" > .env
-            fi
-            
-            # Install dependencies
             source venv/bin/activate
             pip install -r requirements.txt
             
-            # Restart service
+            # Only update .env if all required secrets exist
+            if [ -n "${{ secrets.SUPABASE_URL }}" ]; then
+              cat > .env << EOFENV
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            APP_PUBLIC_URL=http://185.216.75.254:8000
+            BREVO_FROM_NAME=NestLedger
+            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=587
+            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            EOFENV
+            fi
+            
             systemctl restart nestledger
             sleep 5
             systemctl status nestledger --no-pager
@@ -82,8 +90,3 @@ jobs:
         run: |
           sleep 15
           curl -f http://185.216.75.254:8000/api/health || exit 1
-          
-      - name: Deployment Complete
-        run: |
-          echo "Deployed successfully!"
-          echo "API URL: http://185.216.75.254:8000"
