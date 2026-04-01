@@ -47,8 +47,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "backendUrl": "https://expense-nest-beta.preview.emergentagent.com",
-      "publicAppUrl": "https://expense-nest-beta.preview.emergentagent.com",
+      "backendUrl": "https://nestledger.up.railway.app",
+      "publicAppUrl": "https://nestledger.up.railway.app",
       "supabaseUrl": "https://yrrshpkaqvphkdayzodh.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlycnNocGthcXZwaGtkYXl6b2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4ODM3MDUsImV4cCI6MjA4ODQ1OTcwNX0.2WfUt3FdYBoW288-1PBNBtbecmRs0kJG7cc9I-W07CU"
     }
