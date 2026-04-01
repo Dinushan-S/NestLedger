@@ -6,16 +6,8 @@ on:
       - main
     paths:
       - 'frontend/**'
+      - '.github/workflows/build-android.yml'
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - preview
 
 jobs:
   build:
@@ -38,44 +30,13 @@ jobs:
           
       - name: Install dependencies
         working-directory: ./frontend
-        run: yarn install
+        run: yarn install --frozen-lockfile
         
       - name: Build Android App (.aab)
         working-directory: ./frontend
+        run: eas build --platform android --profile production --non-interactive
+        
+      - name: Build Complete
         run: |
-          eas build --platform android --profile production --non-interactive --no-wait
-          
-      - name: Get Build ID
-        id: build-id
-        working-directory: ./frontend
-        run: |
-          BUILD_ID=$(eas build:list --platform android --limit 1 --json | jq -r '.[0].id')
-          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-          
-      - name: Wait for Build
-        working-directory: ./frontend
-        run: |
-          eas build:view ${{ steps.build-id.outputs.build_id }} --wait
-          
-      - name: Download Build
-        working-directory: ./frontend
-        run: |
-          eas build:download ${{ steps.build-id.outputs.build_id }} --output-path ./build.aab
-          
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: nestledger-android-aab
-          path: frontend/build.aab
-          retention-days: 30
-          
-  notify:
-    needs: build
-    runs-on: ubuntu-latest
-    if: success()
-    
-    steps:
-      - name: Build Success
-        run: |
-          echo "✅ Android .aab build completed successfully!"
-          echo "Download the artifact from the workflow artifacts section."
+          echo "✅ Android .aab build submitted!"
+          echo "Check progress at: https://expo.dev/accounts/${{ secrets.EXPO_ACCOUNT }}/projects/nestledger/builds"

@@ -1,9 +1,12 @@
-name: Deploy to Contabo
+name: Deploy Backend
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 jobs:
@@ -23,41 +26,6 @@ jobs:
           port: 22
           script: |
             # Pull latest code
-            cd /opt/NestLedger 2>/dev/null || {
-              echo "=== Initial Setup ==="
-              apt update
-              apt install -y python3 python3-venv python3-pip python3-full git
-              cd /opt
-              git clone https://github.com/${{ github.repository }}.git NestLedger
-              cd NestLedger/backend
-              python3 -m venv venv
-              source venv/bin/activate
-              pip install -r requirements.txt
-            
-              # Create systemd service
-              cat > /etc/systemd/system/nestledger.service << 'EOFSERVICE'
-            [Unit]
-            Description=NestLedger FastAPI Backend
-            After=network.target
-            
-            [Service]
-            Type=simple
-            User=root
-            WorkingDirectory=/opt/NestLedger/backend
-            Environment="PATH=/opt/NestLedger/backend/venv/bin"
-            ExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
-            Restart=always
-            RestartSec=10
-            
-            [Install]
-            WantedBy=multi-user.target
-            EOFSERVICE
-            
-              systemctl daemon-reload
-              systemctl enable nestledger
-              ufw allow 8000/tcp
-            }
-            
             cd /opt/NestLedger
             git fetch origin
             git reset --hard origin/main
@@ -66,22 +34,7 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
             
-            # Only update .env if all required secrets exist
-            if [ -n "${{ secrets.SUPABASE_URL }}" ]; then
-              cat > .env << EOFENV
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-            APP_PUBLIC_URL=http://185.216.75.254:8000
-            BREVO_FROM_NAME=NestLedger
-            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
-            SMTP_HOST=${{ secrets.SMTP_HOST }}
-            SMTP_PORT=587
-            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
-            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-            EOFENV
-            fi
-            
+            # Restart service
             systemctl restart nestledger
             sleep 5
             systemctl status nestledger --no-pager
@@ -90,3 +43,8 @@ jobs:
         run: |
           sleep 15
           curl -f http://185.216.75.254:8000/api/health || exit 1
+          
+      - name: Deployment Complete
+        run: |
+          echo "✅ Backend deployed successfully!"
+          echo "API URL: http://185.216.75.254:8000"

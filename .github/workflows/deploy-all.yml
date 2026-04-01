@@ -1,0 +1,115 @@
+name: Deploy All
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/deploy.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/build-android.yml'
+
+  deploy-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Deploy to Contabo Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CONTABO_HOST }}
+          username: ${{ secrets.CONTABO_USER }}
+          key: ${{ secrets.CONTABO_SSH_KEY }}
+          port: 22
+          script: |
+            cd /opt/NestLedger
+            git fetch origin
+            git reset --hard origin/main
+            
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt
+            systemctl restart nestledger
+            sleep 5
+            systemctl status nestledger --no-pager
+            
+      - name: Health Check
+        run: |
+          sleep 15
+          curl -f http://185.216.75.254:8000/api/health || exit 1
+          
+      - name: Backend Deployed
+        run: echo "✅ Backend deployed to http://185.216.75.254:8000"
+
+  build-android:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: yarn install --frozen-lockfile
+        
+      - name: Build Android App (.aab)
+        working-directory: ./frontend
+        run: eas build --platform android --profile production --non-interactive
+        
+      - name: Build Complete
+        run: echo "✅ Android .aab build submitted to EAS"
+
+  notify:
+    needs: [changes, deploy-backend, build-android]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.changes.outputs.backend }}" == "true" ]; then
+            echo "| Backend | ${{ needs.deploy-backend.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ needs.changes.outputs.frontend }}" == "true" ]; then
+            echo "| Frontend | ${{ needs.build-android.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
