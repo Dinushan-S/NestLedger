@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Session } from '@supabase/supabase-js';
@@ -1309,32 +1310,37 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <Text style={styles.sectionTitle}>Add Expense</Text>
           <LabeledInput label="Title" onChangeText={(value) => setExpenseForm((current) => ({ ...current, title: value }))} testID="expense-title-input" value={expenseForm.title} />
           <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, price: value }))} testID="expense-price-input" value={expenseForm.price} />
-          <Text style={styles.inputLabel}>Category</Text>
-          <View style={styles.segmentRow}>
-            {expenseCategories.map((category) => (
-              <CategoryChip key={category.key} active={expenseForm.category === category.key} label={category.key} onPress={() => setExpenseForm((current) => ({ ...current, category: category.key }))} />
-            ))}
+          <View style={styles.fieldSection}>
+            <Text style={styles.inputLabel}>Category</Text>
+            <View style={styles.segmentRow}>
+              {expenseCategories.map((category) => (
+                <CategoryChip key={category.key} active={expenseForm.category === category.key} label={category.key} onPress={() => setExpenseForm((current) => ({ ...current, category: category.key }))} />
+              ))}
+            </View>
           </View>
           {expenseForm.category === 'Other' ? (
             <LabeledInput label="Custom category" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
           ) : null}
-          <Text style={styles.inputLabel}>Who paid?</Text>
-          <View style={styles.segmentRow}>
-            <CategoryChip
-              active={expenseForm.paidBy === null}
-              label="Family Budget"
-              onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null }))}
-            />
-            {members.map((member) => (
+          <View style={styles.fieldSection}>
+            <Text style={styles.inputLabel}>Who paid?</Text>
+            <View style={styles.segmentRow}>
               <CategoryChip
-                key={member.user_id}
-                active={expenseForm.paidBy === member.user_id}
-                label={member.user_profile?.name ?? 'Member'}
-                onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id }))}
+                active={expenseForm.paidBy === null}
+                label="Family Budget"
+                onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null }))}
               />
-            ))}
+              {members.map((member) => (
+                <CategoryChip
+                  key={member.user_id}
+                  active={expenseForm.paidBy === member.user_id}
+                  label={member.user_profile?.name ?? 'Member'}
+                  onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id }))}
+                />
+              ))}
+            </View>
           </View>
-          <LabeledInput label="Date (YYYY-MM-DD)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" value={expenseForm.date} />
+          <DatePickerField date={expenseForm.date} label="Date" onDateChange={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" />
+          <View style={styles.spacer16} />
           <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text="Save expense" />
         </BottomSheet>
       </Modal>
@@ -1489,6 +1495,53 @@ function LabeledInput({ label, ...props }: { label: string } & TextInputProps) {
   );
 }
 
+function DatePickerField({
+  date,
+  label,
+  onDateChange,
+  testID,
+}: {
+  date: string;
+  label: string;
+  onDateChange: (value: string) => void;
+  testID?: string;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const dateObj = new Date(date);
+
+  const formattedDate = dateObj.toLocaleDateString('en-LK', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  const handleChange = (event: unknown, selectedDate?: Date) => {
+    setShowPicker(false);
+    if (selectedDate) {
+      const iso = selectedDate.toISOString().slice(0, 10);
+      onDateChange(iso);
+    }
+  };
+
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <Pressable onPress={() => setShowPicker(true)} style={styles.dateButton} testID={testID}>
+        <Text style={styles.dateButtonText}>{formattedDate}</Text>
+        <Ionicons color={theme.textMuted} name="calendar-outline" size={20} />
+      </Pressable>
+      {showPicker ? (
+        <DateTimePicker
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          mode="date"
+          onChange={handleChange}
+          value={dateObj}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 function InfoPill({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoPill}>
@@ -1620,10 +1673,14 @@ function ModalScaffold({
 function BottomSheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
     <Pressable onPress={onClose} style={styles.sheetBackdrop}>
-      <Pressable onPress={(event) => event.stopPropagation()} style={styles.sheetCard}>
+      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.sheetCard}>
         <View style={styles.sheetGrabber} />
-        <ScrollView contentContainerStyle={styles.sheetContent}>{children}</ScrollView>
-      </Pressable>
+        <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+          <Pressable onPress={(event) => event.stopPropagation()}>
+            {children}
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Pressable>
   );
 }
@@ -1820,12 +1877,32 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   inputGroup: {
-    gap: 8,
+    gap: 10,
+  },
+  fieldSection: {
+    gap: 12,
+    marginTop: 8,
   },
   inputLabel: {
     color: theme.text,
     fontSize: 14,
     fontWeight: '700',
+  },
+  dateButton: {
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  dateButtonText: {
+    color: theme.text,
+    fontSize: 16,
   },
   kicker: {
     color: theme.primary,
@@ -1969,12 +2046,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.background,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: '82%',
+    maxHeight: '85%',
     paddingHorizontal: 20,
     paddingTop: 12,
   },
   sheetContent: {
-    gap: 14,
+    gap: 16,
     paddingBottom: 32,
   },
   sheetGrabber: {
@@ -1990,6 +2067,9 @@ const styles = StyleSheet.create({
   },
   spacer12: {
     height: 12,
+  },
+  spacer16: {
+    height: 16,
   },
   statRow: {
     flexDirection: 'row',
