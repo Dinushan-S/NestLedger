@@ -1,0 +1,81 @@
+name: Build Android App
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - preview
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: yarn install
+        
+      - name: Build Android App (.aab)
+        working-directory: ./frontend
+        run: |
+          eas build --platform android --profile production --non-interactive --no-wait
+          
+      - name: Get Build ID
+        id: build-id
+        working-directory: ./frontend
+        run: |
+          BUILD_ID=$(eas build:list --platform android --limit 1 --json | jq -r '.[0].id')
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+          
+      - name: Wait for Build
+        working-directory: ./frontend
+        run: |
+          eas build:view ${{ steps.build-id.outputs.build_id }} --wait
+          
+      - name: Download Build
+        working-directory: ./frontend
+        run: |
+          eas build:download ${{ steps.build-id.outputs.build_id }} --output-path ./build.aab
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nestledger-android-aab
+          path: frontend/build.aab
+          retention-days: 30
+          
+  notify:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+      - name: Build Success
+        run: |
+          echo "✅ Android .aab build completed successfully!"
+          echo "Download the artifact from the workflow artifacts section."

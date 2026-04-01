@@ -49,6 +49,9 @@
     "extra": {
       "backendUrl": "http://185.216.75.254:8000",
       "publicAppUrl": "http://185.216.75.254:8000",
+      "eas": {
+        "projectId": "your-project-id-here"
+      },
       "supabaseUrl": "https://yrrshpkaqvphkdayzodh.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlycnNocGthcXZwaGtkYXl6b2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4ODM3MDUsImV4cCI6MjA4ODQ1OTcwNX0.2WfUt3FdYBoW288-1PBNBtbecmRs0kJG7cc9I-W07CU"
     }
