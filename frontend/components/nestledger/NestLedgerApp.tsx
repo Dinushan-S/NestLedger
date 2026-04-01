@@ -220,6 +220,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [shoppingFilter, setShoppingFilter] = useState<(typeof shoppingFilters)[number]>('All');
 
   const [deletingProfileIds, setDeletingProfileIds] = useState<Set<string>>(new Set());
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const activeProfile = useMemo(
@@ -681,22 +682,46 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     const category = expenseForm.category === 'Other' ? expenseForm.customCategory.trim() : expenseForm.category;
 
     await runAction(async () => {
-      await expenseApi.addExpense({
-        added_by: session.user.id,
-        category,
-        date: new Date(expenseForm.date).toISOString(),
-        paid_by: expenseForm.paidBy,
-        plan_id: selectedPlan.id,
-        price: Number(expenseForm.price),
-        profile_id: activeProfile.id,
-        title: expenseForm.title.trim(),
-      });
+      if (editingExpenseId) {
+        await expenseApi.updateExpense(editingExpenseId, {
+          category,
+          date: new Date(expenseForm.date).toISOString(),
+          paid_by: expenseForm.paidBy,
+          price: Number(expenseForm.price),
+          title: expenseForm.title.trim(),
+        });
+      } else {
+        await expenseApi.addExpense({
+          added_by: session.user.id,
+          category,
+          date: new Date(expenseForm.date).toISOString(),
+          paid_by: expenseForm.paidBy,
+          plan_id: selectedPlan.id,
+          price: Number(expenseForm.price),
+          profile_id: activeProfile.id,
+          title: expenseForm.title.trim(),
+        });
+        await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${expenseForm.title} to ${selectedPlan.name}.`, notificationTypes.expense);
+      }
 
-      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${expenseForm.title} to ${selectedPlan.name}.`, notificationTypes.expense);
       setExpenseForm(defaultExpenseForm());
+      setEditingExpenseId(null);
       setShowExpenseComposer(false);
       await refreshProfileData(activeProfile.id);
     });
+  };
+
+  const startEditExpense = (expense: Expense) => {
+    setEditingExpenseId(expense.id);
+    setExpenseForm({
+      category: expenseCategories.find((c) => c.key === expense.category)?.key ?? 'Other',
+      customCategory: expenseCategories.find((c) => c.key === expense.category) ? '' : expense.category,
+      date: expense.date.slice(0, 10),
+      paidBy: expense.paid_by,
+      price: String(expense.price),
+      title: expense.title,
+    });
+    setShowExpenseComposer(true);
   };
 
   const handleAddShoppingItem = async () => {
@@ -1293,7 +1318,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                           {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
                         </Text>
                       </View>
-                      <Text style={styles.amountText}>{rs(expense.price)}</Text>
+                      <View style={styles.rowEnd}>
+                        <Text style={styles.amountText}>{rs(expense.price)}</Text>
+                        <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
+                          <Ionicons color={theme.primary} name="pencil" size={18} />
+                        </Pressable>
+                      </View>
                     </View>
                   </BentoCard>
                 ))
@@ -1306,8 +1336,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       </Modal>
 
       <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showExpenseComposer}>
-        <BottomSheet onClose={() => setShowExpenseComposer(false)}>
-          <Text style={styles.sectionTitle}>Add Expense</Text>
+        <BottomSheet onClose={() => {
+          setShowExpenseComposer(false);
+          setEditingExpenseId(null);
+          setExpenseForm(defaultExpenseForm());
+        }}>
+          <Text style={styles.sectionTitle}>{editingExpenseId ? 'Edit Expense' : 'Add Expense'}</Text>
           <LabeledInput label="Title" onChangeText={(value) => setExpenseForm((current) => ({ ...current, title: value }))} testID="expense-title-input" value={expenseForm.title} />
           <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, price: value }))} testID="expense-price-input" value={expenseForm.price} />
           <View style={styles.fieldSection}>
@@ -1341,7 +1375,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           </View>
           <DatePickerField date={expenseForm.date} label="Date" onDateChange={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" />
           <View style={styles.spacer16} />
-          <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text="Save expense" />
+          <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text={editingExpenseId ? 'Update expense' : 'Save expense'} />
         </BottomSheet>
       </Modal>
 
@@ -2019,6 +2053,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  rowEnd: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  editButton: {
+    padding: 4,
   },
   screen: {
     backgroundColor: theme.background,

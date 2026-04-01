@@ -276,6 +276,11 @@ export const expenseApi = {
     if (error) throw error;
     return data as Expense;
   },
+  async updateExpense(expenseId: string, updates: Partial<Pick<Expense, 'category' | 'date' | 'paid_by' | 'price' | 'title'>>) {
+    const { data, error } = await supabase.from('expenses').update(updates).eq('id', expenseId).select('*').single();
+    if (error) throw error;
+    return data as Expense;
+  },
   async fetchExpenses(planId: string) {
     const { data, error } = await supabase
       .from('expenses')
