@@ -1,0 +1,33 @@
+name: Deploy to Contabo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to Contabo Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CONTABO_HOST }}
+          username: ${{ secrets.CONTABO_USER }}
+          key: ${{ secrets.CONTABO_SSH_KEY }}
+          port: 22
+          script: |
+            cd /opt/NestLedger
+            git pull origin main
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt
+            sudo systemctl restart nestledger
+            sudo systemctl status nestledger --no-pager
+            
+      - name: Health Check
+        run: |
+          sleep 10
+          curl -f http://${{ secrets.CONTABO_HOST }}:8000/api/health || exit 1
