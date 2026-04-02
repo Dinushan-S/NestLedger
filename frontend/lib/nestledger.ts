@@ -257,6 +257,18 @@ export const budgetApi = {
     if (error) throw error;
     return data as BudgetPlan;
   },
+  async updatePlan(planId: string, updates: Partial<Pick<BudgetPlan, 'end_date' | 'name' | 'start_date' | 'total_amount'>>) {
+    const { data, error } = await supabase.from('budget_plans').update(updates).eq('id', planId).select('*').single();
+    if (error) throw error;
+    return data as BudgetPlan;
+  },
+  async deletePlan(planId: string) {
+    const { data, error } = await supabase.from('budget_plans').delete().eq('id', planId).select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error('Unable to delete budget plan. You may not have permission.');
+    }
+  },
   async fetchPlans(profileId: string) {
     const { data, error } = await supabase
       .from('budget_plans')
@@ -280,6 +292,34 @@ export const expenseApi = {
     const { data, error } = await supabase.from('expenses').update(updates).eq('id', expenseId).select('*').single();
     if (error) throw error;
     return data as Expense;
+  },
+  async deleteExpense(expenseId: string) {
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('You must be logged in to delete expenses.');
+    }
+    
+    console.log('Deleting expense with user:', session.user.id);
+    
+    const { data, error, status } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', expenseId)
+      .select('id, profile_id');
+    
+    if (error) {
+      console.error('Delete expense error:', JSON.stringify({ code: error.code, details: error.details, hint: error.hint, message: error.message, status }));
+      throw new Error(error.message || 'Failed to delete expense');
+    }
+    
+    // RLS can block delete without returning error - check if row was actually deleted
+    if (!data || data.length === 0) {
+      console.error('Delete blocked - no rows affected. User may not be a member of profile.');
+      throw new Error('Unable to delete expense. You may not have permission to delete this expense.');
+    }
+    
+    console.log('Delete expense success:', { status, deleted: data });
   },
   async fetchExpenses(planId: string) {
     const { data, error } = await supabase
@@ -329,6 +369,16 @@ export const shoppingApi = {
     const { data, error } = await supabase.from('buy_list_items').update(payload).eq('id', itemId).select('*').single();
     if (error) throw error;
     return data as ShoppingItem;
+  },
+  async markUnbought(itemId: string) {
+    const payload = { bought_at: null, bought_by: null, is_bought: false };
+    const { data, error } = await supabase.from('buy_list_items').update(payload).eq('id', itemId).select('*').single();
+    if (error) throw error;
+    return data as ShoppingItem;
+  },
+  async deleteItem(itemId: string) {
+    const { error } = await supabase.from('buy_list_items').delete().eq('id', itemId);
+    if (error) throw error;
   },
 };
 

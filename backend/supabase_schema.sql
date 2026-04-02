@@ -121,7 +121,7 @@ as $$
     select 1
     from public.profile_members
     where profile_id = target_profile and user_id = auth.uid()
-  );
+  ) and auth.uid() is not null;
 $$;
 
 create or replace function public.is_profile_owner(target_profile uuid)
@@ -218,7 +218,10 @@ for delete using (created_by = auth.uid());
 
 drop policy if exists "expenses member delete" on public.expenses;
 create policy "expenses member delete" on public.expenses
-for delete using (public.is_profile_member(profile_id));
+for delete using (
+  added_by = auth.uid() 
+  or public.is_profile_member(profile_id)
+);
 
 drop policy if exists "notifications own delete" on public.notifications;
 create policy "notifications own delete" on public.notifications
@@ -250,6 +253,13 @@ drop policy if exists "expenses member insert" on public.expenses;
 create policy "expenses member insert" on public.expenses
 for insert with check (
   added_by = auth.uid() and public.is_profile_member(profile_id)
+);
+
+drop policy if exists "expenses member update" on public.expenses;
+create policy "expenses member update" on public.expenses
+for update using (
+  added_by = auth.uid() 
+  or public.is_profile_member(profile_id)
 );
 
 drop policy if exists "buy list member select" on public.buy_list_items;

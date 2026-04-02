@@ -10,6 +10,7 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -24,6 +25,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -209,6 +211,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
 
+  const [confirmModal, setConfirmModal] = useState<{
+    body: string;
+    confirmText?: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+    title: string;
+    visible: boolean;
+  } | null>(null);
+
   const [profileForm, setProfileForm] = useState<CreateProfileForm>(defaultCreateProfileForm);
   const [budgetForm, setBudgetForm] = useState<BudgetForm>(defaultBudgetForm());
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(defaultExpenseForm());
@@ -221,6 +232,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   const [deletingProfileIds, setDeletingProfileIds] = useState<Set<string>>(new Set());
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [budgetEditMode, setBudgetEditMode] = useState(false);
 
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const activeProfile = useMemo(
@@ -550,6 +563,20 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     Alert.alert('NestLedger', message);
   };
 
+  const showConfirm = (options: {
+    body: string;
+    confirmText?: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+    title: string;
+  }) => {
+    setConfirmModal({ ...options, visible: true });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal(null);
+  };
+
   const runAction = async (callback: () => Promise<void>) => {
     setActionBusy(true);
     try {
@@ -630,18 +657,61 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     await runAction(async () => {
-      await budgetApi.createPlan({
-        created_by: session.user.id,
-        end_date: budgetForm.endDate,
-        name: budgetForm.name,
-        profile_id: activeProfile.id,
-        start_date: budgetForm.startDate,
-        total_amount: Number(budgetForm.totalAmount),
-      });
+      if (editingPlanId) {
+        await budgetApi.updatePlan(editingPlanId, {
+          end_date: budgetForm.endDate,
+          name: budgetForm.name,
+          start_date: budgetForm.startDate,
+          total_amount: Number(budgetForm.totalAmount),
+        });
+        setEditingPlanId(null);
+      } else {
+        await budgetApi.createPlan({
+          created_by: session.user.id,
+          end_date: budgetForm.endDate,
+          name: budgetForm.name,
+          profile_id: activeProfile.id,
+          start_date: budgetForm.startDate,
+          total_amount: Number(budgetForm.totalAmount),
+        });
+      }
 
       setBudgetForm(defaultBudgetForm());
       setShowBudgetComposer(false);
       await refreshProfileData(activeProfile.id);
+    });
+  };
+
+  const handleEditBudget = (plan: BudgetPlan) => {
+    setEditingPlanId(plan.id);
+    setBudgetForm({
+      endDate: plan.end_date,
+      name: plan.name,
+      startDate: plan.start_date,
+      totalAmount: String(plan.total_amount),
+    });
+    setBudgetEditMode(false);
+    setShowBudgetComposer(true);
+  };
+
+  const handleDeleteBudget = async (planId: string, planName: string) => {
+    if (!activeProfile) {
+      return;
+    }
+
+    showConfirm({
+      body: `Are you sure you want to delete "${planName}"? This will also delete all expenses associated with it.`,
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: () => {
+        runAction(async () => {
+          await budgetApi.deletePlan(planId);
+          setSelectedPlanId(null);
+          setPlans((prev) => prev.filter((p) => p.id !== planId));
+          await refreshProfileData(activeProfile.id);
+        });
+      },
+      title: 'Delete Budget Plan',
     });
   };
 
@@ -698,7 +768,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           paid_by: expenseForm.paidBy,
           plan_id: selectedPlan.id,
           price: Number(expenseForm.price),
-          profile_id: activeProfile.id,
+          profile_id: selectedPlan.profile_id,
           title: expenseForm.title.trim(),
         });
         await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${expenseForm.title} to ${selectedPlan.name}.`, notificationTypes.expense);
@@ -722,6 +792,26 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       title: expense.title,
     });
     setShowExpenseComposer(true);
+  };
+
+  const handleDeleteExpense = async (expenseId: string, expenseTitle: string) => {
+    if (!activeProfile) {
+      announce('No active profile selected.');
+      return;
+    }
+
+    showConfirm({
+      body: `Are you sure you want to delete "${expenseTitle}"?`,
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: () => {
+        runAction(async () => {
+          await expenseApi.deleteExpense(expenseId);
+          await refreshProfileData(activeProfile.id);
+        });
+      },
+      title: 'Delete Expense',
+    });
   };
 
   const handleAddShoppingItem = async () => {
@@ -759,12 +849,36 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     await runAction(async () => {
-      await shoppingApi.markBought(item.id, session.user.id);
-      await notifyOtherMembers(
-        `${userProfile?.name ?? 'A member'} marked ${item.name} as bought ✓`,
-        notificationTypes.shoppingBought,
-      );
+      if (item.is_bought) {
+        await shoppingApi.markUnbought(item.id);
+      } else {
+        await shoppingApi.markBought(item.id, session.user.id);
+        await notifyOtherMembers(
+          `${userProfile?.name ?? 'A member'} marked ${item.name} as bought ✓`,
+          notificationTypes.shoppingBought,
+        );
+      }
       await refreshProfileData(activeProfile.id);
+    });
+  };
+
+  const handleDeleteShoppingItem = async (itemId: string, itemName: string) => {
+    if (!activeProfile) {
+      announce('No active profile selected.');
+      return;
+    }
+
+    showConfirm({
+      body: `Are you sure you want to delete "${itemName}"?`,
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: () => {
+        runAction(async () => {
+          await shoppingApi.deleteItem(itemId);
+          await refreshProfileData(activeProfile.id);
+        });
+      },
+      title: 'Delete Item',
     });
   };
 
@@ -880,18 +994,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       }
       performDelete();
     } else {
-      Alert.alert(
-        'Delete Space',
-        'Are you sure you want to delete this space? All data will be permanently removed.',
-        [
-          { style: 'cancel', text: 'Cancel' },
-          {
-            onPress: performDelete,
-            style: 'destructive',
-            text: 'Delete',
-          },
-        ],
-      );
+      showConfirm({
+        body: 'Are you sure you want to delete this space? All data will be permanently removed.',
+        confirmText: 'Delete',
+        destructive: true,
+        onConfirm: performDelete,
+        title: 'Delete Space',
+      });
     }
   };
 
@@ -1028,9 +1137,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }
 
   return (
-    <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.screen}>
-        <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}> 
+    <GestureHandlerRootView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
+        <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.screen}>
+          <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}> 
           <View style={styles.topBar}>
             <Pressable hitSlop={10} onPress={() => setShowProfileSwitcher(true)} style={styles.profileSwitcherButton} testID="open-profile-switcher">
               <Text style={styles.switcherEmoji}>{activeProfile.emoji_avatar ?? '🏡'}</Text>
@@ -1136,32 +1246,53 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       <Text style={styles.sectionTitle}>Budget plans</Text>
                       <Text style={styles.bodyMuted}>Track spend, remaining balance, and shared expenses.</Text>
                     </View>
-                    <ModernButton onPress={() => setShowBudgetComposer(true)} secondary testID="budget-new-plan" text="New plan" />
+                    <View style={styles.iconRow}>
+                      <Pressable hitSlop={8} onPress={() => setBudgetEditMode(!budgetEditMode)} testID="budget-edit-mode-toggle">
+                        <Ionicons color={budgetEditMode ? theme.primary : theme.textMuted} name={budgetEditMode ? 'checkmark-circle' : 'settings-outline'} size={24} />
+                      </Pressable>
+                      <ModernButton onPress={() => { setEditingPlanId(null); setBudgetForm(defaultBudgetForm()); setShowBudgetComposer(true); }} secondary testID="budget-new-plan" text="New plan" />
+                    </View>
                   </View>
 
                   {plans.map((plan) => {
                     const spent = spentByPlan[plan.id] ?? 0;
                     const remaining = Math.max(plan.total_amount - spent, 0);
                     return (
-                      <Pressable key={plan.id} onPress={() => setSelectedPlanId(plan.id)} testID={`budget-plan-${plan.id}`}>
-                        <BentoCard style={styles.planCard}>
-                          <View style={styles.rowBetween}>
-                            <View>
-                              <Text style={styles.cardTitle}>{plan.name}</Text>
-                              <Text style={styles.bodyMuted}>
-                                {formatShortDate(plan.start_date)} → {formatShortDate(plan.end_date)}
-                              </Text>
-                            </View>
-                            <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                      <BentoCard key={plan.id} style={styles.planCard}>
+                        <View style={styles.rowBetween}>
+                          <Pressable 
+                            onPress={() => setSelectedPlanId(plan.id)} 
+                            style={{ flex: 1 }} 
+                            testID={`budget-plan-${plan.id}`}
+                          >
+                            <Text style={styles.cardTitle}>{plan.name}</Text>
+                            <Text style={styles.bodyMuted}>
+                              {formatShortDate(plan.start_date)} → {formatShortDate(plan.end_date)}
+                            </Text>
+                          </Pressable>
+                          <View style={styles.iconRow}>
+                            {budgetEditMode && (
+                              <>
+                                <Pressable hitSlop={8} onPress={() => handleEditBudget(plan)} testID={`budget-edit-${plan.id}`}>
+                                  <Ionicons color={theme.primary} name="create-outline" size={22} />
+                                </Pressable>
+                                <Pressable hitSlop={8} onPress={() => handleDeleteBudget(plan.id, plan.name)} testID={`budget-delete-${plan.id}`}>
+                                  <Ionicons color={theme.danger} name="trash-outline" size={22} />
+                                </Pressable>
+                              </>
+                            )}
+                            <Pressable hitSlop={8} onPress={() => setSelectedPlanId(plan.id)}>
+                              <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                            </Pressable>
                           </View>
-                          <View style={styles.statRow}>
-                            <InfoPill label="Budget" value={rs(plan.total_amount)} />
-                            <InfoPill label="Spent" value={rs(spent)} />
-                            <InfoPill label="Left" value={rs(remaining)} />
-                          </View>
-                          <ProgressBar progress={spent / Math.max(plan.total_amount, 1)} />
-                        </BentoCard>
-                      </Pressable>
+                        </View>
+                        <View style={styles.statRow}>
+                          <InfoPill label="Budget" value={rs(plan.total_amount)} />
+                          <InfoPill label="Spent" value={rs(spent)} />
+                          <InfoPill label="Left" value={rs(remaining)} />
+                        </View>
+                        <ProgressBar progress={spent / Math.max(plan.total_amount, 1)} />
+                      </BentoCard>
                     );
                   })}
 
@@ -1191,32 +1322,46 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     <Text style={styles.linkText}>Clear all bought items</Text>
                   </Pressable>
 
-                  {filteredShoppingItems.length ? (
+{filteredShoppingItems.length ? (
                     filteredShoppingItems.map((item) => {
                       const actor = memberMap.get(item.bought_by ?? item.added_by);
+                      const renderRightActions = () => (
+                        <View style={styles.deleteAction}>
+                          <Pressable
+                            hitSlop={10}
+                            onPress={() => handleDeleteShoppingItem(item.id, item.name)}
+                            style={styles.deleteButton}
+                            testID={`shopping-delete-${item.id}`}
+                          >
+                            <Ionicons color="#fff" name="trash-outline" size={24} />
+                          </Pressable>
+                        </View>
+                      );
                       return (
-                        <BentoCard key={item.id} style={styles.shoppingCard}>
-                          <View style={styles.rowBetween}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.listTitle, item.is_bought && styles.strikethrough]}>{item.name}</Text>
-                              <Text style={styles.listSubtitle}>
-                                {item.quantity ? `${item.quantity} • ` : ''}
-                                {item.category || 'General'}
-                              </Text>
-                              <Text style={styles.listSubtitle}>
-                                Added by {memberMap.get(item.added_by)?.name ?? 'Member'}
-                                {item.is_bought ? ` • Bought by ${actor?.name ?? 'Member'} on ${formatShortDate(item.bought_at)}` : ''}
-                              </Text>
+                        <Swipeable key={item.id} renderRightActions={renderRightActions} overshootRight={false}>
+                          <BentoCard style={styles.shoppingCard}>
+                            <View style={styles.rowBetween}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.listTitle, item.is_bought && styles.strikethrough]}>{item.name}</Text>
+                                <Text style={styles.listSubtitle}>
+                                  {item.quantity ? `${item.quantity} • ` : ''}
+                                  {item.category || 'General'}
+                                </Text>
+                                <Text style={styles.listSubtitle}>
+                                  Added by {memberMap.get(item.added_by)?.name ?? 'Member'}
+                                  {item.is_bought ? ` • Bought by ${actor?.name ?? 'Member'} on ${formatShortDate(item.bought_at)}` : ''}
+                                </Text>
+                              </View>
+                              <Pressable hitSlop={12} onPress={() => handleMarkBought(item)} testID={`shopping-mark-bought-${item.id}`}>
+                                <Ionicons
+                                  color={item.is_bought ? theme.success : theme.primary}
+                                  name={item.is_bought ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                  size={28}
+                                />
+                              </Pressable>
                             </View>
-                            <Pressable hitSlop={12} onPress={() => (!item.is_bought ? handleMarkBought(item) : undefined)} testID={`shopping-mark-bought-${item.id}`}>
-                              <Ionicons
-                                color={item.is_bought ? theme.success : theme.primary}
-                                name={item.is_bought ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                                size={28}
-                              />
-                            </Pressable>
-                          </View>
-                        </BentoCard>
+                          </BentoCard>
+                        </Swipeable>
                       );
                     })
                   ) : (
@@ -1256,13 +1401,34 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         </View>
       </KeyboardAvoidingView>
 
+      <ConfirmModal
+        body={confirmModal?.body ?? ''}
+        confirmText={confirmModal?.confirmText ?? 'Confirm'}
+        destructive={confirmModal?.destructive ?? false}
+        onConfirm={() => {
+          confirmModal?.onConfirm();
+          closeConfirm();
+        }}
+        onClose={closeConfirm}
+        title={confirmModal?.title ?? ''}
+        visible={confirmModal?.visible ?? false}
+      />
+
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showBudgetComposer}>
-        <ModalScaffold closeTestID="close-budget-modal" onClose={() => setShowBudgetComposer(false)} title="Create Budget Plan">
+        <ModalScaffold
+          closeTestID="close-budget-modal"
+          onClose={() => {
+            setShowBudgetComposer(false);
+            setEditingPlanId(null);
+            setBudgetForm(defaultBudgetForm());
+          }}
+          title={editingPlanId ? 'Edit Budget Plan' : 'Create Budget Plan'}
+        >
           <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="budget-plan-name-input" value={budgetForm.name} />
           <LabeledInput keyboardType="numeric" label="Total budget (Rs.)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="budget-plan-total-input" value={budgetForm.totalAmount} />
           <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="budget-plan-start-input" value={budgetForm.startDate} />
           <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="budget-plan-end-input" value={budgetForm.endDate} />
-          <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text="Save plan" />
+          <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text={editingPlanId ? 'Update plan' : 'Save plan'} />
         </ModalScaffold>
       </Modal>
 
@@ -1322,6 +1488,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                         <Text style={styles.amountText}>{rs(expense.price)}</Text>
                         <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
                           <Ionicons color={theme.primary} name="pencil" size={18} />
+                        </Pressable>
+                        <Pressable hitSlop={10} onPress={() => handleDeleteExpense(expense.id, expense.title)} style={styles.editButton}>
+                          <Ionicons color={theme.danger} name="trash" size={18} />
                         </Pressable>
                       </View>
                     </View>
@@ -1488,6 +1657,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         </ModalScaffold>
       </Modal>
     </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1673,6 +1843,48 @@ function AvatarPicker({ onPick, selected, testIDPrefix }: { onPick: (value: stri
         </Pressable>
       ))}
     </View>
+  );
+}
+
+function ConfirmModal({
+  body,
+  confirmText,
+  destructive,
+  onConfirm,
+  onClose,
+  title,
+  visible,
+}: {
+  body: string;
+  confirmText: string;
+  destructive: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+  title: string;
+  visible: boolean;
+}) {
+  if (!visible) return null;
+
+  return (
+    <Modal animationType="fade" transparent visible={visible}>
+      <Pressable onPress={onClose} style={styles.confirmBackdrop}>
+        <Pressable onPress={(e) => e.stopPropagation()} style={styles.confirmCard}>
+          <View style={styles.confirmIconWrap}>
+            <Ionicons color={destructive ? theme.danger : theme.warning} name={destructive ? 'trash-outline' : 'warning-outline'} size={32} />
+          </View>
+          <Text style={styles.confirmTitle}>{title}</Text>
+          <Text style={styles.confirmBody}>{body}</Text>
+          <View style={styles.confirmButtons}>
+            <Pressable hitSlop={10} onPress={onClose} style={styles.confirmCancelButton}>
+              <Text style={styles.confirmCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable hitSlop={10} onPress={onConfirm} style={[styles.confirmButton, destructive && styles.confirmDestructive]}>
+              <Text style={[styles.confirmButtonText, destructive && styles.confirmDestructiveText]}>{confirmText}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -2019,6 +2231,78 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmCard: {
+    backgroundColor: theme.surface,
+    borderRadius: 24,
+    padding: 24,
+    width: '85%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
+  confirmIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: theme.dangerSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    color: theme.text,
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  confirmBody: {
+    color: theme.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: theme.surfaceMuted,
+    alignItems: 'center',
+  },
+  confirmCancelText: {
+    color: theme.textMuted,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: theme.primary,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  confirmDestructive: {
+    backgroundColor: theme.danger,
+  },
+  confirmDestructiveText: {
+    color: '#fff',
+  },
   planCard: {
     gap: 14,
   },
@@ -2053,6 +2337,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  rowGap: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  iconRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
   },
   rowEnd: {
     alignItems: 'center',
@@ -2106,6 +2400,20 @@ const styles = StyleSheet.create({
   },
   shoppingCard: {
     gap: 12,
+  },
+  deleteAction: {
+    backgroundColor: theme.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    borderRadius: 16,
+    marginVertical: 4,
+  },
+  deleteButton: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
   spacer12: {
     height: 12,

@@ -23,10 +23,8 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - '.github/workflows/deploy.yml'
             frontend:
               - 'frontend/**'
-              - '.github/workflows/build-android.yml'
 
   deploy-backend:
     needs: changes
@@ -50,8 +48,24 @@ jobs:
             git reset --hard origin/main
             
             cd backend
+            
+            # Write .env file from GitHub secrets
+            cat > .env << 'ENVEOF'
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            APP_PUBLIC_URL=${{ secrets.APP_PUBLIC_URL }}
+            BREVO_FROM_NAME=NestLedger
+            BREVO_FROM_EMAIL=${{ vars.BREVO_FROM_EMAIL }}
+            SMTP_HOST=${{ vars.SMTP_HOST }}
+            SMTP_PORT=587
+            SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            ENVEOF
+            
             source venv/bin/activate
             pip install -r requirements.txt
+            
             systemctl restart nestledger
             sleep 5
             systemctl status nestledger --no-pager
@@ -59,10 +73,10 @@ jobs:
       - name: Health Check
         run: |
           sleep 15
-          curl -f http://185.216.75.254:8000/api/health || exit 1
+          curl -f https://nestledger.dinushan.dev/api/health || exit 1
           
       - name: Backend Deployed
-        run: echo "✅ Backend deployed to http://185.216.75.254:8000"
+        run: echo "Backend deployed to https://nestledger.dinushan.dev"
 
   build-android:
     needs: changes
