@@ -44,6 +44,7 @@ import {
   AppNotification,
   BudgetPlan,
   Expense,
+  ExpenseWithItems,
   HouseholdProfile,
   Member,
   ShoppingItem,
@@ -94,13 +95,18 @@ type BudgetForm = {
   totalAmount: string;
 };
 
+type ExpenseFormItem = {
+  name: string;
+  price: string;
+};
+
 type ExpenseForm = {
   category: string;
   customCategory: string;
   date: string;
+  description: string;
+  items: ExpenseFormItem[];
   paidBy: string | null;
-  price: string;
-  title: string;
 };
 
 type ShoppingForm = {
@@ -133,9 +139,9 @@ const defaultExpenseForm = (): ExpenseForm => ({
   category: expenseCategories[0].key,
   customCategory: '',
   date: new Date().toISOString().slice(0, 10),
+  description: '',
+  items: [{ name: '', price: '' }],
   paidBy: null,
-  price: '',
-  title: '',
 });
 
 const defaultShoppingForm: ShoppingForm = {
@@ -147,8 +153,23 @@ const defaultShoppingForm: ShoppingForm = {
 const defaultBudgetView = expenseFilters[1];
 
 const extractError = (error: unknown) => {
+  console.log('extractError called with:', error);
+  
   if (error instanceof Error) {
     return error.message;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const errorObj = error as any;
+    if (errorObj.message) {
+      return errorObj.message;
+    }
+    if (errorObj.error?.message) {
+      return errorObj.error.message;
+    }
+    if (errorObj.details) {
+      return errorObj.details;
+    }
   }
 
   return 'Something went wrong.';
@@ -195,7 +216,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<BudgetPlan[]>([]);
-  const [profileExpenses, setProfileExpenses] = useState<Expense[]>([]);
+  const [profileExpenses, setProfileExpenses] = useState<ExpenseWithItems[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
@@ -210,6 +231,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState('20:00'); // Default 8 PM
 
   const [confirmModal, setConfirmModal] = useState<{
     body: string;
@@ -375,6 +399,68 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     };
   }, []);
 
+  // Load reminder settings
+  useEffect(() => {
+    const loadReminderSettings = async () => {
+      try {
+        const savedEnabled = await AsyncStorage.getItem('nestledger-reminder-enabled');
+        const savedTime = await AsyncStorage.getItem('nestledger-reminder-time');
+        if (savedEnabled !== null) {
+          setReminderEnabled(savedEnabled === 'true');
+        }
+        if (savedTime !== null) {
+          setReminderTime(savedTime);
+        }
+      } catch (error) {
+        console.error('Error loading reminder settings:', error);
+      }
+    };
+    loadReminderSettings();
+  }, []);
+
+  const scheduleReminder = async (time: string) => {
+    if (!Device.isDevice) return;
+
+    const [hours, minutes] = time.split(':').map(Number);
+
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    if (reminderEnabled) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'NestLedger Reminder',
+          body: "Don't forget to add your expenses for today!",
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: hours,
+          minute: minutes,
+        },
+      });
+      console.log(`Reminder scheduled for ${time}`);
+    }
+  };
+
+  const toggleReminder = async (enabled: boolean) => {
+    setReminderEnabled(enabled);
+    await AsyncStorage.setItem('nestledger-reminder-enabled', String(enabled));
+    
+    if (enabled) {
+      await scheduleReminder(reminderTime);
+    } else {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    }
+  };
+
+  const updateReminderTime = async (time: string) => {
+    setReminderTime(time);
+    await AsyncStorage.setItem('nestledger-reminder-time', time);
+    
+    if (reminderEnabled) {
+      await scheduleReminder(time);
+    }
+  };
+
   useEffect(() => {
     if (!session?.user) {
       return;
@@ -439,27 +525,48 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'budget_plans' },
-        () => refreshProfileData(activeProfileId),
+        (payload) => {
+          console.log('Budget plan change detected:', payload);
+          refreshProfileData(activeProfileId);
+        },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'expenses' },
-        () => refreshProfileData(activeProfileId),
+        (payload) => {
+          console.log('Expense change detected:', payload);
+          refreshProfileData(activeProfileId);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'expense_items' },
+        (payload) => {
+          console.log('Expense item change detected:', payload);
+          refreshProfileData(activeProfileId);
+        },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'buy_list_items' },
-        () => refreshProfileData(activeProfileId),
+        (payload) => {
+          console.log('Shopping item change detected:', payload);
+          refreshProfileData(activeProfileId);
+        },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'profile_members' },
-        () => refreshProfileData(activeProfileId),
+        (payload) => {
+          console.log('Profile member change detected:', payload);
+          refreshProfileData(activeProfileId);
+        },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `user_id=eq.${session.user.id}`, schema: 'public', table: 'notifications' },
         async (payload) => {
+          console.log('Notification change detected:', payload);
           const nextPayload = payload as { eventType: string; new?: { id?: string; message?: string } };
           const nextId = nextPayload.new?.id;
           const nextMessage = nextPayload.new?.message;
@@ -482,7 +589,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           refreshProfileData(activeProfileId);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -582,6 +691,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     try {
       await callback();
     } catch (error) {
+      console.error('runAction error:', error);
+      console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       announce(extractError(error));
     } finally {
       setActionBusy(false);
@@ -735,12 +846,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   };
 
   const handleAddExpense = async () => {
+    console.log('handleAddExpense called');
+    console.log('session:', session?.user?.id);
+    console.log('activeProfile:', activeProfile?.id);
+    console.log('selectedPlan:', selectedPlan?.id);
+    
     if (!session?.user || !activeProfile || !selectedPlan) {
+      console.error('Missing required data for expense');
       return;
     }
 
-    if (!expenseForm.title.trim() || !expenseForm.price.trim()) {
-      announce('Add an expense title and price.');
+    const validItems = expenseForm.items.filter(item => item.name.trim() && item.price.trim());
+    console.log('Valid items:', validItems);
+    
+    if (validItems.length === 0) {
+      announce('Add at least one item with name and price.');
       return;
     }
 
@@ -750,46 +870,96 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     const category = expenseForm.category === 'Other' ? expenseForm.customCategory.trim() : expenseForm.category;
+    const items = validItems.map(item => ({
+      name: item.name.trim(),
+      price: Number(item.price),
+    }));
+    
+    console.log('Processed items:', items);
 
     await runAction(async () => {
-      if (editingExpenseId) {
-        await expenseApi.updateExpense(editingExpenseId, {
-          category,
-          date: new Date(expenseForm.date).toISOString(),
-          paid_by: expenseForm.paidBy,
-          price: Number(expenseForm.price),
-          title: expenseForm.title.trim(),
-        });
-      } else {
-        await expenseApi.addExpense({
-          added_by: session.user.id,
-          category,
-          date: new Date(expenseForm.date).toISOString(),
-          paid_by: expenseForm.paidBy,
-          plan_id: selectedPlan.id,
-          price: Number(expenseForm.price),
-          profile_id: selectedPlan.profile_id,
-          title: expenseForm.title.trim(),
-        });
-        await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${expenseForm.title} to ${selectedPlan.name}.`, notificationTypes.expense);
+      try {
+        if (editingExpenseId) {
+          console.log('Updating expense:', editingExpenseId);
+          await expenseApi.updateExpense(
+            editingExpenseId,
+            {
+              category,
+              date: new Date(expenseForm.date).toISOString(),
+              description: expenseForm.description.trim() || null,
+              paid_by: expenseForm.paidBy,
+            },
+            items
+          );
+        } else {
+          console.log('Adding new expense');
+          await expenseApi.addExpense({
+            added_by: session.user.id,
+            category,
+            date: new Date(expenseForm.date).toISOString(),
+            description: expenseForm.description.trim() || null,
+            items,
+            paid_by: expenseForm.paidBy,
+            plan_id: selectedPlan.id,
+            profile_id: selectedPlan.profile_id,
+          });
+          const itemNames = items.map(i => i.name).join(', ');
+          await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
+        }
+        console.log('Expense saved successfully');
+        
+        setExpenseForm(defaultExpenseForm());
+        setEditingExpenseId(null);
+        setShowExpenseComposer(false);
+        await refreshProfileData(activeProfile.id);
+      } catch (error) {
+        console.error('Error in handleAddExpense:', error);
+        throw error;
       }
-
-      setExpenseForm(defaultExpenseForm());
-      setEditingExpenseId(null);
-      setShowExpenseComposer(false);
-      await refreshProfileData(activeProfile.id);
     });
   };
 
-  const startEditExpense = (expense: Expense) => {
+  const addExpenseItem = () => {
+    setExpenseForm(current => ({
+      ...current,
+      items: [...current.items, { name: '', price: '' }],
+    }));
+  };
+
+  const removeExpenseItem = (index: number) => {
+    if (expenseForm.items.length > 1) {
+      setExpenseForm(current => ({
+        ...current,
+        items: current.items.filter((_, i) => i !== index),
+      }));
+    }
+  };
+
+  const updateExpenseItem = (index: number, field: 'name' | 'price', value: string) => {
+    setExpenseForm(current => ({
+      ...current,
+      items: current.items.map((item, i) => 
+        i === index ? { ...item, [field]: value } : item
+      ),
+    }));
+  };
+
+  const expenseTotal = expenseForm.items.reduce((sum, item) => {
+    const price = parseFloat(item.price);
+    return sum + (isNaN(price) ? 0 : price);
+  }, 0);
+
+  const startEditExpense = (expense: ExpenseWithItems) => {
     setEditingExpenseId(expense.id);
     setExpenseForm({
       category: expenseCategories.find((c) => c.key === expense.category)?.key ?? 'Other',
       customCategory: expenseCategories.find((c) => c.key === expense.category) ? '' : expense.category,
       date: expense.date.slice(0, 10),
+      description: expense.description || '',
+      items: expense.items?.length > 0 
+        ? expense.items.map(item => ({ name: item.name, price: String(item.price) }))
+        : [{ name: '', price: '' }],
       paidBy: expense.paid_by,
-      price: String(expense.price),
-      title: expense.title,
     });
     setShowExpenseComposer(true);
   };
@@ -1387,6 +1557,42 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     <QuickActionCard icon="settings-outline" label="Settings" onPress={primeSettingsForm} testID="profile-open-settings" />
                     <QuickActionCard icon="swap-horizontal-outline" label="Switch" onPress={() => setShowProfileSwitcher(true)} testID="profile-open-switcher" />
                   </View>
+
+                  <BentoCard>
+                    <View style={styles.reminderSection}>
+                      <Text style={styles.inputLabel}>Daily Reminder</Text>
+                      <View style={styles.reminderRow}>
+                        <View style={styles.reminderInfo}>
+                          <Ionicons color={theme.primary} name="notifications-outline" size={24} />
+                          <View style={styles.reminderTextWrap}>
+                            <Text style={styles.reminderText}>Remind me to add expenses</Text>
+                            <Text style={styles.reminderSubtext}>Daily notification at {reminderTime}</Text>
+                          </View>
+                        </View>
+                        <Pressable 
+                          hitSlop={10} 
+                          onPress={() => toggleReminder(!reminderEnabled)}
+                          style={[styles.toggleButton, reminderEnabled && styles.toggleButtonActive]}
+                        >
+                          <View style={[styles.toggleCircle, reminderEnabled && styles.toggleCircleActive]} />
+                        </Pressable>
+                      </View>
+                      
+                      {reminderEnabled && (
+                        <View style={styles.timePickerRow}>
+                          <Text style={styles.inputLabel}>Reminder time</Text>
+                          <TextInput
+                            keyboardType="numeric"
+                            onChangeText={(value) => updateReminderTime(value)}
+                            placeholder="20:00"
+                            style={styles.timeInput}
+                            value={reminderTime}
+                          />
+                          <Text style={styles.timeHint}>Format: HH:MM (24-hour)</Text>
+                        </View>
+                      )}
+                    </View>
+                  </BentoCard>
                 </View>
               ) : null}
             </ScrollView>
@@ -1472,30 +1678,55 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               />
 
               {filteredExpenses.length ? (
-                filteredExpenses.map((expense) => (
-                  <BentoCard key={expense.id}>
-                    <View style={styles.rowBetween}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.listTitle}>{expense.title}</Text>
-                        <Text style={styles.listSubtitle}>
-                          {expense.category} • {formatShortDate(expense.date)}
-                        </Text>
-                        <Text style={styles.listSubtitle}>
-                          {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
-                        </Text>
+                filteredExpenses.map((expense) => {
+                  const items = expense.items ?? [];
+                  const expenseTitle = items.length > 0 
+                    ? items.map(i => i.name).join(', ')
+                    : expense.description || 'Expense';
+                  const hasMultipleItems = items.length > 1;
+                  
+                  return (
+                    <BentoCard key={expense.id}>
+                      <View style={styles.expenseCardRow}>
+                        <View style={styles.expenseDetails}>
+                          {expense.description && (
+                            <Text style={styles.expenseDescription}>{expense.description}</Text>
+                          )}
+                          {items.length > 0 ? (
+                            <View style={styles.itemsList}>
+                              {items.map((item, idx) => (
+                                <View key={idx} style={styles.itemRow}>
+                                  <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                                  <Text style={styles.itemPrice}>{rs(item.price)}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : null}
+                          <Text style={styles.listSubtitle}>
+                            {expense.category} • {formatShortDate(expense.date)}
+                          </Text>
+                          <Text style={styles.listSubtitle}>
+                            {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.expenseActions}>
+                          {hasMultipleItems && (
+                            <Text style={styles.totalAmount}>{rs(expense.price)}</Text>
+                          )}
+                          <View style={styles.actionButtons}>
+                            <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
+                              <Ionicons color={theme.primary} name="pencil" size={18} />
+                            </Pressable>
+                            <Pressable hitSlop={10} onPress={() => handleDeleteExpense(expense.id, expenseTitle)} style={styles.editButton}>
+                              <Ionicons color={theme.danger} name="trash" size={18} />
+                            </Pressable>
+                          </View>
+                        </View>
                       </View>
-                      <View style={styles.rowEnd}>
-                        <Text style={styles.amountText}>{rs(expense.price)}</Text>
-                        <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
-                          <Ionicons color={theme.primary} name="pencil" size={18} />
-                        </Pressable>
-                        <Pressable hitSlop={10} onPress={() => handleDeleteExpense(expense.id, expense.title)} style={styles.editButton}>
-                          <Ionicons color={theme.danger} name="trash" size={18} />
-                        </Pressable>
-                      </View>
-                    </View>
-                  </BentoCard>
-                ))
+                    </BentoCard>
+                  );
+                })
               ) : (
                 <EmptyState body="Use the add button to capture a new family expense." title="No expenses in this view" />
               )}
@@ -1511,8 +1742,42 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           setExpenseForm(defaultExpenseForm());
         }}>
           <Text style={styles.sectionTitle}>{editingExpenseId ? 'Edit Expense' : 'Add Expense'}</Text>
-          <LabeledInput label="Title" onChangeText={(value) => setExpenseForm((current) => ({ ...current, title: value }))} testID="expense-title-input" value={expenseForm.title} />
-          <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setExpenseForm((current) => ({ ...current, price: value }))} testID="expense-price-input" value={expenseForm.price} />
+          
+          <View style={styles.fieldSection}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.inputLabel}>Items</Text>
+              <Text style={styles.totalText}>Total: {rs(expenseTotal)}</Text>
+            </View>
+            
+            {expenseForm.items.map((item, index) => (
+              <View key={index} style={styles.itemInputRow}>
+                <TextInput
+                  onChangeText={(value) => updateExpenseItem(index, 'name', value)}
+                  placeholder="Item name"
+                  style={[styles.textInput, styles.itemNameInput]}
+                  value={item.name}
+                />
+                <TextInput
+                  keyboardType="numeric"
+                  onChangeText={(value) => updateExpenseItem(index, 'price', value)}
+                  placeholder="Rs."
+                  style={[styles.textInput, styles.itemPriceInput]}
+                  value={item.price}
+                />
+                {expenseForm.items.length > 1 && (
+                  <Pressable hitSlop={10} onPress={() => removeExpenseItem(index)} style={styles.removeItemButton}>
+                    <Ionicons color={theme.danger} name="close-circle" size={24} />
+                  </Pressable>
+                )}
+              </View>
+            ))}
+            
+            <Pressable hitSlop={10} onPress={addExpenseItem} style={styles.addItemButton}>
+              <Ionicons color={theme.primary} name="add-circle-outline" size={20} />
+              <Text style={styles.addItemText}>Add item</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.fieldSection}>
             <Text style={styles.inputLabel}>Category</Text>
             <View style={styles.segmentRow}>
@@ -1543,6 +1808,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             </View>
           </View>
           <DatePickerField date={expenseForm.date} label="Date" onDateChange={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" />
+          
+          <LabeledInput 
+            label="Description (optional)" 
+            onChangeText={(value) => setExpenseForm((current) => ({ ...current, description: value }))} 
+            testID="expense-description-input" 
+            value={expenseForm.description} 
+          />
+          
           <View style={styles.spacer16} />
           <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text={editingExpenseId ? 'Update expense' : 'Save expense'} />
         </BottomSheet>
@@ -2122,6 +2395,97 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
+  textInput: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    color: theme.text,
+    fontSize: 15,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  itemInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  itemNameInput: {
+    flex: 1,
+  },
+  itemPriceInput: {
+    width: 100,
+  },
+  removeItemButton: {
+    padding: 4,
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  addItemText: {
+    color: theme.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  totalText: {
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  expenseCardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  expenseDetails: {
+    flex: 1,
+    marginRight: 12,
+  },
+  expenseActions: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+  },
+  totalAmount: {
+    color: theme.text,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  expenseDescription: {
+    color: theme.textMuted,
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginBottom: 4,
+  },
+  itemsList: {
+    marginBottom: 8,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  itemName: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  itemPrice: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
   inputGroup: {
     gap: 10,
   },
@@ -2352,6 +2716,80 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
+  },
+  reminderSection: {
+    marginTop: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: theme.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  reminderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  reminderTextWrap: {
+    flex: 1,
+  },
+  reminderText: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  reminderSubtext: {
+    color: theme.textMuted,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  toggleButton: {
+    width: 52,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.border,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: theme.primary,
+  },
+  toggleCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  toggleCircleActive: {
+    alignSelf: 'flex-end',
+  },
+  timePickerRow: {
+    gap: 8,
+  },
+  timeInput: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    color: theme.text,
+    fontSize: 16,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  timeHint: {
+    color: theme.textMuted,
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   editButton: {
     padding: 4,

@@ -36,12 +36,24 @@ export type Expense = {
   category: string;
   created_at: string;
   date: string;
+  description: string | null;
   id: string;
   paid_by: string | null;
   plan_id: string;
   price: number;
   profile_id: string;
-  title: string;
+};
+
+export type ExpenseItem = {
+  created_at: string;
+  expense_id: string;
+  id: string;
+  name: string;
+  price: number;
+};
+
+export type ExpenseWithItems = Expense & {
+  items: ExpenseItem[];
 };
 
 export type ShoppingItem = {
@@ -282,16 +294,107 @@ export const budgetApi = {
 };
 
 export const expenseApi = {
-  async addExpense(input: Omit<Expense, 'created_at' | 'id'>) {
-    const payload = { ...input, created_at: nowIso() };
-    const { data, error } = await supabase.from('expenses').insert(payload).select('*').single();
-    if (error) throw error;
-    return data as Expense;
+  async addExpense(
+    input: Omit<Expense, 'created_at' | 'id' | 'price'> & { items: Omit<ExpenseItem, 'created_at' | 'expense_id' | 'id'>[] }
+  ) {
+    console.log('addExpense called with input:', JSON.stringify(input, null, 2));
+    
+    const totalPrice = input.items.reduce((sum, item) => sum + item.price, 0);
+    const { items, description, ...expenseData } = input;
+    
+    // Build expense payload - only include description if it has a value
+    const expensePayload: any = { 
+      ...expenseData, 
+      price: totalPrice, 
+      created_at: nowIso() 
+    };
+    
+    // Only add description if it's not null/empty
+    if (description && description.trim()) {
+      expensePayload.description = description.trim();
+    }
+    
+    console.log('Inserting expense with payload:', JSON.stringify(expensePayload, null, 2));
+    
+    const { data: expense, error: expenseError } = await supabase
+      .from('expenses')
+      .insert(expensePayload)
+      .select('*')
+      .single();
+    
+    if (expenseError) {
+      console.error('Expense insert error:', JSON.stringify(expenseError, null, 2));
+      throw expenseError;
+    }
+    
+    console.log('Expense inserted successfully:', JSON.stringify(expense, null, 2));
+
+    if (items.length > 0) {
+      const itemsPayload = items.map(item => ({
+        ...item,
+        expense_id: expense.id,
+        created_at: nowIso(),
+      }));
+      
+      console.log('Inserting items:', JSON.stringify(itemsPayload, null, 2));
+      
+      const { error: itemsError } = await supabase
+        .from('expense_items')
+        .insert(itemsPayload);
+      
+      if (itemsError) {
+        console.error('Items insert error:', JSON.stringify(itemsError, null, 2));
+        throw itemsError;
+      }
+      
+      console.log('Items inserted successfully');
+    }
+
+    return { ...expense, items } as ExpenseWithItems;
   },
-  async updateExpense(expenseId: string, updates: Partial<Pick<Expense, 'category' | 'date' | 'paid_by' | 'price' | 'title'>>) {
-    const { data, error } = await supabase.from('expenses').update(updates).eq('id', expenseId).select('*').single();
-    if (error) throw error;
-    return data as Expense;
+  async updateExpense(
+    expenseId: string, 
+    updates: Partial<Pick<Expense, 'category' | 'date' | 'description' | 'paid_by'>>,
+    items?: Omit<ExpenseItem, 'created_at' | 'expense_id' | 'id'>[]
+  ) {
+    if (items) {
+      const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
+      const { error: expenseError } = await supabase
+        .from('expenses')
+        .update({ ...updates, price: totalPrice })
+        .eq('id', expenseId);
+      
+      if (expenseError) throw expenseError;
+
+      // Delete existing items
+      const { error: deleteError } = await supabase
+        .from('expense_items')
+        .delete()
+        .eq('expense_id', expenseId);
+      
+      if (deleteError) throw deleteError;
+
+      // Insert new items
+      if (items.length > 0) {
+        const itemsPayload = items.map(item => ({
+          ...item,
+          expense_id: expenseId,
+          created_at: nowIso(),
+        }));
+        const { error: insertError } = await supabase
+          .from('expense_items')
+          .insert(itemsPayload);
+        
+        if (insertError) throw insertError;
+      }
+    } else {
+      const { error } = await supabase
+        .from('expenses')
+        .update(updates)
+        .eq('id', expenseId);
+      
+      if (error) throw error;
+    }
   },
   async deleteExpense(expenseId: string) {
     // Check if user is authenticated
@@ -324,22 +427,32 @@ export const expenseApi = {
   async fetchExpenses(planId: string) {
     const { data, error } = await supabase
       .from('expenses')
-      .select('*')
+      .select('*, items:expense_items(*)')
       .eq('plan_id', planId)
       .order('date', { ascending: false });
 
     if (error) throw error;
-    return (data ?? []) as Expense[];
+    return (data ?? []) as ExpenseWithItems[];
   },
   async fetchProfileExpenses(profileId: string) {
     const { data, error } = await supabase
       .from('expenses')
-      .select('*')
+      .select('*, items:expense_items(*)')
       .eq('profile_id', profileId)
       .order('date', { ascending: false });
 
     if (error) throw error;
-    return (data ?? []) as Expense[];
+    return (data ?? []) as ExpenseWithItems[];
+  },
+  async fetchExpenseItems(expenseId: string) {
+    const { data, error } = await supabase
+      .from('expense_items')
+      .select('*')
+      .eq('expense_id', expenseId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return (data ?? []) as ExpenseItem[];
   },
 };
 

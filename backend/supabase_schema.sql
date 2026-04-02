@@ -49,12 +49,20 @@ create table if not exists public.expenses (
   id uuid primary key default gen_random_uuid(),
   plan_id uuid not null references public.budget_plans(id) on delete cascade,
   profile_id uuid not null references public.profiles(id) on delete cascade,
-  title text not null,
+  description text,
   category text not null,
-  price numeric(12,2) not null,
+  price numeric(12,2) not null default 0,
   date timestamptz not null default now(),
   added_by uuid not null references auth.users(id) on delete cascade,
   paid_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.expense_items (
+  id uuid primary key default gen_random_uuid(),
+  expense_id uuid not null references public.expenses(id) on delete cascade,
+  name text not null,
+  price numeric(12,2) not null,
   created_at timestamptz not null default now()
 );
 
@@ -95,6 +103,7 @@ create index if not exists idx_budget_plans_profile_id on public.budget_plans(pr
 create index if not exists idx_expenses_profile_id on public.expenses(profile_id);
 create index if not exists idx_expenses_plan_id on public.expenses(plan_id);
 create index if not exists idx_expenses_paid_by on public.expenses(paid_by);
+create index if not exists idx_expense_items_expense_id on public.expense_items(expense_id);
 create index if not exists idx_buy_list_items_profile_id on public.buy_list_items(profile_id);
 create index if not exists idx_notifications_profile_id on public.notifications(profile_id);
 create index if not exists idx_notifications_user_id on public.notifications(user_id);
@@ -106,6 +115,7 @@ alter table public.profile_members enable row level security;
 alter table public.invitations enable row level security;
 alter table public.budget_plans enable row level security;
 alter table public.expenses enable row level security;
+alter table public.expense_items enable row level security;
 alter table public.buy_list_items enable row level security;
 alter table public.notifications enable row level security;
 alter table public.device_tokens enable row level security;
@@ -262,6 +272,42 @@ for update using (
   or public.is_profile_member(profile_id)
 );
 
+drop policy if exists "expense items member select" on public.expense_items;
+create policy "expense items member select" on public.expense_items
+for select using (
+  exists (
+    select 1 from public.expenses e 
+    where e.id = expense_id and public.is_profile_member(e.profile_id)
+  )
+);
+
+drop policy if exists "expense items member insert" on public.expense_items;
+create policy "expense items member insert" on public.expense_items
+for insert with check (
+  exists (
+    select 1 from public.expenses e 
+    where e.id = expense_id and public.is_profile_member(e.profile_id)
+  )
+);
+
+drop policy if exists "expense items member update" on public.expense_items;
+create policy "expense items member update" on public.expense_items
+for update using (
+  exists (
+    select 1 from public.expenses e 
+    where e.id = expense_id and public.is_profile_member(e.profile_id)
+  )
+);
+
+drop policy if exists "expense items member delete" on public.expense_items;
+create policy "expense items member delete" on public.expense_items
+for delete using (
+  exists (
+    select 1 from public.expenses e 
+    where e.id = expense_id and public.is_profile_member(e.profile_id)
+  )
+);
+
 drop policy if exists "buy list member select" on public.buy_list_items;
 create policy "buy list member select" on public.buy_list_items
 for select using (public.is_profile_member(profile_id));
@@ -322,4 +368,30 @@ begin
     alter publication supabase_realtime add table public.notifications;
   exception when duplicate_object then null;
   end;
+
+  begin
+    alter publication supabase_realtime add table public.expense_items;
+  exception when duplicate_object then null;
+  end;
+end $$;
+
+-- Migration: Rename title to description and migrate existing data
+do $$
+begin
+  -- Rename title column to description if it exists
+  if exists (
+    select 1 from information_schema.columns 
+    where table_name = 'expenses' and column_name = 'title'
+  ) then
+    alter table public.expenses rename column title to description;
+  end if;
+
+  -- Migrate existing expenses to expense_items
+  insert into public.expense_items (expense_id, name, price, created_at)
+  select id, description, price, created_at
+  from public.expenses
+  where description is not null
+  and not exists (
+    select 1 from public.expense_items where expense_id = expenses.id
+  );
 end $$;
