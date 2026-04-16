@@ -395,3 +395,27 @@ begin
     select 1 from public.expense_items where expense_id = expenses.id
   );
 end $$;
+
+-- Migration: Add used_by column to expenses for personal budget usage tracking
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns 
+    where table_name = 'expenses' and column_name = 'used_by'
+  ) then
+    alter table public.expenses add column used_by uuid;
+    create index if not exists idx_expenses_used_by on public.expenses(used_by);
+  end if;
+end $$;
+
+-- Migration: Add is_borrow column to separate borrow/repay records from expenses
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns 
+    where table_name = 'expenses' and column_name = 'is_borrow'
+  ) then
+    alter table public.expenses add column is_borrow boolean not null default false;
+    create index if not exists idx_expenses_is_borrow on public.expenses(is_borrow);
+  end if;
+end $$;

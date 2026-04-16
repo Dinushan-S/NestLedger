@@ -38,10 +38,12 @@ export type Expense = {
   date: string;
   description: string | null;
   id: string;
+  is_borrow: boolean;
   paid_by: string | null;
   plan_id: string;
   price: number;
   profile_id: string;
+  used_by: string | null;
 };
 
 export type ExpenseItem = {
@@ -423,6 +425,19 @@ export const expenseApi = {
     }
     
     console.log('Delete expense success:', { status, deleted: data });
+  },
+  async clearPlanExpenses(planId: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('You must be logged in to reset expenses.');
+    }
+
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('plan_id', planId);
+
+    if (error) throw error;
   },
   async fetchExpenses(planId: string) {
     const { data, error } = await supabase
