@@ -96,13 +96,6 @@ jobs:
 
             echo "$ENV_B64" | base64 -d > .env
 
-            echo "=== DEBUG: .env keys ==="
-            grep -c '=' .env || echo "NO LINES FOUND"
-            sed 's/=.*/=***/' .env
-
-            echo "=== DEBUG: journalctl ==="
-            journalctl -u nestledger --no-pager -n 20 || true
-
             source venv/bin/activate
             pip install -r requirements.txt
 
