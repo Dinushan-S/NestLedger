@@ -34,17 +34,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
+      - name: Encode env file for transfer
+        id: prep_env
+        run: |
+          echo "${{ secrets.ENV }}" > /tmp/.env.deploy
+          echo "b64=$(base64 -w0 /tmp/.env.deploy)" >> "$GITHUB_OUTPUT"
+          rm -f /tmp/.env.deploy
+        shell: bash
+
       - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.3
         env:
-          ENV_CONTENT: ${{ secrets.ENV }}
+          ENV_B64: ${{ steps.prep_env.outputs.b64 }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
-          envs: ENV_CONTENT
+          envs: ENV_B64
           script_stop: true
           command_timeout: 10m
           script: |
@@ -86,7 +94,7 @@ jobs:
 
             cd backend
 
-            printf '%s\n' "$ENV_CONTENT" > .env
+            echo "$ENV_B64" | base64 -d > .env
 
             source venv/bin/activate
             pip install -r requirements.txt
