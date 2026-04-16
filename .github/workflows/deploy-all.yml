@@ -61,41 +61,12 @@ jobs:
               source venv/bin/activate
               pip install -r requirements.txt
 
-              cat > /etc/systemd/system/nestledger.service << 'SVCEOF'
-            [Unit]
-            Description=NestLedger FastAPI Backend
-            After=network.target
-
-            [Service]
-            Type=simple
-            User=root
-            WorkingDirectory=/opt/NestLedger/backend
-            Environment="PATH=/opt/NestLedger/backend/venv/bin"
-            ExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
-            Restart=always
-            RestartSec=10
-
-            [Install]
-            WantedBy=multi-user.target
-            SVCEOF
+              printf '[Unit]\nDescription=NestLedger FastAPI Backend\nAfter=network.target\n\n[Service]\nType=simple\nUser=root\nWorkingDirectory=/opt/NestLedger/backend\nEnvironment="PATH=/opt/NestLedger/backend/venv/bin"\nExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000\nRestart=always\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/nestledger.service
 
               systemctl daemon-reload
               systemctl enable nestledger
 
-              cat > /etc/nginx/sites-available/nestledger << 'NGXEOF'
-            server {
-                listen 80;
-                server_name nestledger.dinushan.dev;
-
-                location / {
-                    proxy_pass http://127.0.0.1:8000;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                }
-            }
-            NGXEOF
+              printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' > /etc/nginx/sites-available/nestledger
 
               ln -sf /etc/nginx/sites-available/nestledger /etc/nginx/sites-enabled/
               rm -f /etc/nginx/sites-enabled/default
