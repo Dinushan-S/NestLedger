@@ -50,7 +50,10 @@ jobs:
             if [ ! -d /opt/NestLedger/.git ]; then
               echo "=== First-time setup ==="
               apt-get update -qq
-              apt-get install -y -qq python3.11 python3.11-venv python3-pip git nginx certbot python3-certbot-nginx
+              apt-get install -y -qq software-properties-common
+              add-apt-repository -y ppa:deadsnakes/ppa
+              apt-get update -qq
+              apt-get install -y -qq python3.11 python3.11-venv python3.11-dev python3-pip git nginx certbot python3-certbot-nginx
 
               git clone https://github.com/Dinushan-S/NestLedger.git /opt/NestLedger
               cd /opt/NestLedger/backend
