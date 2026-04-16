@@ -37,7 +37,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-#  comment 
 def validate_runtime_config() -> None:
     required = {
         "SUPABASE_URL": SUPABASE_URL,
