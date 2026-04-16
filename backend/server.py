@@ -37,7 +37,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# new
 
 def validate_runtime_config() -> None:
     required = {
