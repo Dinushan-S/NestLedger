@@ -34,6 +34,7 @@ import {
   expenseFilters,
   formatShortDate,
   rs,
+  shoppingCategories,
   shoppingFilters,
   startOfMonth,
   startOfToday,
@@ -248,6 +249,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [borrowForm, setBorrowForm] = useState<BorrowForm>({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' });
   const [repayForm, setRepayForm] = useState<RepayForm>({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) });
   const [showShoppingComposer, setShowShoppingComposer] = useState(false);
+  const [showBoughtComposer, setShowBoughtComposer] = useState(false);
+  const [boughtForm, setBoughtForm] = useState({ price: '', paidBy: null as string | null, planId: '' });
+  const [pendingBoughtItem, setPendingBoughtItem] = useState<ShoppingItem | null>(null);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -1195,16 +1199,66 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       return;
     }
 
-    await runAction(async () => {
-      if (item.is_bought) {
+    if (item.is_bought) {
+      await runAction(async () => {
+        if (item.linked_expense_id) {
+          await expenseApi.deleteExpense(item.linked_expense_id);
+        }
         await shoppingApi.markUnbought(item.id);
-      } else {
-        await shoppingApi.markBought(item.id, session.user.id);
-        await notifyOtherMembers(
-          `${userProfile?.name ?? 'A member'} marked ${item.name} as bought ✓`,
-          notificationTypes.shoppingBought,
-        );
-      }
+        await refreshProfileData(activeProfile.id);
+      });
+    } else {
+      setPendingBoughtItem(item);
+      setBoughtForm({ price: '', paidBy: null, planId: plans[0]?.id ?? '' });
+      setShowBoughtComposer(true);
+    }
+  };
+
+  const handleConfirmBought = async () => {
+    if (!session?.user || !activeProfile || !pendingBoughtItem) return;
+    const price = Number(boughtForm.price);
+    if (!price || price <= 0) {
+      announce('Enter a valid price.');
+      return;
+    }
+    if (!boughtForm.planId) {
+      announce('Select a budget plan.');
+      return;
+    }
+
+    const plan = plans.find(p => p.id === boughtForm.planId);
+    if (!plan) {
+      announce('Budget plan not found.');
+      return;
+    }
+
+    await runAction(async () => {
+      const itemDescription = pendingBoughtItem.quantity 
+        ? `${pendingBoughtItem.name} (Qty: ${pendingBoughtItem.quantity})`
+        : pendingBoughtItem.name;
+
+      const newExpense = await expenseApi.addExpenseWithId({
+        added_by: session.user.id,
+        category: pendingBoughtItem.category || 'Groceries',
+        date: new Date().toISOString(),
+        description: pendingBoughtItem.category || null,
+        is_borrow: false,
+        items: [{ name: itemDescription, price }],
+        paid_by: boughtForm.paidBy,
+        plan_id: boughtForm.planId,
+        profile_id: activeProfile.id,
+        used_by: boughtForm.paidBy,
+      });
+
+      await shoppingApi.markBought(pendingBoughtItem.id, session.user.id, newExpense.id);
+      await notifyOtherMembers(
+        `${userProfile?.name ?? 'A member'} bought ${pendingBoughtItem.name} for ${rs(price)} ✓`,
+        notificationTypes.shoppingBought,
+      );
+
+      setShowBoughtComposer(false);
+      setPendingBoughtItem(null);
+      setBoughtForm({ price: '', paidBy: null, planId: '' });
       await refreshProfileData(activeProfile.id);
     });
   };
@@ -2014,7 +2068,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         </ModalScaffold>
       </Modal>
 
-      <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showExpenseComposer}>
+      <Modal animationType="slide" transparent visible={showExpenseComposer}>
         <BottomSheet onClose={() => {
           setShowExpenseComposer(false);
           setEditingExpenseId(null);
@@ -2120,17 +2174,55 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         </BottomSheet>
       </Modal>
 
-      <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showShoppingComposer}>
+<Modal animationType="slide" transparent visible={showShoppingComposer}>
         <BottomSheet onClose={() => setShowShoppingComposer(false)}>
           <Text style={styles.sectionTitle}>Add Shopping Item</Text>
           <LabeledInput label="Product name" onChangeText={(value) => setShoppingForm((current) => ({ ...current, name: value }))} testID="shopping-name-input" value={shoppingForm.name} />
-          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shopping-quantity-input" value={shoppingForm.quantity} />
-          <LabeledInput label="Category (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, category: value }))} testID="shopping-category-input" value={shoppingForm.category} />
-          <ModernButton loading={actionBusy} onPress={handleAddShoppingItem} testID="shopping-save-button" text="Add item" />
+          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shoppong-quantity-input" value={shoppingForm.quantity} />
+          <Text style={styles.inputLabel}>Category</Text>
+          <View style={styles.segmentRow}>
+            {shoppingCategories.map((category) => (
+              <CategoryChip key={category} active={shoppingForm.category === category} label={category} onPress={() => setShoppingForm((current) => ({ ...current, category }))} />
+            ))}
+          </View>
+          <View style={styles.spacer16} />
+<ModernButton loading={actionBusy} onPress={handleAddShoppingItem} testID="shopping-save-button" text="Add item" />
         </BottomSheet>
       </Modal>
 
-      <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showBorrowComposer}>
+      <Modal animationType="slide" transparent visible={showBoughtComposer}>
+        <BottomSheet onClose={() => { setShowBoughtComposer(false); setPendingBoughtItem(null); setBoughtForm({ price: '', paidBy: null, planId: '' }); }}>
+          <Text style={styles.sectionTitle}>Mark as Bought</Text>
+          {pendingBoughtItem ? (
+            <>
+              <Text style={styles.bodyMuted}>
+                {pendingBoughtItem.name}
+                {pendingBoughtItem.quantity ? ` (Qty: ${pendingBoughtItem.quantity})` : ''}
+                {pendingBoughtItem.category ? ` • ${pendingBoughtItem.category}` : ''}
+              </Text>
+              <View style={styles.spacer12} />
+              <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
+              <Text style={styles.inputLabel}>Who paid?</Text>
+              <View style={styles.segmentRow}>
+                <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
+                {members.map((member) => (
+                  <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
+                ))}
+              </View>
+              <Text style={styles.inputLabel}>Budget plan</Text>
+              <View style={styles.segmentRow}>
+                {plans.map((plan) => (
+                  <CategoryChip key={plan.id} active={boughtForm.planId === plan.id} label={plan.name} onPress={() => setBoughtForm((current) => ({ ...current, planId: plan.id }))} />
+                ))}
+              </View>
+              <View style={styles.spacer16} />
+              <ModernButton loading={actionBusy} onPress={handleConfirmBought} testID="confirm-bought-button" text="Confirm & Add to Budget" />
+            </>
+          ) : null}
+        </BottomSheet>
+      </Modal>
+
+<Modal animationType="slide" transparent visible={showBorrowComposer}>
         <BottomSheet onClose={() => { setShowBorrowComposer(false); setBorrowForm({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' }); setEditingBorrowId(null); }}>
           <Text style={styles.sectionTitle}>{editingBorrowId ? 'Edit Borrow' : 'Borrow from Budget'}</Text>
           <LabeledInput keyboardType="numeric" label="Amount (Rs.)" onChangeText={(value) => setBorrowForm((current) => ({ ...current, amount: value }))} testID="borrow-amount-input" value={borrowForm.amount} />
@@ -2141,7 +2233,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         </BottomSheet>
       </Modal>
 
-      <Modal animationType="slide" presentationStyle="formSheet" transparent visible={showRepayComposer}>
+      <Modal animationType="slide" transparent visible={showRepayComposer}>
         <BottomSheet onClose={() => { setShowRepayComposer(false); setRepayForm({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) }); }}>
           <Text style={styles.sectionTitle}>Repay to Budget</Text>
           <LabeledInput keyboardType="numeric" label="Amount (Rs.)" onChangeText={(value) => setRepayForm((current) => ({ ...current, amount: value }))} testID="repay-amount-input" value={repayForm.amount} />

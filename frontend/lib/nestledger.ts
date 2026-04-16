@@ -66,6 +66,7 @@ export type ShoppingItem = {
   created_at: string;
   id: string;
   is_bought: boolean;
+  linked_expense_id?: string | null;
   name: string;
   profile_id: string;
   quantity: string | null;
@@ -354,6 +355,46 @@ export const expenseApi = {
 
     return { ...expense, items } as ExpenseWithItems;
   },
+  async addExpenseWithId(
+    input: Omit<Expense, 'created_at' | 'id' | 'price'> & { items: Omit<ExpenseItem, 'created_at' | 'expense_id' | 'id'>[] }
+  ): Promise<{ id: string }> {
+    const totalPrice = input.items.reduce((sum, item) => sum + item.price, 0);
+    const { items, description, ...expenseData } = input;
+    
+    const expensePayload: any = { 
+      ...expenseData, 
+      price: totalPrice, 
+      created_at: nowIso() 
+    };
+    
+    if (description && description.trim()) {
+      expensePayload.description = description.trim();
+    }
+    
+    const { data: expense, error: expenseError } = await supabase
+      .from('expenses')
+      .insert(expensePayload)
+      .select('id')
+      .single();
+    
+    if (expenseError) throw expenseError;
+    
+    if (items.length > 0) {
+      const itemsPayload = items.map(item => ({
+        ...item,
+        expense_id: expense.id,
+        created_at: nowIso(),
+      }));
+      
+      const { error: itemsError } = await supabase
+        .from('expense_items')
+        .insert(itemsPayload);
+      
+      if (itemsError) throw itemsError;
+    }
+
+    return { id: expense.id };
+  },
   async updateExpense(
     expenseId: string, 
     updates: Partial<Pick<Expense, 'category' | 'date' | 'description' | 'paid_by'>>,
@@ -492,14 +533,17 @@ export const shoppingApi = {
     if (error) throw error;
     return (data ?? []) as ShoppingItem[];
   },
-  async markBought(itemId: string, userId: string) {
-    const payload = { bought_at: nowIso(), bought_by: userId, is_bought: true };
+  async markBought(itemId: string, userId: string, linkedExpenseId?: string) {
+    const payload: any = { bought_at: nowIso(), bought_by: userId, is_bought: true };
+    if (linkedExpenseId) {
+      payload.linked_expense_id = linkedExpenseId;
+    }
     const { data, error } = await supabase.from('buy_list_items').update(payload).eq('id', itemId).select('*').single();
     if (error) throw error;
     return data as ShoppingItem;
   },
   async markUnbought(itemId: string) {
-    const payload = { bought_at: null, bought_by: null, is_bought: false };
+    const payload = { bought_at: null, bought_by: null, is_bought: false, linked_expense_id: null };
     const { data, error } = await supabase.from('buy_list_items').update(payload).eq('id', itemId).select('*').single();
     if (error) throw error;
     return data as ShoppingItem;

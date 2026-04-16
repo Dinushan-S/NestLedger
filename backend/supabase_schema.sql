@@ -76,6 +76,7 @@ create table if not exists public.buy_list_items (
   is_bought boolean not null default false,
   bought_by uuid references auth.users(id) on delete set null,
   bought_at timestamptz,
+  linked_expense_id uuid references public.expenses(id) on delete set null,
   created_at timestamptz not null default now()
 );
 

@@ -17,6 +17,16 @@ export const theme = {
 
 export const avatarChoices = ['🏡', '🪴', '🧺', '☕', '🧡', '🌿', '✨', '🐣'];
 
+export const shoppingCategories = [
+  'Groceries',
+  'Household',
+  'Personal Care',
+  'Kitchen',
+  'Electronics',
+  'Stationery',
+  'Other',
+];
+
 export const expenseCategories = [
   { key: 'Food & Dining', icon: 'restaurant-outline' },
   { key: 'Transport', icon: 'car-outline' },
