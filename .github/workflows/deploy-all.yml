@@ -89,8 +89,8 @@ jobs:
             SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
             APP_PUBLIC_URL=${{ secrets.APP_PUBLIC_URL }}
             BREVO_FROM_NAME=NestLedger
-            BREVO_FROM_EMAIL=${{ vars.BREVO_FROM_EMAIL }}
-            SMTP_HOST=${{ vars.SMTP_HOST }}
+            BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
             SMTP_PORT=587
             SMTP_LOGIN=${{ secrets.SMTP_LOGIN }}
             SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
