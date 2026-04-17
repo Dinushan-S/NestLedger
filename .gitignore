@@ -85,3 +85,6 @@ android-sdk/ -e
 # Environment files
 *.env
 *.env.*
+
+PlayStore_Screenshots/
+docs/

@@ -9,9 +9,11 @@ from typing import Any
 
 import requests
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, Header, HTTPException
+from fastapi import APIRouter, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 
 ROOT_DIR = Path(__file__).parent
@@ -31,6 +33,11 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# Serve static files (privacy policy, etc.)
+static_dir = ROOT_DIR / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
