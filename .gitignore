@@ -88,3 +88,4 @@ android-sdk/ -e
 
 PlayStore_Screenshots/
 docs/
+.opencode

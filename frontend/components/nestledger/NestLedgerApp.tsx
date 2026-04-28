@@ -31,6 +31,8 @@ import {
   expenseCategories,
   expenseFilters,
   formatShortDate,
+  monthNames,
+  monthShort,
   rs,
   shoppingCategories,
   shoppingFilters,
@@ -283,7 +285,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [budgetEditMode, setBudgetEditMode] = useState(false);
 
+  const [activeViewYear, setActiveViewYear] = useState<number>(new Date().getFullYear());
+  const [activeViewMonth, setActiveViewMonth] = useState<number | 'current'>('current');
+
   const seenNotificationIds = useRef<Set<string>>(new Set());
+  const lastRefreshRef = useRef<number>(0);
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId) ?? null,
     [activeProfileId, profiles],
@@ -292,6 +298,47 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     () => plans.find((plan) => plan.id === selectedPlanId) ?? null,
     [plans, selectedPlanId],
   );
+
+  const availableViewYears = useMemo(() => {
+    if (!selectedPlan) return [new Date().getFullYear()];
+    const planExpenses = profileExpenses.filter((e) => e.plan_id === selectedPlan.id);
+    const years = new Set<number>();
+    years.add(new Date(selectedPlan.start_date).getFullYear());
+    years.add(new Date().getFullYear());
+    if (selectedPlan.end_date) years.add(new Date(selectedPlan.end_date).getFullYear());
+    planExpenses.forEach((e) => years.add(new Date(e.date).getFullYear()));
+    return [...years].sort();
+  }, [profileExpenses, selectedPlan]);
+
+  const availableViewMonths = useMemo(() => {
+    if (!selectedPlan) return [];
+    const planExpenses = profileExpenses.filter((e) => e.plan_id === selectedPlan.id);
+    const months = new Set<number>();
+    planExpenses.forEach((e) => {
+      if (new Date(e.date).getFullYear() === activeViewYear) {
+        months.add(new Date(e.date).getMonth() + 1);
+      }
+    });
+    const now = new Date();
+    if (activeViewYear === new Date(selectedPlan.start_date).getFullYear()) {
+      months.add(new Date(selectedPlan.start_date).getMonth() + 1);
+    }
+    if (activeViewYear === now.getFullYear()) {
+      months.add(now.getMonth() + 1);
+    }
+    return [...months].sort();
+  }, [profileExpenses, selectedPlan, activeViewYear]);
+
+  const isViewingArchive = activeViewMonth !== 'current';
+
+  const monthFilteredExpenses = useMemo(() => {
+    if (!selectedPlan || activeViewMonth === 'current') return null;
+    return profileExpenses.filter((e) => {
+      if (e.plan_id !== selectedPlan.id) return false;
+      const d = new Date(e.date);
+      return d.getFullYear() === activeViewYear && d.getMonth() + 1 === activeViewMonth;
+    });
+  }, [profileExpenses, selectedPlan, activeViewYear, activeViewMonth]);
 
   const memberMap = useMemo(() => {
     return new Map(
@@ -306,45 +353,54 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     );
   }, [members]);
 
+  const currentPlanExpenses = useMemo(() => {
+    return profileExpenses.filter((expense) => {
+      const plan = plans.find((p) => p.id === expense.plan_id);
+      if (!plan) return true;
+      if (expense.is_borrow) return true;
+      return new Date(expense.date) >= new Date(plan.start_date);
+    });
+  }, [profileExpenses, plans]);
+
   const spentByPlan = useMemo(() => {
-    return profileExpenses
+    return currentPlanExpenses
       .filter((expense) => !expense.paid_by && !expense.is_borrow)
       .reduce<Record<string, number>>((accumulator, expense) => {
         accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
         return accumulator;
       }, {});
-  }, [profileExpenses]);
+  }, [currentPlanExpenses]);
 
   const contributionsByPlan = useMemo(() => {
-    return profileExpenses
+    return currentPlanExpenses
       .filter((expense) => expense.paid_by && !expense.is_borrow)
       .reduce<Record<string, number>>((accumulator, expense) => {
         accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
         return accumulator;
       }, {});
-  }, [profileExpenses]);
+  }, [currentPlanExpenses]);
 
   const borrowedByPlan = useMemo(() => {
-    return profileExpenses
+    return currentPlanExpenses
       .filter((expense) => expense.is_borrow && expense.price > 0)
       .reduce<Record<string, number>>((accumulator, expense) => {
         accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
         return accumulator;
       }, {});
-  }, [profileExpenses]);
+  }, [currentPlanExpenses]);
 
   const repaidByPlan = useMemo(() => {
-    return profileExpenses
+    return currentPlanExpenses
       .filter((expense) => expense.is_borrow && expense.price < 0)
       .reduce<Record<string, number>>((accumulator, expense) => {
         accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Math.abs(Number(expense.price ?? 0));
         return accumulator;
       }, {});
-  }, [profileExpenses]);
+  }, [currentPlanExpenses]);
 
   const personalContributions = useMemo(() => {
     const contributions: Record<string, { member: { avatar: string; name: string }; total: number }> = {};
-    profileExpenses.forEach((expense) => {
+    currentPlanExpenses.forEach((expense) => {
       if (expense.paid_by && !expense.is_borrow) {
         const member = memberMap.get(expense.paid_by);
         if (member) {
@@ -356,11 +412,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       }
     });
     return contributions;
-  }, [profileExpenses, memberMap]);
+  }, [currentPlanExpenses, memberMap]);
 
   const memberBorrowBalances = useMemo(() => {
     const balances: Record<string, { member: { avatar: string; name: string }; contributed: number; borrowed: number; repaid: number; owes: number }> = {};
-    profileExpenses.forEach((expense) => {
+    currentPlanExpenses.forEach((expense) => {
       if (!expense.is_borrow) return;
       const userId = expense.used_by ?? expense.added_by;
       const member = memberMap.get(userId);
@@ -377,7 +433,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
     });
     return balances;
-  }, [profileExpenses, memberMap, personalContributions]);
+  }, [currentPlanExpenses, memberMap, personalContributions]);
 
   const familyBudgetSpent = useMemo(() => {
     return profileExpenses
@@ -402,7 +458,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       return [];
     }
 
-    const base = profileExpenses.filter((expense) => expense.plan_id === selectedPlan.id && !expense.is_borrow);
+    const planStartDate = new Date(selectedPlan.start_date);
+    const base = profileExpenses.filter((expense) => expense.plan_id === selectedPlan.id && !expense.is_borrow && new Date(expense.date) >= planStartDate);
     const today = startOfToday();
     const weekStart = startOfWeek();
     const monthStart = startOfMonth();
@@ -676,6 +733,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }, [activeProfileId, session?.user?.id]);
 
   useEffect(() => {
+    if (!selectedPlanId) return;
+    setActiveViewYear(new Date().getFullYear());
+    setActiveViewMonth('current');
+  }, [selectedPlanId]);
+
+  useEffect(() => {
     if (!session || !pendingInviteToken) {
       return;
     }
@@ -711,10 +774,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     register();
   }, [session?.access_token]);
 
-  const refreshProfileData = async (profileId: string) => {
+  const refreshProfileData = async (profileId: string, force?: boolean) => {
     if (!session?.user) {
       return;
     }
+
+    const now = Date.now();
+    if (!force && now - lastRefreshRef.current < 1000) {
+      return;
+    }
+    lastRefreshRef.current = now;
 
     try {
       const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications] = await Promise.all([
@@ -866,7 +935,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
       setBudgetForm(defaultBudgetForm());
       setShowBudgetComposer(false);
-      await refreshProfileData(activeProfile.id);
+      await refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -896,7 +965,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           await budgetApi.deletePlan(planId);
           setSelectedPlanId(null);
           setPlans((prev) => prev.filter((p) => p.id !== planId));
-          await refreshProfileData(activeProfile.id);
+          await refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Budget Plan',
@@ -915,7 +984,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await expenseApi.clearPlanExpenses(planId);
-          await refreshProfileData(activeProfile.id);
+          await refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Reset Budget',
@@ -1010,7 +1079,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         setExpenseForm(defaultExpenseForm());
         setEditingExpenseId(null);
         setShowExpenseComposer(false);
-        await refreshProfileData(activeProfile.id);
+        await refreshProfileData(activeProfile.id, true);
       } catch (error) {
         console.error('Error in handleAddExpense:', error);
         throw error;
@@ -1065,7 +1134,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       }
       setBorrowForm({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' });
       setShowBorrowComposer(false);
-      await refreshProfileData(activeProfile.id);
+      await refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1092,7 +1161,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       });
       setRepayForm({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) });
       setShowRepayComposer(false);
-      await refreshProfileData(activeProfile.id);
+      await refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1156,7 +1225,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await expenseApi.deleteExpense(expenseId);
-          await refreshProfileData(activeProfile.id);
+          await refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Expense',
@@ -1188,7 +1257,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       );
       setShoppingForm(defaultShoppingForm);
       setShowShoppingComposer(false);
-      await refreshProfileData(activeProfile.id);
+      await refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1203,7 +1272,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           await expenseApi.deleteExpense(item.linked_expense_id);
         }
         await shoppingApi.markUnbought(item.id);
-        await refreshProfileData(activeProfile.id);
+        await refreshProfileData(activeProfile.id, true);
       });
     } else {
       setPendingBoughtItem(item);
@@ -1257,7 +1326,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setShowBoughtComposer(false);
       setPendingBoughtItem(null);
       setBoughtForm({ price: '', paidBy: null, planId: '' });
-      await refreshProfileData(activeProfile.id);
+      await refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1274,7 +1343,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await shoppingApi.deleteItem(itemId);
-          await refreshProfileData(activeProfile.id);
+          await refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Item',
@@ -1876,193 +1945,410 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         <ModalScaffold closeTestID="close-budget-detail-modal" onClose={() => setSelectedPlanId(null)} title={selectedPlan?.name ?? 'Budget plan'}>
           {selectedPlan ? (
             <>
-              <BentoCard tone="highlight">
-                <Text style={styles.metricText}>{rs((spentByPlan[selectedPlan.id] ?? 0) + (contributionsByPlan[selectedPlan.id] ?? 0) + (borrowedByPlan[selectedPlan.id] ?? 0) - (repaidByPlan[selectedPlan.id] ?? 0))}</Text>
-                <Text style={styles.bodyMuted}>total spent out of {rs(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0))} allocated</Text>
-                <View style={styles.spacer12} />
-                <ProgressBar progress={((spentByPlan[selectedPlan.id] ?? 0) + (contributionsByPlan[selectedPlan.id] ?? 0) + (borrowedByPlan[selectedPlan.id] ?? 0) - (repaidByPlan[selectedPlan.id] ?? 0)) / Math.max(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0), 1)} />
-              </BentoCard>
-
-              <View style={styles.sectionGap}>
-                <Text style={styles.inputLabel}>Spending Breakdown</Text>
-                <View style={styles.statRow}>
-                  <InfoPill label="Plan Budget" value={rs(selectedPlan.total_amount)} />
-                  {((contributionsByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                    <InfoPill label="+ Contributions" value={rs(contributionsByPlan[selectedPlan.id] ?? 0)} />
-                  ) : null}
-                  <InfoPill label="= Allocated" value={rs(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0))} />
-                  <InfoPill label="- Family expenses" value={rs(spentByPlan[selectedPlan.id] ?? 0)} />
-                  {((contributionsByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                    <InfoPill label="- Own-pocket spent" value={rs(contributionsByPlan[selectedPlan.id] ?? 0)} />
-                  ) : null}
-                  {((borrowedByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                    <InfoPill label="- Borrowed" value={rs(borrowedByPlan[selectedPlan.id] ?? 0)} />
-                  ) : null}
-                  {((repaidByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                    <InfoPill label="+ Repaid" value={rs(repaidByPlan[selectedPlan.id] ?? 0)} />
-                  ) : null}
-                  <InfoPill label="= Remaining" value={rs(Math.max((selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0)) - (spentByPlan[selectedPlan.id] ?? 0) - (contributionsByPlan[selectedPlan.id] ?? 0) - (borrowedByPlan[selectedPlan.id] ?? 0) + (repaidByPlan[selectedPlan.id] ?? 0), 0))} />
+              <View style={styles.monthSelectorWrap}>
+                <View style={styles.yearNavRow}>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => {
+                      const idx = availableViewYears.indexOf(activeViewYear);
+                      if (idx > 0) setActiveViewYear(availableViewYears[idx - 1]);
+                    }}
+                    style={[styles.yearNavArrow, availableViewYears.indexOf(activeViewYear) <= 0 && styles.yearNavArrowDisabled]}
+                  >
+                    <Ionicons color={availableViewYears.indexOf(activeViewYear) <= 0 ? theme.border : theme.primary} name="chevron-back-outline" size={20} />
+                  </Pressable>
+                  <Text style={styles.yearNavText}>{activeViewYear}</Text>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => {
+                      const idx = availableViewYears.indexOf(activeViewYear);
+                      if (idx < availableViewYears.length - 1) setActiveViewYear(availableViewYears[idx + 1]);
+                    }}
+                    style={[styles.yearNavArrow, availableViewYears.indexOf(activeViewYear) >= availableViewYears.length - 1 && styles.yearNavArrowDisabled]}
+                  >
+                    <Ionicons color={availableViewYears.indexOf(activeViewYear) >= availableViewYears.length - 1 ? theme.border : theme.primary} name="chevron-forward-outline" size={20} />
+                  </Pressable>
                 </View>
-                {Object.keys(memberBorrowBalances).length > 0 ? (
-                  <View style={styles.statRow}>
-                    {Object.values(memberBorrowBalances).map((bal) => (
-                      <InfoPill
-                        key={bal.member.name}
-                        label={`${bal.member.avatar} ${bal.member.name}`}
-                        value={bal.owes > 0 ? `Owes ${rs(bal.owes)}` : `Credit ${rs(bal.contributed - bal.borrowed + bal.repaid)}`}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScrollRow}>
+                  <CategoryChip
+                    active={activeViewMonth === 'current'}
+                    label="Current"
+                    onPress={() => setActiveViewMonth('current')}
+                  />
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
+                    const hasData = availableViewMonths.includes(m);
+                    if (!hasData && !(activeViewYear === new Date().getFullYear() && m === new Date().getMonth() + 1)) return null;
+                    return (
+                      <CategoryChip
+                        key={m}
+                        active={activeViewMonth === m}
+                        label={monthShort[m - 1]}
+                        onPress={() => setActiveViewMonth(m)}
                       />
-                    ))}
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {isViewingArchive && monthFilteredExpenses ? (
+                <>
+                  <View style={styles.archiveBadge}>
+                    <Text style={styles.archiveBadgeText}>
+                      Viewing {monthNames[(activeViewMonth as number) - 1]} {activeViewYear}
+                    </Text>
                   </View>
-                ) : null}
-              </View>
 
-              <View style={styles.rowBetween}>
-                <View style={styles.segmentRow}>
-                  {expenseFilters.map((filter) => (
-                    <CategoryChip key={filter} active={expenseView === filter} label={filter} onPress={() => setExpenseView(filter)} />
-                  ))}
-                </View>
-                <Pressable hitSlop={10} onPress={() => setShowExpenseFilters(true)}>
-                  <Ionicons color={theme.primary} name="options-outline" size={24} />
-                </Pressable>
-              </View>
+                  {(() => {
+                    const mExpenses = monthFilteredExpenses.filter((e) => !e.is_borrow);
+                    const mSpent = mExpenses.filter((e) => !e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
+                    const mContributions = mExpenses.filter((e) => e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
+                    const mBorrowed = monthFilteredExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
+                    const mRepaid = monthFilteredExpenses.filter((e) => e.is_borrow && e.price < 0).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
+                    const mTotalSpent = mSpent + mContributions + mBorrowed - mRepaid;
+                    const mAllocated = selectedPlan.total_amount + mContributions;
+                    const mRemaining = Math.max(mAllocated - mTotalSpent, 0);
 
-              <View style={styles.dualActions}>
-                <ModernButton
-                  icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
-                  onPress={() => setShowExpenseComposer(true)}
-                  testID="open-add-expense"
-                  text="Add expense"
-                />
-                <ModernButton
-                  icon={<Ionicons color="#FFFFFF" name="cash-outline" size={18} />}
-                  onPress={() => setShowBorrowComposer(true)}
-                  secondary
-                  testID="open-borrow"
-                  text="Borrow"
-                />
-              </View>
+                    const mMemberBalances: Record<string, { avatar: string; borrowed: number; contributed: number; name: string; owes: number; repaid: number }> = {};
+                    monthFilteredExpenses.forEach((e) => {
+                      if (!e.is_borrow) return;
+                      const userId = e.used_by ?? e.added_by;
+                      const member = memberMap.get(userId);
+                      if (!member) return;
+                      if (!mMemberBalances[userId]) mMemberBalances[userId] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
+                      if (e.price > 0) mMemberBalances[userId].borrowed += e.price;
+                      else mMemberBalances[userId].repaid += Math.abs(e.price);
+                    });
+                    mExpenses.filter((e) => e.paid_by).forEach((e) => {
+                      const member = memberMap.get(e.paid_by!);
+                      if (!member) return;
+                      if (!mMemberBalances[e.paid_by!]) mMemberBalances[e.paid_by!] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
+                      mMemberBalances[e.paid_by!].contributed += Number(e.price ?? 0);
+                    });
+                    Object.values(mMemberBalances).forEach((bal) => {
+                      bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
+                    });
 
-              {filteredExpenses.length > 0 ? (
-                filteredExpenses.map((expense) => {
-                  const items = expense.items ?? [];
-                  const expenseTitle = items.length > 0 
-                    ? items.map(i => i.name).join(', ')
-                    : expense.description || 'Expense';
-                  const hasMultipleItems = items.length > 1;
-                  
-                  return (
-                    <BentoCard key={expense.id}>
-                      <View style={styles.expenseCardRow}>
-                        <View style={styles.expenseDetails}>
-                          {expense.description ? (
-                            <Text style={styles.expenseDescription}>{expense.description}</Text>
-                          ) : null}
-                          {items.length > 0 ? (
-                            <View style={styles.itemsList}>
-                              {items.map((item, idx) => (
-                                <View key={idx} style={styles.itemRow}>
-                                  <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                                  <Text style={styles.itemPrice}>{rs(item.price)}</Text>
-                                </View>
+                    return (
+                      <>
+                        <BentoCard tone="highlight">
+                          <Text style={styles.metricText}>{rs(mTotalSpent)}</Text>
+                          <Text style={styles.bodyMuted}>total spent out of {rs(mAllocated)} allocated</Text>
+                          <View style={styles.spacer12} />
+                          <ProgressBar progress={mTotalSpent / Math.max(mAllocated, 1)} />
+                        </BentoCard>
+
+                        <View style={styles.sectionGap}>
+                          <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                          <View style={styles.statRow}>
+                            <InfoPill label="Plan Budget" value={rs(selectedPlan.total_amount)} />
+                            {mContributions > 0 ? (
+                              <InfoPill label="+ Contributions" value={rs(mContributions)} />
+                            ) : null}
+                            <InfoPill label="= Allocated" value={rs(mAllocated)} />
+                            <InfoPill label="- Family expenses" value={rs(mSpent)} />
+                            {mContributions > 0 ? (
+                              <InfoPill label="- Own-pocket spent" value={rs(mContributions)} />
+                            ) : null}
+                            {mBorrowed > 0 ? (
+                              <InfoPill label="- Borrowed" value={rs(mBorrowed)} />
+                            ) : null}
+                            {mRepaid > 0 ? (
+                              <InfoPill label="+ Repaid" value={rs(mRepaid)} />
+                            ) : null}
+                            <InfoPill label="= Remaining" value={rs(mRemaining)} />
+                          </View>
+                          {Object.keys(mMemberBalances).length > 0 ? (
+                            <View style={styles.statRow}>
+                              {Object.values(mMemberBalances).map((bal) => (
+                                <InfoPill
+                                  key={bal.name}
+                                  label={`${bal.avatar} ${bal.name}`}
+                                  value={bal.owes > 0 ? `Owes ${rs(bal.owes)}` : `Credit ${rs(bal.contributed - bal.borrowed + bal.repaid)}`}
+                                />
                               ))}
                             </View>
                           ) : null}
-                          <Text style={styles.listSubtitle}>
-                            {expense.category} • {formatShortDate(expense.date)}
-                          </Text>
-                          <Text style={styles.listSubtitle}>
-                            {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
-                            {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
-                          </Text>
                         </View>
-                        
-                        <View style={styles.expenseActions}>
-                          {hasMultipleItems ? (
-                            <Text style={styles.totalAmount}>{rs(expense.price)}</Text>
-                          ) : null}
-                          <View style={styles.actionButtons}>
-                            <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
-                              <Ionicons color={theme.primary} name="pencil" size={18} />
-                            </Pressable>
-                            <Pressable hitSlop={10} onPress={() => handleDeleteExpense(expense.id, expenseTitle)} style={styles.editButton}>
-                              <Ionicons color={theme.danger} name="trash" size={18} />
-                            </Pressable>
-                          </View>
-                        </View>
-                      </View>
-                    </BentoCard>
-                  );
-                })
-              ) : (
-                <EmptyState body="Use the add button to capture a new family expense." title="No expenses in this view" />
-              )}
 
-              {(() => {
-                const planBorrows = profileExpenses.filter((e) => e.is_borrow && e.plan_id === selectedPlan.id);
-                if (planBorrows.length === 0) return null;
-                const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
-                planBorrows.forEach((e) => {
-                  const userId = e.used_by ?? e.added_by;
-                  const member = memberMap.get(userId);
-                  if (!member) return;
-                  if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
-                  if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
-                  else borrowsByMember[userId].repaid += Math.abs(e.price);
-                  borrowsByMember[userId].records.push(e);
-                });
-                Object.entries(personalContributions).forEach(([userId, data]) => {
-                  if (borrowsByMember[userId]) {
-                    borrowsByMember[userId].contributed = data.total;
-                  }
-                });
-                return (
-                  <View style={styles.sectionGap}>
-                    <Text style={styles.inputLabel}>Borrowed from Budget</Text>
-                    {Object.entries(borrowsByMember).map(([userId, data]) => (
-<BentoCard key={userId}>
-                          <View style={styles.borrowHeaderRow}>
-                            <View style={{ flex: 1, marginRight: 12 }}>
-                              <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                              <Text style={styles.listSubtitle}>{`Borrowed ${rs(data.borrowed)} · Repaid ${rs(data.repaid)} · Owes ${rs(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
-                            </View>
-                            <ModernButton
-                              onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
-                              secondary
-                              style={{ flexShrink: 0 }}
-                              text="Repay"
-                              testID={`repay-${userId}`}
-                            />
+                        {mExpenses.length > 0 ? (
+                          <View style={styles.sectionGap}>
+                            <Text style={styles.inputLabel}>Expenses</Text>
+                            {mExpenses.map((expense) => {
+                              const items = expense.items ?? [];
+                              return (
+                                <BentoCard key={expense.id}>
+                                  <View style={styles.expenseCardRow}>
+                                    <View style={styles.expenseDetails}>
+                                      {expense.description ? (
+                                        <Text style={styles.expenseDescription}>{expense.description}</Text>
+                                      ) : null}
+                                      {items.length > 0 ? (
+                                        <View style={styles.itemsList}>
+                                          {items.map((item, idx) => (
+                                            <View key={idx} style={styles.itemRow}>
+                                              <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                                              <Text style={styles.itemPrice}>{rs(item.price)}</Text>
+                                            </View>
+                                          ))}
+                                        </View>
+                                      ) : null}
+                                      <Text style={styles.listSubtitle}>
+                                        {expense.category} • {formatShortDate(expense.date)}
+                                      </Text>
+                                      <Text style={styles.listSubtitle}>
+                                        {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
+                                        {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.expenseActions}>
+                                      {items.length > 1 ? (
+                                        <Text style={styles.totalAmount}>{rs(expense.price)}</Text>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                </BentoCard>
+                              );
+                            })}
                           </View>
-                          {data.records.map((record) => (
-                            <View key={record.id} style={styles.borrowRecordRow}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${rs(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
-                              </View>
+                        ) : (
+                          <EmptyState body="No expenses were recorded in this period." title="No expenses" />
+                        )}
+
+                        {(() => {
+                          const archiveBorrows = monthFilteredExpenses.filter((e) => e.is_borrow);
+                          if (archiveBorrows.length === 0) return null;
+                          const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
+                          archiveBorrows.forEach((e) => {
+                            const userId = e.used_by ?? e.added_by;
+                            const member = memberMap.get(userId);
+                            if (!member) return;
+                            if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
+                            if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
+                            else borrowsByMember[userId].repaid += Math.abs(e.price);
+                            borrowsByMember[userId].records.push(e);
+                          });
+                          return (
+                            <View style={styles.sectionGap}>
+                              <Text style={styles.inputLabel}>Borrowed from Budget</Text>
+                              {Object.entries(borrowsByMember).map(([userId, data]) => (
+                                <BentoCard key={userId}>
+                                  <View style={styles.borrowHeaderRow}>
+                                    <View style={{ flex: 1, marginRight: 12 }}>
+                                      <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
+                                      <Text style={styles.listSubtitle}>{`Borrowed ${rs(data.borrowed)} · Repaid ${rs(data.repaid)} · Owes ${rs(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
+                                    </View>
+                                  </View>
+                                  {data.records.map((record) => (
+                                    <View key={record.id} style={styles.borrowRecordRow}>
+                                      <View style={{ flex: 1 }}>
+                                        <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${rs(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+                                      </View>
+                                    </View>
+                                  ))}
+                                </BentoCard>
+                              ))}
+                            </View>
+                          );
+                        })()}
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <>
+                  <BentoCard tone="highlight">
+                    <Text style={styles.metricText}>{rs((spentByPlan[selectedPlan.id] ?? 0) + (contributionsByPlan[selectedPlan.id] ?? 0) + (borrowedByPlan[selectedPlan.id] ?? 0) - (repaidByPlan[selectedPlan.id] ?? 0))}</Text>
+                    <Text style={styles.bodyMuted}>total spent out of {rs(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0))} allocated</Text>
+                    <View style={styles.spacer12} />
+                    <ProgressBar progress={((spentByPlan[selectedPlan.id] ?? 0) + (contributionsByPlan[selectedPlan.id] ?? 0) + (borrowedByPlan[selectedPlan.id] ?? 0) - (repaidByPlan[selectedPlan.id] ?? 0)) / Math.max(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0), 1)} />
+                  </BentoCard>
+
+                  <View style={styles.sectionGap}>
+                    <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                    <View style={styles.statRow}>
+                      <InfoPill label="Plan Budget" value={rs(selectedPlan.total_amount)} />
+                      {((contributionsByPlan[selectedPlan.id] ?? 0) > 0) ? (
+                        <InfoPill label="+ Contributions" value={rs(contributionsByPlan[selectedPlan.id] ?? 0)} />
+                      ) : null}
+                      <InfoPill label="= Allocated" value={rs(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0))} />
+                      <InfoPill label="- Family expenses" value={rs(spentByPlan[selectedPlan.id] ?? 0)} />
+                      {((contributionsByPlan[selectedPlan.id] ?? 0) > 0) ? (
+                        <InfoPill label="- Own-pocket spent" value={rs(contributionsByPlan[selectedPlan.id] ?? 0)} />
+                      ) : null}
+                      {((borrowedByPlan[selectedPlan.id] ?? 0) > 0) ? (
+                        <InfoPill label="- Borrowed" value={rs(borrowedByPlan[selectedPlan.id] ?? 0)} />
+                      ) : null}
+                      {((repaidByPlan[selectedPlan.id] ?? 0) > 0) ? (
+                        <InfoPill label="+ Repaid" value={rs(repaidByPlan[selectedPlan.id] ?? 0)} />
+                      ) : null}
+                      <InfoPill label="= Remaining" value={rs(Math.max((selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0)) - (spentByPlan[selectedPlan.id] ?? 0) - (contributionsByPlan[selectedPlan.id] ?? 0) - (borrowedByPlan[selectedPlan.id] ?? 0) + (repaidByPlan[selectedPlan.id] ?? 0), 0))} />
+                    </View>
+                    {Object.keys(memberBorrowBalances).length > 0 ? (
+                      <View style={styles.statRow}>
+                        {Object.values(memberBorrowBalances).map((bal) => (
+                          <InfoPill
+                            key={bal.member.name}
+                            label={`${bal.member.avatar} ${bal.member.name}`}
+                            value={bal.owes > 0 ? `Owes ${rs(bal.owes)}` : `Credit ${rs(bal.contributed - bal.borrowed + bal.repaid)}`}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.rowBetween}>
+                    <View style={styles.segmentRow}>
+                      {expenseFilters.map((filter) => (
+                        <CategoryChip key={filter} active={expenseView === filter} label={filter} onPress={() => setExpenseView(filter)} />
+                      ))}
+                    </View>
+                    <Pressable hitSlop={10} onPress={() => setShowExpenseFilters(true)}>
+                      <Ionicons color={theme.primary} name="options-outline" size={24} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.dualActions}>
+                    <ModernButton
+                      icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
+                      onPress={() => setShowExpenseComposer(true)}
+                      testID="open-add-expense"
+                      text="Add expense"
+                    />
+                    <ModernButton
+                      icon={<Ionicons color="#FFFFFF" name="cash-outline" size={18} />}
+                      onPress={() => setShowBorrowComposer(true)}
+                      secondary
+                      testID="open-borrow"
+                      text="Borrow"
+                    />
+                  </View>
+
+                  {filteredExpenses.length > 0 ? (
+                    filteredExpenses.map((expense) => {
+                      const items = expense.items ?? [];
+                      const expenseTitle = items.length > 0 
+                        ? items.map(i => i.name).join(', ')
+                        : expense.description || 'Expense';
+                      const hasMultipleItems = items.length > 1;
+                      
+                      return (
+                        <BentoCard key={expense.id}>
+                          <View style={styles.expenseCardRow}>
+                            <View style={styles.expenseDetails}>
+                              {expense.description ? (
+                                <Text style={styles.expenseDescription}>{expense.description}</Text>
+                              ) : null}
+                              {items.length > 0 ? (
+                                <View style={styles.itemsList}>
+                                  {items.map((item, idx) => (
+                                    <View key={idx} style={styles.itemRow}>
+                                      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                                      <Text style={styles.itemPrice}>{rs(item.price)}</Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              ) : null}
+                              <Text style={styles.listSubtitle}>
+                                {expense.category} • {formatShortDate(expense.date)}
+                              </Text>
+                              <Text style={styles.listSubtitle}>
+                                {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
+                                {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
+                              </Text>
+                            </View>
+                            
+                            <View style={styles.expenseActions}>
+                              {hasMultipleItems ? (
+                                <Text style={styles.totalAmount}>{rs(expense.price)}</Text>
+                              ) : null}
                               <View style={styles.actionButtons}>
-                                <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
+                                <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
                                   <Ionicons color={theme.primary} name="pencil" size={18} />
                                 </Pressable>
-                                <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
+                                <Pressable hitSlop={10} onPress={() => handleDeleteExpense(expense.id, expenseTitle)} style={styles.editButton}>
                                   <Ionicons color={theme.danger} name="trash" size={18} />
                                 </Pressable>
                               </View>
                             </View>
-                          ))}
+                          </View>
                         </BentoCard>
-                    ))}
-                  </View>
-                );
-              })()}
+                      );
+                    })
+                  ) : (
+                    <EmptyState body="Use the add button to capture a new family expense." title="No expenses in this view" />
+                  )}
+
+                  {(() => {
+                    const planBorrows = currentPlanExpenses.filter((e) => e.is_borrow && e.plan_id === selectedPlan.id);
+                    if (planBorrows.length === 0) return null;
+                    const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
+                    planBorrows.forEach((e) => {
+                      const userId = e.used_by ?? e.added_by;
+                      const member = memberMap.get(userId);
+                      if (!member) return;
+                      if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
+                      if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
+                      else borrowsByMember[userId].repaid += Math.abs(e.price);
+                      borrowsByMember[userId].records.push(e);
+                    });
+                    Object.entries(personalContributions).forEach(([userId, data]) => {
+                      if (borrowsByMember[userId]) {
+                        borrowsByMember[userId].contributed = data.total;
+                      }
+                    });
+                    return (
+                      <View style={styles.sectionGap}>
+                        <Text style={styles.inputLabel}>Borrowed from Budget</Text>
+                        {Object.entries(borrowsByMember).map(([userId, data]) => (
+                          <BentoCard key={userId}>
+                            <View style={styles.borrowHeaderRow}>
+                              <View style={{ flex: 1, marginRight: 12 }}>
+                                <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
+                                <Text style={styles.listSubtitle}>{`Borrowed ${rs(data.borrowed)} · Repaid ${rs(data.repaid)} · Owes ${rs(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
+                              </View>
+                              <ModernButton
+                                onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
+                                secondary
+                                style={{ flexShrink: 0 }}
+                                text="Repay"
+                                testID={`repay-${userId}`}
+                              />
+                            </View>
+                            {data.records.map((record) => (
+                              <View key={record.id} style={styles.borrowRecordRow}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${rs(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+                                </View>
+                                <View style={styles.actionButtons}>
+                                  <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
+                                    <Ionicons color={theme.primary} name="pencil" size={18} />
+                                  </Pressable>
+                                  <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
+                                    <Ionicons color={theme.danger} name="trash" size={18} />
+                                  </Pressable>
+                                </View>
+                              </View>
+                            ))}
+                          </BentoCard>
+                        ))}
+                      </View>
+                    );
+                  })()}
+                </>
+              )}
             </>
           ) : null}
-          <View style={styles.spacer16} />
-          <ModernButton
-            destructive
-            onPress={() => selectedPlan && handleResetBudget(selectedPlan.id, selectedPlan.name)}
-            testID="reset-budget-button"
-            text="Reset Budget"
-          />
+          {!isViewingArchive && (
+            <>
+              <View style={styles.spacer16} />
+              <ModernButton
+                destructive
+                onPress={() => selectedPlan && handleResetBudget(selectedPlan.id, selectedPlan.name)}
+                testID="reset-budget-button"
+                text="Reset Budget"
+              />
+            </>
+          )}
         </ModalScaffold>
       </Modal>
 
@@ -3220,6 +3506,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  monthSelectorWrap: {
+    marginBottom: 12,
+  },
+  yearNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    marginVertical: 6,
+  },
+  yearNavArrow: {
+    padding: 6,
+  },
+  yearNavArrowDisabled: {
+    opacity: 0.3,
+  },
+  yearNavText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.text,
+    minWidth: 48,
+    textAlign: 'center',
+  },
+  monthScrollRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  archiveBadge: {
+    backgroundColor: theme.primarySoft,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  archiveBadgeText: {
+    fontSize: 12,
+    color: theme.primary,
+    fontWeight: '500',
   },
   sheetBackdrop: {
     backgroundColor: 'rgba(45, 49, 47, 0.32)',
