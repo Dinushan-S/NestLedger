@@ -81,13 +81,15 @@ jobs:
               source venv/bin/activate
               pip install -r requirements.txt
 
-              printf '[Unit]\nDescription=NestLedger FastAPI Backend\nAfter=network.target\n\n[Service]\nType=simple\nUser=root\nWorkingDirectory=/opt/NestLedger/backend\nEnvironment="PATH=/opt/NestLedger/backend/venv/bin"\nExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000\nRestart=always\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/nestledger.service
-
+              # printf '[Unit]\nDescription=NestLedger FastAPI Backend\nAfter=network.target\n\n[Service]\nType=simple\nUser=root\nWorkingDirectory=/opt/NestLedger/backend\nEnvironment="PATH=/opt/NestLedger/backend/venv/bin"\nExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000\nRestart=always\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/nestledger.service
+              printf '[Unit]\nDescription=NestLedger FastAPI Backend\nAfter=network.target\n\n[Service]\nType=simple\nUser=root\nWorkingDirectory=/opt/NestLedger/backend\nEnvironment="PATH=/opt/NestLedger/backend/venv/bin"\nExecStart=/opt/NestLedger/backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000\nRestart=always\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' | sudo tee /etc/systemd/system/nestledger.service > /dev/null
+              
               sudo systemctl daemon-reload
               sudo systemctl enable nestledger
 
-              printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' > /etc/nginx/sites-available/nestledger
-
+              # printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' > /etc/nginx/sites-available/nestledger
+              printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' | sudo tee /etc/nginx/sites-available/nestledger > /dev/null
+              
               sudo ln -sf /etc/nginx/sites-available/nestledger /etc/nginx/sites-enabled/
               sudo rm -f /etc/nginx/sites-enabled/default
               sudo nginx -t && systemctl restart nginx
