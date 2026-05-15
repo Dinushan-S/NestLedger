@@ -92,7 +92,7 @@ jobs:
               
               sudo ln -sf /etc/nginx/sites-available/nestledger /etc/nginx/sites-enabled/
               sudo rm -f /etc/nginx/sites-enabled/default
-              sudo nginx -t && systemctl restart nginx
+              sudo nginx -t && sudo systemctl restart nginx
 
               sudo certbot --nginx -d nestledger.dinushan.dev --non-interactive --agree-tos --register-unsafely-without-email || true
 
