@@ -45,7 +45,6 @@ import {
   AppNotification,
   BillPayment,
   BudgetPlan,
-  Expense,
   ExpenseWithItems,
   HouseholdProfile,
   Member,
@@ -68,7 +67,7 @@ import {
 import BillTracker from './BillTracker';
 import SavingsTracker from './SavingsTracker';
 import { supabase } from '../../lib/supabase';
-import { appConfig, isConfigReady } from '../../lib/config';
+import { isConfigReady } from '../../lib/config';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
@@ -177,8 +176,6 @@ const defaultShoppingForm: ShoppingForm = {
 const defaultBudgetView = expenseFilters[1];
 
 const extractError = (error: unknown) => {
-  console.log('extractError called with:', error);
-  
   if (error instanceof Error) {
     return error.message;
   }
@@ -372,42 +369,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
   }, [profileExpenses, plans]);
 
-  const spentByPlan = useMemo(() => {
-    return currentPlanExpenses
-      .filter((expense) => !expense.paid_by && !expense.is_borrow)
-      .reduce<Record<string, number>>((accumulator, expense) => {
-        accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
-        return accumulator;
-      }, {});
-  }, [currentPlanExpenses]);
-
-  const contributionsByPlan = useMemo(() => {
-    return currentPlanExpenses
-      .filter((expense) => expense.paid_by && !expense.is_borrow)
-      .reduce<Record<string, number>>((accumulator, expense) => {
-        accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
-        return accumulator;
-      }, {});
-  }, [currentPlanExpenses]);
-
-  const borrowedByPlan = useMemo(() => {
-    return currentPlanExpenses
-      .filter((expense) => expense.is_borrow && expense.price > 0)
-      .reduce<Record<string, number>>((accumulator, expense) => {
-        accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Number(expense.price ?? 0);
-        return accumulator;
-      }, {});
-  }, [currentPlanExpenses]);
-
-  const repaidByPlan = useMemo(() => {
-    return currentPlanExpenses
-      .filter((expense) => expense.is_borrow && expense.price < 0)
-      .reduce<Record<string, number>>((accumulator, expense) => {
-        accumulator[expense.plan_id] = (accumulator[expense.plan_id] ?? 0) + Math.abs(Number(expense.price ?? 0));
-        return accumulator;
-      }, {});
-  }, [currentPlanExpenses]);
-
   const personalContributions = useMemo(() => {
     const contributions: Record<string, { member: { avatar: string; name: string }; total: number }> = {};
     currentPlanExpenses.forEach((expense) => {
@@ -423,33 +384,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
     return contributions;
   }, [currentPlanExpenses, memberMap]);
-
-  const memberBorrowBalances = useMemo(() => {
-    const balances: Record<string, { member: { avatar: string; name: string }; contributed: number; borrowed: number; repaid: number; owes: number }> = {};
-    currentPlanExpenses.forEach((expense) => {
-      if (!expense.is_borrow) return;
-      const userId = expense.used_by ?? expense.added_by;
-      const member = memberMap.get(userId);
-      if (!member) return;
-      if (!balances[userId]) balances[userId] = { member, contributed: 0, borrowed: 0, repaid: 0, owes: 0 };
-      if (expense.price > 0) balances[userId].borrowed += expense.price;
-      else balances[userId].repaid += Math.abs(expense.price);
-    });
-    Object.entries(personalContributions).forEach(([userId, data]) => {
-      if (!balances[userId]) balances[userId] = { member: data.member, contributed: 0, borrowed: 0, repaid: 0, owes: 0 };
-      balances[userId].contributed = data.total;
-    });
-    Object.values(balances).forEach((bal) => {
-      bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
-    });
-    return balances;
-  }, [currentPlanExpenses, memberMap, personalContributions]);
-
-  const familyBudgetSpent = useMemo(() => {
-    return profileExpenses
-      .filter((expense) => !expense.paid_by && !expense.is_borrow)
-      .reduce((total, expense) => total + Number(expense.price ?? 0), 0);
-  }, [profileExpenses]);
 
   const currentMonthStatsMap = useMemo(() => {
     const monthStart = startOfMonth();
@@ -603,8 +537,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         if (savedTime !== null) {
           setReminderTime(savedTime);
         }
-      } catch (error) {
-        console.error('Error loading reminder settings:', error);
+      } catch {
       }
     };
     loadReminderSettings();
@@ -629,7 +562,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           minute: minutes,
         },
       });
-      console.log(`Reminder scheduled for ${time}`);
     }
   };
 
@@ -719,40 +651,56 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'budget_plans' },
-        (payload) => {
-          console.log('Budget plan change detected:', payload);
+        () => {
           refreshProfileData(activeProfileId);
         },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'expenses' },
-        (payload) => {
-          console.log('Expense change detected:', payload);
+        () => {
           refreshProfileData(activeProfileId);
         },
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'expense_items' },
-        (payload) => {
-          console.log('Expense item change detected:', payload);
+        () => {
           refreshProfileData(activeProfileId);
         },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'buy_list_items' },
-        (payload) => {
-          console.log('Shopping item change detected:', payload);
+        () => {
+          refreshProfileData(activeProfileId);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'recurring_bills' },
+        () => {
+          refreshProfileData(activeProfileId);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'bill_payments' },
+        () => {
+          refreshProfileData(activeProfileId);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'savings' },
+        () => {
           refreshProfileData(activeProfileId);
         },
       )
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'profile_members' },
-        (payload) => {
-          console.log('Profile member change detected:', payload);
+        () => {
           refreshProfileData(activeProfileId);
         },
       )
@@ -760,7 +708,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         'postgres_changes',
         { event: '*', filter: `user_id=eq.${session.user.id}`, schema: 'public', table: 'notifications' },
         async (payload) => {
-          console.log('Notification change detected:', payload);
           const nextPayload = payload as { eventType: string; new?: { id?: string; message?: string } };
           const nextId = nextPayload.new?.id;
           const nextMessage = nextPayload.new?.message;
@@ -783,9 +730,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           refreshProfileData(activeProfileId);
         },
       )
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -903,8 +848,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     try {
       await callback();
     } catch (error) {
-      console.error('runAction error:', error);
-      console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       announce(extractError(error));
     } finally {
       setActionBusy(false);
@@ -1103,7 +1046,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const handleMarkBillPaid = async (payment: Omit<BillPayment, 'created_at' | 'id'>) => {
     if (!activeProfile || !session?.user) return;
     await runAction(async () => {
-      const newPayment = await billApi.addPayment(payment);
+      await billApi.addPayment(payment);
       if (payment.plan_id && payment.amount > 0) {
         await expenseApi.addExpenseWithId({
           plan_id: payment.plan_id,
@@ -1178,19 +1121,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   };
 
   const handleAddExpense = async () => {
-    console.log('handleAddExpense called');
-    console.log('session:', session?.user?.id);
-    console.log('activeProfile:', activeProfile?.id);
-    console.log('selectedPlan:', selectedPlan?.id);
-    
     if (!session?.user || !activeProfile || !selectedPlan) {
-      console.error('Missing required data for expense');
       return;
     }
 
     const validItems = expenseForm.items.filter(item => item.name.trim() && item.price.trim());
-    console.log('Valid items:', validItems);
-    
+
     if (validItems.length === 0) {
       announce('Add at least one item with name and price.');
       return;
@@ -1207,12 +1143,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       price: Number(item.price),
     }));
     
-    console.log('Processed items:', items);
-
     await runAction(async () => {
       try {
         if (editingExpenseId) {
-          console.log('Updating expense:', editingExpenseId);
           await expenseApi.updateExpense(
             editingExpenseId,
             {
@@ -1225,7 +1158,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             items
           );
         } else {
-          console.log('Adding new expense');
           await expenseApi.addExpense({
             added_by: session.user.id,
             category,
@@ -1241,14 +1173,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           const itemNames = items.map(i => i.name).join(', ');
           await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
         }
-        console.log('Expense saved successfully');
-        
         setExpenseForm(defaultExpenseForm());
         setEditingExpenseId(null);
         setShowExpenseComposer(false);
         await refreshProfileData(activeProfile.id, true);
       } catch (error) {
-        console.error('Error in handleAddExpense:', error);
         throw error;
       }
     });
@@ -2670,7 +2599,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         <BottomSheet onClose={() => setShowShoppingComposer(false)}>
           <Text style={styles.sectionTitle}>Add Shopping Item</Text>
           <LabeledInput label="Product name" onChangeText={(value) => setShoppingForm((current) => ({ ...current, name: value }))} testID="shopping-name-input" value={shoppingForm.name} />
-          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shoppong-quantity-input" value={shoppingForm.quantity} />
+          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shopping-quantity-input" value={shoppingForm.quantity} />
           <Text style={styles.inputLabel}>Category</Text>
           <View style={styles.segmentRow}>
             {shoppingCategories.map((category) => (
