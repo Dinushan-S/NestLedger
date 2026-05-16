@@ -90,3 +90,16 @@ export const monthShort = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
+
+export const billCategories = [
+  { key: 'Electricity', icon: 'flash-outline' },
+  { key: 'Mobile', icon: 'phone-portrait-outline' },
+  { key: 'Water', icon: 'water-outline' },
+  { key: 'Gas', icon: 'flame-outline' },
+  { key: 'Internet', icon: 'globe-outline' },
+  { key: 'Insurance', icon: 'shield-checkmark-outline' },
+  { key: 'Rent', icon: 'home-outline' },
+  { key: 'Loan EMI', icon: 'card-outline' },
+  { key: 'Credit Card', icon: 'card-outline' },
+  { key: 'Other', icon: 'receipt-outline' },
+] as const;

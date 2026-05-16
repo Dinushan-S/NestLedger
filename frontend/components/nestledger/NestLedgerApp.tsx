@@ -43,23 +43,30 @@ import {
 } from '../../constants/nestledger';
 import {
   AppNotification,
+  BillPayment,
   BudgetPlan,
   Expense,
   ExpenseWithItems,
   HouseholdProfile,
   Member,
+  RecurringBill,
+  SavingsEntry,
   ShoppingItem,
   UserProfile,
   authApi,
+  billApi,
   budgetApi,
   expenseApi,
   inviteApi,
   notificationApi,
   profileApi,
   pushApi,
+  savingsApi,
   shoppingApi,
   validateSession,
 } from '../../lib/nestledger';
+import BillTracker from './BillTracker';
+import SavingsTracker from './SavingsTracker';
 import { supabase } from '../../lib/supabase';
 import { appConfig, isConfigReady } from '../../lib/config';
 import BentoCard from '../ui/BentoCard';
@@ -237,6 +244,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [profileExpenses, setProfileExpenses] = useState<ExpenseWithItems[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
+  const [billPayments, setBillPayments] = useState<BillPayment[]>([]);
+  const [savings, setSavings] = useState<SavingsEntry[]>([]);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [showCreateProfile, setShowCreateProfile] = useState(false);
@@ -441,6 +451,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       .reduce((total, expense) => total + Number(expense.price ?? 0), 0);
   }, [profileExpenses]);
 
+  const currentMonthStatsMap = useMemo(() => {
+    const monthStart = startOfMonth();
+    const map: Record<string, { spent: number; allocated: number; remaining: number }> = {};
+    plans.forEach((plan) => {
+      const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= monthStart && e.plan_id === plan.id);
+      const family = monthExpenses.filter((e) => !e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
+      const contributions = monthExpenses.filter((e) => e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
+      const borrowed = monthExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
+      const repaid = monthExpenses.filter((e) => e.is_borrow && e.price < 0).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
+      const total = family + contributions + borrowed - repaid;
+      const allocated = plan.total_amount + contributions;
+      map[plan.id] = { spent: total, allocated, remaining: Math.max(allocated - total, 0) };
+    });
+    return map;
+  }, [plans, profileExpenses]);
+
   const filteredShoppingItems = useMemo(() => {
     if (shoppingFilter === 'Pending') {
       return shoppingItems.filter((item) => !item.is_bought);
@@ -452,6 +478,40 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     return shoppingItems;
   }, [shoppingFilter, shoppingItems]);
+
+  const currentPlanMonthStats = useMemo(() => {
+    if (!selectedPlan) return { allocated: 0, borrowed: 0, contributions: 0, memberBalances: {}, remaining: 0, repaid: 0, spent: 0, totalSpent: 0 };
+    const monthStart = startOfMonth();
+    const planExpenses = currentPlanExpenses.filter((e) => e.plan_id === selectedPlan.id);
+    const monthNonBorrow = planExpenses.filter((e) => !e.is_borrow && new Date(e.date) >= monthStart);
+    const spent = monthNonBorrow.filter((e) => !e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
+    const contributions = monthNonBorrow.filter((e) => e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
+    const borrowed = planExpenses.filter((e) => e.plan_id === selectedPlan.id && e.is_borrow && e.price > 0 && new Date(e.date) >= monthStart).reduce((s, e) => s + Number(e.price ?? 0), 0);
+    const repaid = planExpenses.filter((e) => e.plan_id === selectedPlan.id && e.is_borrow && e.price < 0 && new Date(e.date) >= monthStart).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
+    const totalSpent = spent + contributions + borrowed - repaid;
+    const allocated = selectedPlan.total_amount + contributions;
+    const remaining = Math.max(allocated - totalSpent, 0);
+    const memberBalances: Record<string, { avatar: string; borrowed: number; contributed: number; name: string; owes: number; repaid: number }> = {};
+    planExpenses.filter((e) => new Date(e.date) >= monthStart).forEach((e) => {
+      if (!e.is_borrow) return;
+      const userId = e.used_by ?? e.added_by;
+      const member = memberMap.get(userId);
+      if (!member) return;
+      if (!memberBalances[userId]) memberBalances[userId] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
+      if (e.price > 0) memberBalances[userId].borrowed += e.price;
+      else memberBalances[userId].repaid += Math.abs(e.price);
+    });
+    monthNonBorrow.filter((e) => e.paid_by).forEach((e) => {
+      const member = memberMap.get(e.paid_by!);
+      if (!member) return;
+      if (!memberBalances[e.paid_by!]) memberBalances[e.paid_by!] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
+      memberBalances[e.paid_by!].contributed += Number(e.price ?? 0);
+    });
+    Object.values(memberBalances).forEach((bal) => {
+      bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
+    });
+    return { allocated, borrowed, contributions, memberBalances, remaining, repaid, spent, totalSpent };
+  }, [currentPlanExpenses, memberMap, selectedPlan]);
 
   const filteredExpenses = useMemo(() => {
     if (!selectedPlan) {
@@ -786,12 +846,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     lastRefreshRef.current = now;
 
     try {
-      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications] = await Promise.all([
+      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications, nextBills, nextPayments, nextSavings] = await Promise.all([
         profileApi.fetchMembers(profileId),
         budgetApi.fetchPlans(profileId),
         expenseApi.fetchProfileExpenses(profileId),
         shoppingApi.fetchItems(profileId),
         notificationApi.fetchForUser(profileId, session.user.id),
+        billApi.fetchRecurringBills(profileId),
+        billApi.fetchPayments(profileId),
+        savingsApi.fetchSavings(profileId),
       ]);
 
       setMembers(nextMembers);
@@ -799,6 +862,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setProfileExpenses(nextExpenses);
       setShoppingItems(nextShopping);
       setNotifications(nextNotifications);
+      setRecurringBills(nextBills);
+      setBillPayments(nextPayments);
+      setSavings(nextSavings);
       nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
       if (selectedPlanId && !nextPlans.some((plan) => plan.id === selectedPlanId)) {
         setSelectedPlanId(null);
@@ -1008,6 +1074,107 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       profile_id: activeProfile.id,
       type,
     }).catch(() => undefined);
+  };
+
+  const handleAddBill = (bill: Omit<RecurringBill, 'created_at' | 'id'>) => {
+    if (!activeProfile) return;
+    runAction(async () => {
+      await billApi.createRecurringBill(bill);
+      await refreshProfileData(activeProfile.id, true);
+    });
+  };
+
+  const handleDeleteBill = (billId: string) => {
+    if (!activeProfile) return;
+    setConfirmModal({
+      body: 'Delete this recurring bill? All pending payments will also be removed.',
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        await billApi.deleteRecurringBill(billId as string);
+        await refreshProfileData(activeProfile.id!, true);
+        setConfirmModal(null);
+      },
+      title: 'Delete Bill',
+      visible: true,
+    });
+  };
+
+  const handleMarkBillPaid = async (payment: Omit<BillPayment, 'created_at' | 'id'>) => {
+    if (!activeProfile || !session?.user) return;
+    await runAction(async () => {
+      const newPayment = await billApi.addPayment(payment);
+      if (payment.plan_id && payment.amount > 0) {
+        await expenseApi.addExpenseWithId({
+          plan_id: payment.plan_id,
+          profile_id: payment.profile_id,
+          description: `Bill payment: ${payment.bill_id ? recurringBills.find((b) => b.id === payment.bill_id)?.name ?? 'Bill' : 'Bill'}`,
+          category: payment.bill_id ? recurringBills.find((b) => b.id === payment.bill_id)?.category ?? 'Utilities' : 'Utilities',
+          date: payment.date ?? new Date().toISOString(),
+          added_by: payment.added_by,
+          paid_by: payment.added_by !== session.user.id ? payment.added_by : null,
+          is_borrow: false,
+          used_by: null,
+          items: [{
+            name: 'Bill payment',
+            price: payment.amount,
+          }],
+        });
+      }
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} paid a bill (${rs(payment.amount)})`, notificationTypes.expense);
+      await refreshProfileData(activeProfile.id, true);
+    });
+  };
+
+  const handleAddDeposit = (entry: Omit<SavingsEntry, 'created_at' | 'id'>) => {
+    if (!activeProfile) return;
+    runAction(async () => {
+      await savingsApi.addEntry(entry);
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} deposited ${rs(entry.amount)} to savings`, notificationTypes.expense);
+      await refreshProfileData(activeProfile.id, true);
+    });
+  };
+
+  const handleWithdraw = (entry: Omit<SavingsEntry, 'created_at' | 'id'>) => {
+    if (!activeProfile) return;
+    runAction(async () => {
+      await savingsApi.addEntry(entry);
+      if (entry.linked_plan_id && entry.amount < 0 && session?.user) {
+        await expenseApi.addExpenseWithId({
+          plan_id: entry.linked_plan_id,
+          profile_id: entry.profile_id,
+          description: entry.note ?? `Withdrawal from savings`,
+          category: 'Other',
+          date: entry.date,
+          added_by: session.user.id,
+          paid_by: session.user.id,
+          is_borrow: false,
+          used_by: session.user.id,
+          items: [{
+            name: entry.note ?? `Savings withdrawal`,
+            price: Math.abs(entry.amount),
+          }],
+        });
+      }
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${rs(Math.abs(entry.amount))} from savings`, notificationTypes.expense);
+      await refreshProfileData(activeProfile.id, true);
+    });
+  };
+
+  const handleDeleteSavingsEntry = (entryId: string) => {
+    if (!activeProfile) return;
+    setConfirmModal({
+      body: 'Delete this savings entry?',
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        await savingsApi.deleteEntry(entryId as string);
+        await refreshProfileData(activeProfile.id!, true);
+        setConfirmModal(null);
+      },
+      title: 'Delete Entry',
+      visible: true,
+    });
   };
 
   const handleAddExpense = async () => {
@@ -1475,13 +1642,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const monthlySpend = useMemo(() => {
     const monthStart = startOfMonth();
     return profileExpenses
-      .filter((item) => new Date(item.date) >= monthStart)
+      .filter((item) => !item.is_borrow && new Date(item.date) >= monthStart)
       .reduce((total, item) => total + Number(item.price), 0);
   }, [profileExpenses]);
 
   const latestActivities = notifications.slice(0, 4);
   const activeBudget = plans[0];
-  const activeBudgetSpent = activeBudget ? (spentByPlan[activeBudget.id] ?? 0) + (contributionsByPlan[activeBudget.id] ?? 0) + (borrowedByPlan[activeBudget.id] ?? 0) - (repaidByPlan[activeBudget.id] ?? 0) : 0;
+  const currentMonthPlanStatsDashboard = useMemo(() => {
+    if (!activeBudget) return { spent: 0, contributions: 0 };
+    const planId = activeBudget.id;
+    const monthStart = startOfMonth();
+    const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= monthStart && e.plan_id === planId);
+    const family = monthExpenses.filter((e) => !e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
+    const contributions = monthExpenses.filter((e) => e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
+    const borrowed = monthExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
+    const repaid = monthExpenses.filter((e) => e.is_borrow && e.price < 0).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
+    return { spent: family + contributions + borrowed - repaid, contributions };
+  }, [activeBudget, profileExpenses]);
   const pendingItemsCount = shoppingItems.filter((item) => !item.is_bought).length;
 
   if (!isConfigReady) {
@@ -1658,10 +1835,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     <BentoCard style={{ width: bentoWidth }}>
                       <Text style={styles.cardEyebrow}>Active budget</Text>
                       <Text style={styles.cardTitle}>{activeBudget?.name ?? 'No plan yet'}</Text>
-                      <Text style={styles.metricText}>{rs(activeBudgetSpent)}</Text>
-                      <Text style={styles.bodyMuted}>of {rs((activeBudget?.total_amount ?? 0) + (activeBudget ? (contributionsByPlan[activeBudget.id] ?? 0) : 0))} allocated</Text>
+                      <Text style={styles.metricText}>{rs(currentMonthPlanStatsDashboard.spent)}</Text>
+                      <Text style={styles.bodyMuted}>of {rs((activeBudget?.total_amount ?? 0) + currentMonthPlanStatsDashboard.contributions)} allocated</Text>
                       <View style={styles.spacer12} />
-                      <ProgressBar progress={activeBudget ? activeBudgetSpent / Math.max(activeBudget.total_amount + (contributionsByPlan[activeBudget.id] ?? 0), 1) : 0} />
+                      <ProgressBar progress={activeBudget ? currentMonthPlanStatsDashboard.spent / Math.max(activeBudget.total_amount + currentMonthPlanStatsDashboard.contributions, 1) : 0} />
                     </BentoCard>
 
                     <BentoCard style={{ width: bentoWidth }}>
@@ -1684,6 +1861,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       <Text style={styles.cardEyebrow}>Notifications</Text>
                       <Text style={styles.metricText}>{unreadCount}</Text>
                       <Text style={styles.bodyMuted}>unread family updates</Text>
+                    </BentoCard>
+
+                    <BentoCard style={{ width: bentoWidth }}>
+                      <Text style={styles.cardEyebrow}>Savings</Text>
+                      <Text style={styles.metricText}>{rs(savings.reduce((s, e) => s + e.amount, 0))}</Text>
+                      <Text style={styles.bodyMuted}>total saved across all plans</Text>
                     </BentoCard>
                   </View>
 
@@ -1727,9 +1910,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   </View>
 
                   {plans.map((plan) => {
-                    const spent = (spentByPlan[plan.id] ?? 0) + (contributionsByPlan[plan.id] ?? 0) + (borrowedByPlan[plan.id] ?? 0) - (repaidByPlan[plan.id] ?? 0);
-                    const allocated = plan.total_amount + (contributionsByPlan[plan.id] ?? 0);
-                    const remaining = Math.max(allocated - spent, 0);
+                    const stats = currentMonthStatsMap[plan.id] ?? { spent: 0, allocated: plan.total_amount, remaining: plan.total_amount };
                     return (
                       <BentoCard key={plan.id} style={styles.planCard}>
                         <View style={styles.rowBetween}>
@@ -1760,11 +1941,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                           </View>
                         </View>
                         <View style={styles.statRow}>
-                          <InfoPill label="Allocated" value={rs(allocated)} />
-                          <InfoPill label="Spent" value={rs(spent)} />
-                          <InfoPill label="Left" value={rs(remaining)} />
+                          <InfoPill label="Allocated" value={rs(stats.allocated)} />
+                          <InfoPill label="Spent" value={rs(stats.spent)} />
+                          <InfoPill label="Left" value={rs(stats.remaining)} />
                         </View>
-                        <ProgressBar progress={spent / Math.max(allocated, 1)} />
+                        <ProgressBar progress={stats.spent / Math.max(stats.allocated, 1)} />
                       </BentoCard>
                     );
                   })}
@@ -1772,6 +1953,33 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   {plans.length === 0 ? (
                     <EmptyState body="Create your first family budget plan to start tracking expenses." title="No plans yet" />
                   ) : null}
+
+                  <View style={styles.spacer16} />
+                  <BillTracker
+                    actionBusy={actionBusy}
+                    billPayments={billPayments}
+                    members={members}
+                    onAddBill={handleAddBill}
+                    onDeleteBill={handleDeleteBill}
+                    onMarkPaid={handleMarkBillPaid}
+                    plans={plans}
+                    profileId={activeProfile?.id ?? ''}
+                    recurringBills={recurringBills}
+                    userId={session?.user?.id ?? ''}
+                  />
+
+                  <View style={styles.spacer16} />
+                  <SavingsTracker
+                    actionBusy={actionBusy}
+                    members={members}
+                    onAddDeposit={handleAddDeposit}
+                    onDeleteEntry={handleDeleteSavingsEntry}
+                    onWithdraw={handleWithdraw}
+                    plans={plans}
+                    profileId={activeProfile?.id ?? ''}
+                    savings={savings}
+                    userId={session?.user?.id ?? ''}
+                  />
                 </View>
               ) : null}
 
@@ -2157,38 +2365,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               ) : (
                 <>
                   <BentoCard tone="highlight">
-                    <Text style={styles.metricText}>{rs((spentByPlan[selectedPlan.id] ?? 0) + (contributionsByPlan[selectedPlan.id] ?? 0) + (borrowedByPlan[selectedPlan.id] ?? 0) - (repaidByPlan[selectedPlan.id] ?? 0))}</Text>
-                    <Text style={styles.bodyMuted}>total spent out of {rs(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0))} allocated</Text>
+                    <Text style={styles.metricText}>{rs(currentPlanMonthStats.totalSpent)}</Text>
+                    <Text style={styles.bodyMuted}>spent this month out of {rs(currentPlanMonthStats.allocated)} allocated</Text>
                     <View style={styles.spacer12} />
-                    <ProgressBar progress={((spentByPlan[selectedPlan.id] ?? 0) + (contributionsByPlan[selectedPlan.id] ?? 0) + (borrowedByPlan[selectedPlan.id] ?? 0) - (repaidByPlan[selectedPlan.id] ?? 0)) / Math.max(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0), 1)} />
+                    <ProgressBar progress={currentPlanMonthStats.totalSpent / Math.max(currentPlanMonthStats.allocated, 1)} />
                   </BentoCard>
 
                   <View style={styles.sectionGap}>
                     <Text style={styles.inputLabel}>Spending Breakdown</Text>
                     <View style={styles.statRow}>
                       <InfoPill label="Plan Budget" value={rs(selectedPlan.total_amount)} />
-                      {((contributionsByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                        <InfoPill label="+ Contributions" value={rs(contributionsByPlan[selectedPlan.id] ?? 0)} />
+                      {currentPlanMonthStats.contributions > 0 ? (
+                        <InfoPill label="+ Contributions" value={rs(currentPlanMonthStats.contributions)} />
                       ) : null}
-                      <InfoPill label="= Allocated" value={rs(selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0))} />
-                      <InfoPill label="- Family expenses" value={rs(spentByPlan[selectedPlan.id] ?? 0)} />
-                      {((contributionsByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                        <InfoPill label="- Own-pocket spent" value={rs(contributionsByPlan[selectedPlan.id] ?? 0)} />
+                      <InfoPill label="= Allocated" value={rs(currentPlanMonthStats.allocated)} />
+                      <InfoPill label="- Family expenses" value={rs(currentPlanMonthStats.spent)} />
+                      {currentPlanMonthStats.contributions > 0 ? (
+                        <InfoPill label="- Own-pocket spent" value={rs(currentPlanMonthStats.contributions)} />
                       ) : null}
-                      {((borrowedByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                        <InfoPill label="- Borrowed" value={rs(borrowedByPlan[selectedPlan.id] ?? 0)} />
+                      {currentPlanMonthStats.borrowed > 0 ? (
+                        <InfoPill label="- Borrowed" value={rs(currentPlanMonthStats.borrowed)} />
                       ) : null}
-                      {((repaidByPlan[selectedPlan.id] ?? 0) > 0) ? (
-                        <InfoPill label="+ Repaid" value={rs(repaidByPlan[selectedPlan.id] ?? 0)} />
+                      {currentPlanMonthStats.repaid > 0 ? (
+                        <InfoPill label="+ Repaid" value={rs(currentPlanMonthStats.repaid)} />
                       ) : null}
-                      <InfoPill label="= Remaining" value={rs(Math.max((selectedPlan.total_amount + (contributionsByPlan[selectedPlan.id] ?? 0)) - (spentByPlan[selectedPlan.id] ?? 0) - (contributionsByPlan[selectedPlan.id] ?? 0) - (borrowedByPlan[selectedPlan.id] ?? 0) + (repaidByPlan[selectedPlan.id] ?? 0), 0))} />
+                      <InfoPill label="= Remaining" value={rs(currentPlanMonthStats.remaining)} />
                     </View>
-                    {Object.keys(memberBorrowBalances).length > 0 ? (
+                    {Object.keys(currentPlanMonthStats.memberBalances).length > 0 ? (
                       <View style={styles.statRow}>
-                        {Object.values(memberBorrowBalances).map((bal) => (
+                        {Object.values(currentPlanMonthStats.memberBalances).map((bal) => (
                           <InfoPill
-                            key={bal.member.name}
-                            label={`${bal.member.avatar} ${bal.member.name}`}
+                            key={bal.name}
+                            label={`${bal.avatar} ${bal.name}`}
                             value={bal.owes > 0 ? `Owes ${rs(bal.owes)}` : `Credit ${rs(bal.contributed - bal.borrowed + bal.repaid)}`}
                           />
                         ))}

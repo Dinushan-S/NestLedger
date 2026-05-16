@@ -90,6 +90,47 @@ export type AppNotification = {
   user_id: string;
 };
 
+export type RecurringBill = {
+  id: string;
+  profile_id: string;
+  name: string;
+  category: string;
+  default_amount: number;
+  default_units: number | null;
+  due_day: number;
+  notify_days_before: number;
+  is_recurring: boolean;
+  is_active: boolean;
+  created_by: string;
+  created_at: string;
+};
+
+export type BillPayment = {
+  id: string;
+  profile_id: string;
+  bill_id: string | null;
+  plan_id: string | null;
+  amount: number;
+  units: number | null;
+  status: 'pending' | 'paid';
+  date: string | null;
+  month: number;
+  year: number;
+  added_by: string;
+  created_at: string;
+};
+
+export type SavingsEntry = {
+  id: string;
+  profile_id: string;
+  amount: number;
+  note: string | null;
+  linked_plan_id: string | null;
+  date: string;
+  added_by: string;
+  created_at: string;
+};
+
 type AuthPayload = {
   email: string;
   password: string;
@@ -618,6 +659,67 @@ export const pushApi = {
       platform,
       push_token: token,
     });
+  },
+};
+
+export const billApi = {
+  async fetchRecurringBills(profileId: string) {
+    const { data, error } = await supabase.from('recurring_bills').select('*').eq('profile_id', profileId).order('due_day', { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as RecurringBill[];
+  },
+  async createRecurringBill(input: Omit<RecurringBill, 'created_at' | 'id'>) {
+    const payload = { ...input, created_at: new Date().toISOString() };
+    const { data, error } = await supabase.from('recurring_bills').insert(payload).select('*').single();
+    if (error) throw error;
+    return data as RecurringBill;
+  },
+  async updateRecurringBill(billId: string, updates: Partial<Pick<RecurringBill, 'category' | 'due_day' | 'is_active' | 'is_recurring' | 'name' | 'notify_days_before'>>) {
+    const { data, error } = await supabase.from('recurring_bills').update(updates).eq('id', billId).select('*').single();
+    if (error) throw error;
+    return data as RecurringBill;
+  },
+  async deleteRecurringBill(billId: string) {
+    const { error } = await supabase.from('recurring_bills').delete().eq('id', billId);
+    if (error) throw error;
+  },
+  async fetchPayments(profileId: string) {
+    const { data, error } = await supabase.from('bill_payments').select('*').eq('profile_id', profileId).order('year', { ascending: false }).order('month', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as BillPayment[];
+  },
+  async addPayment(input: Omit<BillPayment, 'created_at' | 'id'>) {
+    const payload = { ...input, created_at: new Date().toISOString() };
+    const { data, error } = await supabase.from('bill_payments').insert(payload).select('*').single();
+    if (error) throw error;
+    return data as BillPayment;
+  },
+  async updatePayment(paymentId: string, updates: Partial<Pick<BillPayment, 'amount' | 'plan_id' | 'status' | 'units'>>) {
+    const { data, error } = await supabase.from('bill_payments').update(updates).eq('id', paymentId).select('*').single();
+    if (error) throw error;
+    return data as BillPayment;
+  },
+  async deletePayment(paymentId: string) {
+    const { error } = await supabase.from('bill_payments').delete().eq('id', paymentId);
+    if (error) throw error;
+  },
+};
+
+export const savingsApi = {
+  async fetchSavings(profileId: string) {
+    const { data, error } = await supabase.from('savings').select('*').eq('profile_id', profileId).order('date', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as SavingsEntry[];
+  },
+  async addEntry(input: Omit<SavingsEntry, 'created_at' | 'id'>) {
+    const payload = { ...input, created_at: new Date().toISOString() };
+    const { data, error } = await supabase.from('savings').insert(payload).select('*').single();
+    if (error) throw error;
+    return data as SavingsEntry;
+  },
+  async deleteEntry(entryId: string) {
+    const { error } = await supabase.from('savings').delete().eq('id', entryId);
+    if (error) throw error;
   },
 };
 
