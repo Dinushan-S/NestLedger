@@ -8,9 +8,6 @@
     "scheme": "nestledger",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "cli": {
-      "appVersionSource": "remote"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nestledger.app",
@@ -46,7 +43,8 @@
           "backgroundColor": "#F6F5F2"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

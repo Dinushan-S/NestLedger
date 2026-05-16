@@ -93,6 +93,8 @@ Frontend reads config from Expo config and public env values, including:
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 
+Frontend dependency management uses npm in this repo. Keep `package-lock.json` as the single lockfile for local checks and EAS consistency.
+
 ### Backend
 Backend requires values such as:
 - `SUPABASE_URL`
@@ -118,6 +120,18 @@ Backend requires values such as:
 - Backend health endpoint: `GET /api/health`
 - Backend invitation tests live in `/app/backend/tests/`
 - Test report: `/app/test_reports/iteration_1.json`
+- Backend pytest requires Python plus:
+  - `EXPO_BACKEND_URL` or `frontend/.env` `EXPO_PUBLIC_BACKEND_URL`
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+  - seeded users `nestledger.e2e.primary@example.org` and `nestledger.e2e.member@example.org`
+- Frontend pre-release gates:
+  - `npm ci`
+  - `npm audit --audit-level=moderate`
+  - `npx expo install --check`
+  - `npx expo-doctor`
+  - `node node_modules\typescript\bin\tsc --noEmit`
+  - `node node_modules\eslint\bin\eslint.js .`
 
 ## Current status
 - Core app flows are implemented and verified
