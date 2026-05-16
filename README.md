@@ -107,6 +107,7 @@ Backend requires values such as:
 - `SMTP_HOST`
 - `SMTP_LOGIN`
 - `SMTP_PASSWORD`
+- `INVITE_EMAIL_DELIVERY` (`enabled` by default; set to `disabled` only for CI/test environments that should create shareable invite links without sending email)
 
 ## Important files
 - `/app/backend/server.py` — invite + push backend helper API
@@ -121,15 +122,15 @@ Backend requires values such as:
 - Backend invitation tests live in `/app/backend/tests/`
 - Test report: `/app/test_reports/iteration_1.json`
 - Backend pytest requires Python plus:
-  - `EXPO_BACKEND_URL` or `frontend/.env` `EXPO_PUBLIC_BACKEND_URL`
+  - `EXPO_BACKEND_URL` or `frontend/.env` `EXPO_PUBLIC_BACKEND_URL`; the GitHub workflow starts a local backend and sets this to `http://127.0.0.1:8001`
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
   - seeded users `nestledger.e2e.primary@example.org` and `nestledger.e2e.member@example.org`
 - Backend pytest runs in GitHub Actions through `.github/workflows/backend-tests.yml`.
 - Required GitHub secrets for the backend test workflow:
-  - `EXPO_BACKEND_URL`
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY`
 - Seeded backend test data must include:
   - primary test user with password `NestLedger123!`
   - member test user with password `NestLedger123!`
