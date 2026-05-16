@@ -43,7 +43,7 @@ NestLedger is a mobile family home expense manager and shared shopping list app 
 ### 1. Frontend
 ```bash
 cd /app/frontend
-yarn install
+npm ci
 npx expo start
 ```
 
@@ -125,6 +125,15 @@ Backend requires values such as:
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
   - seeded users `nestledger.e2e.primary@example.org` and `nestledger.e2e.member@example.org`
+- Backend pytest runs in GitHub Actions through `.github/workflows/backend-tests.yml`.
+- Required GitHub secrets for the backend test workflow:
+  - `EXPO_BACKEND_URL`
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+- Seeded backend test data must include:
+  - primary test user with password `NestLedger123!`
+  - member test user with password `NestLedger123!`
+  - at least one household profile membership for the primary test user
 - Frontend pre-release gates:
   - `npm ci`
   - `npm audit --audit-level=moderate`

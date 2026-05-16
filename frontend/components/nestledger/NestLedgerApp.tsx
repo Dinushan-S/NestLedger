@@ -410,7 +410,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }, [plans, profileExpenses]);
 
   const currentMonthBillStatsMap = useMemo(() => {
-    const monthStart = startOfMonth();
     const now = new Date();
     const thisMonth = now.getMonth() + 1;
     const thisYear = now.getFullYear();

@@ -1,0 +1,57 @@
+name: Backend Tests
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPO_BACKEND_URL: ${{ secrets.EXPO_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Validate test environment
+        run: |
+          python - <<'PY'
+          import os
+          missing = [name for name in ("EXPO_BACKEND_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY") if not os.getenv(name)]
+          if missing:
+              raise SystemExit(f"Missing required backend test secrets: {', '.join(missing)}")
+          PY
+
+      - name: Run backend pytest
+        run: pytest backend/tests --junitxml=test_reports/backend_pytest_results.xml
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-pytest-results
+          path: test_reports/backend_pytest_results.xml

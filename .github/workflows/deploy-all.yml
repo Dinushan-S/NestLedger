@@ -144,7 +144,7 @@ jobs:
           
       - name: Install dependencies
         working-directory: ./frontend
-        run: yarn install --frozen-lockfile
+        run: npm ci
         
       - name: Build Android App (.aab)
         working-directory: ./frontend
