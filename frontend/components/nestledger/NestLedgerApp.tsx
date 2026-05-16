@@ -44,6 +44,7 @@ import {
 import {
   AppNotification,
   BillPayment,
+  BillTrackerMeta,
   BudgetPlan,
   Expense,
   ExpenseWithItems,
@@ -51,6 +52,7 @@ import {
   Member,
   RecurringBill,
   SavingsEntry,
+  SavingsTrackerMeta,
   ShoppingItem,
   UserProfile,
   authApi,
@@ -244,6 +246,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [profileExpenses, setProfileExpenses] = useState<ExpenseWithItems[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [billTrackers, setBillTrackers] = useState<BillTrackerMeta[]>([]);
+  const [savingsTrackers, setSavingsTrackers] = useState<SavingsTrackerMeta[]>([]);
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [billPayments, setBillPayments] = useState<BillPayment[]>([]);
   const [savings, setSavings] = useState<SavingsEntry[]>([]);
@@ -846,12 +850,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     lastRefreshRef.current = now;
 
     try {
-      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications, nextBills, nextPayments, nextSavings] = await Promise.all([
+      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications, nextBillTrackers, nextSavingsTrackers, nextBills, nextPayments, nextSavings] = await Promise.all([
         profileApi.fetchMembers(profileId),
         budgetApi.fetchPlans(profileId),
         expenseApi.fetchProfileExpenses(profileId),
         shoppingApi.fetchItems(profileId),
         notificationApi.fetchForUser(profileId, session.user.id),
+        billApi.fetchTrackers(profileId),
+        savingsApi.fetchTrackers(profileId),
         billApi.fetchRecurringBills(profileId),
         billApi.fetchPayments(profileId),
         savingsApi.fetchSavings(profileId),
@@ -862,6 +868,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setProfileExpenses(nextExpenses);
       setShoppingItems(nextShopping);
       setNotifications(nextNotifications);
+      setBillTrackers(nextBillTrackers);
+      setSavingsTrackers(nextSavingsTrackers);
       setRecurringBills(nextBills);
       setBillPayments(nextPayments);
       setSavings(nextSavings);
@@ -1076,49 +1084,113 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }).catch(() => undefined);
   };
 
-  const handleAddBill = (bill: Omit<RecurringBill, 'created_at' | 'id'>) => {
-    if (!activeProfile) return;
-    runAction(async () => {
-      await billApi.createRecurringBill(bill);
+  const [showNewPlanComposer, setShowNewPlanComposer] = useState(false);
+  const [newPlanType, setNewPlanType] = useState<'budget' | 'bill' | 'savings'>('budget');
+  const [newPlanName, setNewPlanName] = useState('');
+  const [editingBillTrackerId, setEditingBillTrackerId] = useState<string | null>(null);
+  const [editingSavingsTrackerId, setEditingSavingsTrackerId] = useState<string | null>(null);
+  const [editBillTrackerForm, setEditBillTrackerForm] = useState({ name: '' });
+  const [editSavingsTrackerForm, setEditSavingsTrackerForm] = useState({ name: '' });
+  const [selectedBillTrackerId, setSelectedBillTrackerId] = useState<string | null>(null);
+  const [selectedSavingsTrackerId, setSelectedSavingsTrackerId] = useState<string | null>(null);
+  const [showBillTrackerComposer, setShowBillTrackerComposer] = useState(false);
+  const [showSavingsComposer, setShowSavingsComposer] = useState<'deposit' | 'withdraw' | null>(null);
+
+  const handleCreateTracker = async () => {
+    if (!session?.user || !activeProfile) return;
+    if (!newPlanName.trim()) {
+      announce('Enter a name for the tracker.');
+      return;
+    }
+    await runAction(async () => {
+      if (newPlanType === 'bill') {
+        await billApi.createTracker({ created_by: session.user.id, name: newPlanName.trim(), profile_id: activeProfile.id });
+      } else if (newPlanType === 'savings') {
+        await savingsApi.createTracker({ created_by: session.user.id, name: newPlanName.trim(), profile_id: activeProfile.id });
+      }
+      setNewPlanName('');
+      setShowNewPlanComposer(false);
       await refreshProfileData(activeProfile.id, true);
     });
   };
 
-  const handleDeleteBill = (billId: string) => {
+  const handleDeleteTracker = (type: 'bill' | 'savings', id: string, name: string) => {
     if (!activeProfile) return;
-    setConfirmModal({
-      body: 'Delete this recurring bill? All pending payments will also be removed.',
+    showConfirm({
+      body: `Are you sure you want to delete "${name}" and all its data?`,
       confirmText: 'Delete',
       destructive: true,
-      onConfirm: async () => {
-        await billApi.deleteRecurringBill(billId as string);
-        await refreshProfileData(activeProfile.id!, true);
-        setConfirmModal(null);
+      onConfirm: () => {
+        runAction(async () => {
+          if (type === 'bill') {
+            await billApi.deleteTracker(id);
+          } else {
+            await savingsApi.deleteTracker(id);
+          }
+          await refreshProfileData(activeProfile.id, true);
+        });
       },
-      title: 'Delete Bill',
-      visible: true,
+      title: 'Delete Tracker',
     });
   };
 
-  const handleMarkBillPaid = async (payment: Omit<BillPayment, 'created_at' | 'id'>) => {
+  const handleEditTracker = async () => {
+    if (!activeProfile) return;
+    await runAction(async () => {
+      if (editingBillTrackerId) {
+        await billApi.updateTracker(editingBillTrackerId, editBillTrackerForm);
+        setEditingBillTrackerId(null);
+        setEditBillTrackerForm({ name: '' });
+      }
+      if (editingSavingsTrackerId) {
+        await savingsApi.updateTracker(editingSavingsTrackerId, editSavingsTrackerForm);
+        setEditingSavingsTrackerId(null);
+        setEditSavingsTrackerForm({ name: '' });
+      }
+      await refreshProfileData(activeProfile.id, true);
+    });
+  };
+
+  const handleAddBillToTracker = (trackerId: string, bill: Omit<RecurringBill, 'created_at' | 'id'>) => {
+    if (!activeProfile) return;
+    runAction(async () => {
+      await billApi.createRecurringBill({ ...bill, tracker_id: trackerId });
+      await refreshProfileData(activeProfile.id, true);
+    });
+  };
+
+  const handleDeleteBillFromTracker = (billId: string) => {
+    if (!activeProfile) return;
+    showConfirm({
+      body: 'Delete this recurring bill? All pending payments will also be removed.',
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: () => {
+        runAction(async () => {
+          await billApi.deleteRecurringBill(billId);
+          await refreshProfileData(activeProfile.id, true);
+        });
+      },
+      title: 'Delete Bill',
+    });
+  };
+
+  const handleMarkBillPaid = async (trackerId: string, payment: Omit<BillPayment, 'created_at' | 'id'>) => {
     if (!activeProfile || !session?.user) return;
     await runAction(async () => {
-      const newPayment = await billApi.addPayment(payment);
+      const newPayment = await billApi.addPayment({ ...payment, tracker_id: trackerId });
       if (payment.plan_id && payment.amount > 0) {
         await expenseApi.addExpenseWithId({
           plan_id: payment.plan_id,
           profile_id: payment.profile_id,
-          description: `Bill payment: ${payment.bill_id ? recurringBills.find((b) => b.id === payment.bill_id)?.name ?? 'Bill' : 'Bill'}`,
-          category: payment.bill_id ? recurringBills.find((b) => b.id === payment.bill_id)?.category ?? 'Utilities' : 'Utilities',
+          description: payment.name ?? 'Bill payment',
+          category: 'Utilities',
           date: payment.date ?? new Date().toISOString(),
           added_by: payment.added_by,
           paid_by: payment.added_by !== session.user.id ? payment.added_by : null,
           is_borrow: false,
           used_by: null,
-          items: [{
-            name: 'Bill payment',
-            price: payment.amount,
-          }],
+          items: [{ name: 'Bill payment', price: payment.amount }],
         });
       }
       await notifyOtherMembers(`${userProfile?.name ?? 'A member'} paid a bill (${rs(payment.amount)})`, notificationTypes.expense);
@@ -1126,54 +1198,28 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
   };
 
-  const handleAddDeposit = (entry: Omit<SavingsEntry, 'created_at' | 'id'>) => {
+  const handleAddSaving = (trackerId: string, entry: Omit<SavingsEntry, 'created_at' | 'id'>) => {
     if (!activeProfile) return;
     runAction(async () => {
-      await savingsApi.addEntry(entry);
+      await savingsApi.addEntry({ ...entry, tracker_id: trackerId });
       await notifyOtherMembers(`${userProfile?.name ?? 'A member'} deposited ${rs(entry.amount)} to savings`, notificationTypes.expense);
       await refreshProfileData(activeProfile.id, true);
     });
   };
 
-  const handleWithdraw = (entry: Omit<SavingsEntry, 'created_at' | 'id'>) => {
+  const handleDeleteSavingEntry = (entryId: string) => {
     if (!activeProfile) return;
-    runAction(async () => {
-      await savingsApi.addEntry(entry);
-      if (entry.linked_plan_id && entry.amount < 0 && session?.user) {
-        await expenseApi.addExpenseWithId({
-          plan_id: entry.linked_plan_id,
-          profile_id: entry.profile_id,
-          description: entry.note ?? `Withdrawal from savings`,
-          category: 'Other',
-          date: entry.date,
-          added_by: session.user.id,
-          paid_by: session.user.id,
-          is_borrow: false,
-          used_by: session.user.id,
-          items: [{
-            name: entry.note ?? `Savings withdrawal`,
-            price: Math.abs(entry.amount),
-          }],
-        });
-      }
-      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${rs(Math.abs(entry.amount))} from savings`, notificationTypes.expense);
-      await refreshProfileData(activeProfile.id, true);
-    });
-  };
-
-  const handleDeleteSavingsEntry = (entryId: string) => {
-    if (!activeProfile) return;
-    setConfirmModal({
+    showConfirm({
       body: 'Delete this savings entry?',
       confirmText: 'Delete',
       destructive: true,
-      onConfirm: async () => {
-        await savingsApi.deleteEntry(entryId as string);
-        await refreshProfileData(activeProfile.id!, true);
-        setConfirmModal(null);
+      onConfirm: () => {
+        runAction(async () => {
+          await savingsApi.deleteEntry(entryId);
+          await refreshProfileData(activeProfile.id, true);
+        });
       },
       title: 'Delete Entry',
-      visible: true,
     });
   };
 
@@ -1865,8 +1911,17 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
                     <BentoCard style={{ width: bentoWidth }}>
                       <Text style={styles.cardEyebrow}>Savings</Text>
-                      <Text style={styles.metricText}>{rs(savings.reduce((s, e) => s + e.amount, 0))}</Text>
-                      <Text style={styles.bodyMuted}>total saved across all plans</Text>
+                      {savings.length > 0 ? (
+                        <>
+                          <Text style={styles.metricText}>{rs(savings.reduce((s, e) => s + e.amount, 0))}</Text>
+                          <Text style={styles.bodyMuted}>total saved across all plans</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.metricText}>—</Text>
+                          <Text style={styles.bodyMuted}>No savings entries yet</Text>
+                        </>
+                      )}
                     </BentoCard>
                   </View>
 
@@ -1905,7 +1960,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       <Pressable hitSlop={8} onPress={() => setBudgetEditMode(!budgetEditMode)} testID="budget-edit-mode-toggle">
                         <Ionicons color={budgetEditMode ? theme.primary : theme.textMuted} name={budgetEditMode ? 'checkmark-circle' : 'settings-outline'} size={24} />
                       </Pressable>
-                      <ModernButton onPress={() => { setEditingPlanId(null); setBudgetForm(defaultBudgetForm()); setShowBudgetComposer(true); }} secondary testID="budget-new-plan" text="New plan" />
+                      <ModernButton onPress={() => { setNewPlanType('budget'); setShowNewPlanComposer(true); }} secondary testID="budget-new-plan" text="New plan" />
                     </View>
                   </View>
 
@@ -1954,32 +2009,86 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     <EmptyState body="Create your first family budget plan to start tracking expenses." title="No plans yet" />
                   ) : null}
 
-                  <View style={styles.spacer16} />
-                  <BillTracker
-                    actionBusy={actionBusy}
-                    billPayments={billPayments}
-                    members={members}
-                    onAddBill={handleAddBill}
-                    onDeleteBill={handleDeleteBill}
-                    onMarkPaid={handleMarkBillPaid}
-                    plans={plans}
-                    profileId={activeProfile?.id ?? ''}
-                    recurringBills={recurringBills}
-                    userId={session?.user?.id ?? ''}
-                  />
+                  {billTrackers.map((tracker) => {
+                    const trackerBills = recurringBills.filter((b) => b.tracker_id === tracker.id);
+                    const trackerPayments = billPayments.filter((p) => p.tracker_id === tracker.id);
+                    const thisMonth = new Date().getMonth() + 1;
+                    const thisYear = new Date().getFullYear();
+                    const billsThisMonth = trackerBills.filter((b) => trackerPayments.some((p) => p.bill_id === b.id && p.month === thisMonth && p.year === thisYear)).length;
+                    const renderRightActions = () => (
+                      <View style={styles.deleteAction}>
+                        <Pressable hitSlop={10} onPress={() => handleDeleteTracker('bill', tracker.id, tracker.name)} style={styles.deleteButton}>
+                          <Ionicons color="#fff" name="trash-outline" size={24} />
+                        </Pressable>
+                      </View>
+                    );
+                    const renderLeftActions = () => (
+                      <View style={[styles.deleteAction, { backgroundColor: theme.primary }]}>
+                        <Pressable hitSlop={10} onPress={() => { setEditingBillTrackerId(tracker.id); setEditBillTrackerForm({ name: tracker.name }); }} style={styles.deleteButton}>
+                          <Ionicons color="#fff" name="create-outline" size={24} />
+                        </Pressable>
+                      </View>
+                    );
+                    return (
+                      <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
+                        <Pressable onPress={() => setSelectedBillTrackerId(tracker.id)}>
+                          <BentoCard>
+                            <View style={styles.rowBetween}>
+                              <View style={{ flex: 1 }}>
+                                <View style={styles.statRow}>
+                                  <InfoPill label="Bills" value={billsThisMonth.toString()} />
+                                </View>
+                                <Text style={styles.cardTitle}>{tracker.name}</Text>
+                                <Text style={styles.bodyMuted}>{billsThisMonth} bill{billsThisMonth !== 1 ? 's' : ''} this month</Text>
+                              </View>
+                              <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                            </View>
+                          </BentoCard>
+                        </Pressable>
+                      </Swipeable>
+                    );
+                  })}
 
-                  <View style={styles.spacer16} />
-                  <SavingsTracker
-                    actionBusy={actionBusy}
-                    members={members}
-                    onAddDeposit={handleAddDeposit}
-                    onDeleteEntry={handleDeleteSavingsEntry}
-                    onWithdraw={handleWithdraw}
-                    plans={plans}
-                    profileId={activeProfile?.id ?? ''}
-                    savings={savings}
-                    userId={session?.user?.id ?? ''}
-                  />
+                  {savingsTrackers.map((tracker) => {
+                    const trackerSavings = savings.filter((e) => e.tracker_id === tracker.id);
+                    const balance = trackerSavings.reduce((s, e) => s + e.amount, 0);
+                    const renderRightActions = () => (
+                      <View style={styles.deleteAction}>
+                        <Pressable hitSlop={10} onPress={() => handleDeleteTracker('savings', tracker.id, tracker.name)} style={styles.deleteButton}>
+                          <Ionicons color="#fff" name="trash-outline" size={24} />
+                        </Pressable>
+                      </View>
+                    );
+                    const renderLeftActions = () => (
+                      <View style={[styles.deleteAction, { backgroundColor: theme.primary }]}>
+                        <Pressable hitSlop={10} onPress={() => { setEditingSavingsTrackerId(tracker.id); setEditSavingsTrackerForm({ name: tracker.name }); }} style={styles.deleteButton}>
+                          <Ionicons color="#fff" name="create-outline" size={24} />
+                        </Pressable>
+                      </View>
+                    );
+                    return (
+                      <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
+                        <Pressable onPress={() => setSelectedSavingsTrackerId(tracker.id)}>
+                          <BentoCard>
+                            <View style={styles.rowBetween}>
+                              <View style={{ flex: 1 }}>
+                                <View style={styles.statRow}>
+                                  <InfoPill label="Savings" value={rs(balance)} />
+                                </View>
+                                <Text style={styles.cardTitle}>{tracker.name}</Text>
+                                <Text style={styles.bodyMuted}>Balance: {rs(balance)}</Text>
+                              </View>
+                              <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                            </View>
+                          </BentoCard>
+                        </Pressable>
+                      </Swipeable>
+                    );
+                  })}
+
+                  {billTrackers.length === 0 && savingsTrackers.length === 0 ? (
+                    <EmptyState body="Create your first bill or savings tracker to get started." title="No trackers yet" />
+                  ) : null}
                 </View>
               ) : null}
 
@@ -2146,6 +2255,86 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="budget-plan-start-input" value={budgetForm.startDate} />
           <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="budget-plan-end-input" value={budgetForm.endDate} />
           <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text={editingPlanId ? 'Update plan' : 'Save plan'} />
+        </ModalScaffold>
+      </Modal>
+
+      <Modal animationType="slide" presentationStyle="pageSheet" visible={showNewPlanComposer}>
+        <ModalScaffold closeTestID="close-new-plan-modal" onClose={() => { setShowNewPlanComposer(false); setNewPlanName(''); }} title="New plan">
+          <View style={styles.segmentRow}>
+            <CategoryChip active={newPlanType === 'budget'} label="Budget Plan" onPress={() => setNewPlanType('budget')} />
+            <CategoryChip active={newPlanType === 'bill'} label="Bill Tracker" onPress={() => setNewPlanType('bill')} />
+            <CategoryChip active={newPlanType === 'savings'} label="Savings Tracker" onPress={() => setNewPlanType('savings')} />
+          </View>
+          {newPlanType === 'budget' ? (
+            <>
+              <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="new-plan-name-input" value={budgetForm.name} />
+              <LabeledInput keyboardType="numeric" label="Total budget (Rs.)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="new-plan-total-input" value={budgetForm.totalAmount} />
+              <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="new-plan-start-input" value={budgetForm.startDate} />
+              <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="new-plan-end-input" value={budgetForm.endDate} />
+              <ModernButton loading={actionBusy} onPress={() => { setShowNewPlanComposer(false); setShowBudgetComposer(true); }} text="Continue to create" />
+            </>
+          ) : (
+            <>
+              <LabeledInput label="Tracker name" onChangeText={setNewPlanName} testID="new-tracker-name-input" value={newPlanName} />
+              <ModernButton loading={actionBusy} onPress={handleCreateTracker} text="Create tracker" />
+            </>
+          )}
+        </ModalScaffold>
+      </Modal>
+
+      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)}>
+        <ModalScaffold closeTestID="close-edit-tracker-modal" onClose={() => { setEditingBillTrackerId(null); setEditingSavingsTrackerId(null); setEditBillTrackerForm({ name: '' }); setEditSavingsTrackerForm({ name: '' }); }} title="Edit tracker">
+          {editingBillTrackerId ? (
+            <>
+              <LabeledInput label="Tracker name" onChangeText={(value) => setEditBillTrackerForm({ name: value })} testID="edit-bill-tracker-name-input" value={editBillTrackerForm.name} />
+              <ModernButton loading={actionBusy} onPress={handleEditTracker} text="Save" />
+            </>
+          ) : null}
+          {editingSavingsTrackerId ? (
+            <>
+              <LabeledInput label="Tracker name" onChangeText={(value) => setEditSavingsTrackerForm({ name: value })} testID="edit-savings-tracker-name-input" value={editSavingsTrackerForm.name} />
+              <ModernButton loading={actionBusy} onPress={handleEditTracker} text="Save" />
+            </>
+          ) : null}
+        </ModalScaffold>
+      </Modal>
+
+      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedBillTrackerId)}>
+        <ModalScaffold closeTestID="close-bill-tracker-detail" onClose={() => setSelectedBillTrackerId(null)} title={billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ?? 'Bill Tracker'}>
+          {selectedBillTrackerId ? (
+            <BillTracker
+              trackerId={selectedBillTrackerId}
+              actionBusy={actionBusy}
+              billPayments={billPayments}
+              members={members}
+              onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
+              onDeleteBill={handleDeleteBillFromTracker}
+              onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
+              plans={plans}
+              profileId={activeProfile?.id ?? ''}
+              recurringBills={recurringBills}
+              userId={session?.user?.id ?? ''}
+            />
+          ) : null}
+        </ModalScaffold>
+      </Modal>
+
+      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedSavingsTrackerId)}>
+        <ModalScaffold closeTestID="close-savings-tracker-detail" onClose={() => setSelectedSavingsTrackerId(null)} title={savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)?.name ?? 'Savings Tracker'}>
+          {selectedSavingsTrackerId ? (
+            <SavingsTracker
+              trackerId={selectedSavingsTrackerId}
+              actionBusy={actionBusy}
+              members={members}
+              onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
+              onDeleteEntry={handleDeleteSavingEntry}
+              onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${rs(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+              plans={plans}
+              profileId={activeProfile?.id ?? ''}
+              savings={savings}
+              userId={session?.user?.id ?? ''}
+            />
+          ) : null}
         </ModalScaffold>
       </Modal>
 

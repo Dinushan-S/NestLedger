@@ -18,6 +18,8 @@ export type HouseholdProfile = {
   emoji_avatar: string | null;
   id: string;
   name: string;
+  bill_tracker_enabled: boolean;
+  savings_tracker_enabled: boolean;
 };
 
 export type BudgetPlan = {
@@ -93,6 +95,7 @@ export type AppNotification = {
 export type RecurringBill = {
   id: string;
   profile_id: string;
+  tracker_id: string;
   name: string;
   category: string;
   default_amount: number;
@@ -108,10 +111,12 @@ export type RecurringBill = {
 export type BillPayment = {
   id: string;
   profile_id: string;
+  tracker_id: string;
   bill_id: string | null;
   plan_id: string | null;
   amount: number;
   units: number | null;
+  name: string | null;
   status: 'pending' | 'paid';
   date: string | null;
   month: number;
@@ -123,11 +128,29 @@ export type BillPayment = {
 export type SavingsEntry = {
   id: string;
   profile_id: string;
+  tracker_id: string;
   amount: number;
   note: string | null;
+  name: string | null;
   linked_plan_id: string | null;
   date: string;
   added_by: string;
+  created_at: string;
+};
+
+export type BillTrackerMeta = {
+  id: string;
+  profile_id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+};
+
+export type SavingsTrackerMeta = {
+  id: string;
+  profile_id: string;
+  name: string;
+  created_by: string;
   created_at: string;
 };
 
@@ -290,7 +313,7 @@ export const profileApi = {
     if (error) throw error;
     return data as HouseholdProfile;
   },
-  async updateHousehold(profileId: string, values: { emoji_avatar: string; name: string }) {
+  async updateHousehold(profileId: string, values: Partial<Pick<HouseholdProfile, 'bill_tracker_enabled' | 'emoji_avatar' | 'name' | 'savings_tracker_enabled'>>) {
     const { data, error } = await supabase
       .from('profiles')
       .update(values)
@@ -663,6 +686,26 @@ export const pushApi = {
 };
 
 export const billApi = {
+  async fetchTrackers(profileId: string) {
+    const { data, error } = await supabase.from('bill_trackers').select('*').eq('profile_id', profileId).order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as BillTrackerMeta[];
+  },
+  async createTracker(input: Omit<BillTrackerMeta, 'created_at' | 'id'>) {
+    const payload = { ...input, created_at: new Date().toISOString() };
+    const { data, error } = await supabase.from('bill_trackers').insert(payload).select('*').single();
+    if (error) throw error;
+    return data as BillTrackerMeta;
+  },
+  async updateTracker(trackerId: string, updates: { name: string }) {
+    const { data, error } = await supabase.from('bill_trackers').update(updates).eq('id', trackerId).select('*').single();
+    if (error) throw error;
+    return data as BillTrackerMeta;
+  },
+  async deleteTracker(trackerId: string) {
+    const { error } = await supabase.from('bill_trackers').delete().eq('id', trackerId);
+    if (error) throw error;
+  },
   async fetchRecurringBills(profileId: string) {
     const { data, error } = await supabase.from('recurring_bills').select('*').eq('profile_id', profileId).order('due_day', { ascending: true });
     if (error) throw error;
@@ -706,6 +749,26 @@ export const billApi = {
 };
 
 export const savingsApi = {
+  async fetchTrackers(profileId: string) {
+    const { data, error } = await supabase.from('savings_trackers').select('*').eq('profile_id', profileId).order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as SavingsTrackerMeta[];
+  },
+  async createTracker(input: Omit<SavingsTrackerMeta, 'created_at' | 'id'>) {
+    const payload = { ...input, created_at: new Date().toISOString() };
+    const { data, error } = await supabase.from('savings_trackers').insert(payload).select('*').single();
+    if (error) throw error;
+    return data as SavingsTrackerMeta;
+  },
+  async updateTracker(trackerId: string, updates: { name: string }) {
+    const { data, error } = await supabase.from('savings_trackers').update(updates).eq('id', trackerId).select('*').single();
+    if (error) throw error;
+    return data as SavingsTrackerMeta;
+  },
+  async deleteTracker(trackerId: string) {
+    const { error } = await supabase.from('savings_trackers').delete().eq('id', trackerId);
+    if (error) throw error;
+  },
   async fetchSavings(profileId: string) {
     const { data, error } = await supabase.from('savings').select('*').eq('profile_id', profileId).order('date', { ascending: false });
     if (error) throw error;

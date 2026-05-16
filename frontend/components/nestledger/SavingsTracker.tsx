@@ -9,6 +9,7 @@ import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
 
 type Props = {
+  trackerId: string;
   savings: SavingsEntry[];
   plans: BudgetPlan[];
   members: Member[];
@@ -25,6 +26,7 @@ const currentMonth = now.getMonth() + 1;
 const currentYear = now.getFullYear();
 
 export default function SavingsTracker({
+  trackerId,
   savings,
   plans,
   members,
@@ -39,29 +41,33 @@ export default function SavingsTracker({
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [depositForm, setDepositForm] = useState({ amount: '', note: '', date: todayStr });
-  const [withdrawForm, setWithdrawForm] = useState({ amount: '', note: '', planId: '', reason: 'Other' as string, date: todayStr });
+  const [depositForm, setDepositForm] = useState({ amount: '', note: '', date: todayStr, name: '' });
+  const [withdrawForm, setWithdrawForm] = useState({ amount: '', note: '', planId: '', reason: 'Other' as string, date: todayStr, name: '' });
   const [selectedEntry, setSelectedEntry] = useState<SavingsEntry | null>(null);
   const [showDepositPicker, setShowDepositPicker] = useState(false);
   const [showWithdrawPicker, setShowWithdrawPicker] = useState(false);
 
+  const filteredSavings = useMemo(() => {
+    return savings.filter((e) => e.tracker_id === trackerId);
+  }, [savings, trackerId]);
+
   const totalSavings = useMemo(() => {
-    return savings.reduce((sum, e) => sum + e.amount, 0);
-  }, [savings]);
+    return filteredSavings.reduce((sum, e) => sum + e.amount, 0);
+  }, [filteredSavings]);
 
   const thisMonthEntries = useMemo(() => {
-    return savings.filter((e) => {
+    return filteredSavings.filter((e) => {
       const d = new Date(e.date);
       return d.getFullYear() === currentYear && d.getMonth() + 1 === currentMonth;
     });
-  }, [savings]);
+  }, [filteredSavings]);
 
   const thisMonthNet = useMemo(() => {
     return thisMonthEntries.reduce((sum, e) => sum + e.amount, 0);
   }, [thisMonthEntries]);
 
-  const deposits = useMemo(() => savings.filter((e) => e.amount > 0), [savings]);
-  const withdrawals = useMemo(() => savings.filter((e) => e.amount < 0), [savings]);
+  const deposits = useMemo(() => filteredSavings.filter((e) => e.amount > 0), [filteredSavings]);
+  const withdrawals = useMemo(() => filteredSavings.filter((e) => e.amount < 0), [filteredSavings]);
 
   const handleSubmitDeposit = () => {
     const amount = Number(depositForm.amount);
@@ -70,12 +76,14 @@ export default function SavingsTracker({
       profile_id: profileId,
       amount,
       note: depositForm.note.trim() || null,
+      name: depositForm.name.trim() || null,
       linked_plan_id: null,
       date: depositForm.date,
       added_by: userId,
+      tracker_id: trackerId,
     });
     setShowDeposit(false);
-    setDepositForm({ amount: '', note: '', date: todayStr });
+    setDepositForm({ amount: '', note: '', date: todayStr, name: '' });
   };
 
   const handleSubmitWithdraw = () => {
@@ -84,13 +92,15 @@ export default function SavingsTracker({
     onWithdraw({
       profile_id: profileId,
       amount: -amount,
+      name: withdrawForm.name.trim() || null,
       note: withdrawForm.note.trim() || null,
       linked_plan_id: withdrawForm.planId || null,
       date: withdrawForm.date,
       added_by: userId,
+      tracker_id: trackerId,
     });
     setShowWithdraw(false);
-    setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr });
+    setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr, name: '' });
   };
 
   const viewEntryDetail = (entry: SavingsEntry) => {
@@ -99,7 +109,7 @@ export default function SavingsTracker({
   };
 
   return (
-    <BentoCard>
+    <>
       <View style={s.headerRow}>
         <View style={s.headerContent}>
           <Text style={s.cardTitle}>Savings Tracker</Text>
@@ -108,9 +118,9 @@ export default function SavingsTracker({
           </Text>
         </View>
         <View style={s.actionButtons}>
-          <ModernButton onPress={() => { setDepositForm({ amount: '', note: '', date: todayStr }); setShowDeposit(true); }} secondary text="Deposit" />
+          <ModernButton onPress={() => { setDepositForm({ amount: '', note: '', date: todayStr, name: '' }); setShowDeposit(true); }} secondary text="Deposit" />
           <ModernButton
-            onPress={() => { setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr }); setShowWithdraw(true); }}
+            onPress={() => { setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr, name: '' }); setShowWithdraw(true); }}
             secondary
             text="Withdraw"
           />
@@ -144,13 +154,13 @@ export default function SavingsTracker({
       </View>
 
       <View style={s.entryList}>
-        {savings.length === 0 ? (
+        {filteredSavings.length === 0 ? (
           <View style={s.emptyWrap}>
             <Ionicons color={theme.textMuted} name="wallet-outline" size={28} />
             <Text style={s.emptyText}>No savings entries yet</Text>
           </View>
         ) : (
-          savings.slice(0, 10).map((entry) => (
+          filteredSavings.slice(0, 10).map((entry) => (
             <Pressable key={entry.id} onPress={() => viewEntryDetail(entry)} style={s.entryRow}>
               <View style={s.entryIconWrap}>
                 <Ionicons
@@ -163,7 +173,9 @@ export default function SavingsTracker({
                 <Text style={s.entryAmount}>
                   {entry.amount >= 0 ? '+' : ''}{rs(entry.amount)}
                 </Text>
-                {entry.note ? (
+                {entry.name ? (
+                  <Text style={s.entryNote} numberOfLines={1}>{entry.name}</Text>
+                ) : entry.note ? (
                   <Text style={s.entryNote} numberOfLines={1}>{entry.note}</Text>
                 ) : null}
                 <Text style={s.entryDate}>{formatShortDate(entry.date)}</Text>
@@ -180,9 +192,9 @@ export default function SavingsTracker({
         )}
       </View>
 
-      {savings.length > 10 ? (
-        <Pressable onPress={() => viewEntryDetail(savings[0])} style={{ marginTop: 8 }}>
-          <Text style={s.linkText}>View all {savings.length} entries</Text>
+      {filteredSavings.length > 10 ? (
+        <Pressable onPress={() => viewEntryDetail(filteredSavings[0])} style={{ marginTop: 8 }}>
+          <Text style={s.linkText}>View all {filteredSavings.length} entries</Text>
         </Pressable>
       ) : null}
 
@@ -221,6 +233,17 @@ export default function SavingsTracker({
                       value={new Date(depositForm.date)}
                     />
                   ) : null}
+                </View>
+
+                <View style={s.inputGroup}>
+                  <Text style={s.inputLabel}>Name (optional)</Text>
+                  <TextInput
+                    onChangeText={(v) => setDepositForm((f) => ({ ...f, name: v }))}
+                    placeholder="e.g. Salary savings May"
+                    placeholderTextColor={theme.textMuted}
+                    style={s.input}
+                    value={depositForm.name}
+                  />
                 </View>
 
                 <View style={s.inputGroup}>
@@ -282,6 +305,17 @@ export default function SavingsTracker({
                       value={new Date(withdrawForm.date)}
                     />
                   ) : null}
+                </View>
+
+                <View style={s.inputGroup}>
+                  <Text style={s.inputLabel}>Name (optional)</Text>
+                  <TextInput
+                    onChangeText={(v) => setWithdrawForm((f) => ({ ...f, name: v }))}
+                    placeholder="e.g. Home renovation"
+                    placeholderTextColor={theme.textMuted}
+                    style={s.input}
+                    value={withdrawForm.name}
+                  />
                 </View>
 
                 {plans.length > 0 ? (
@@ -400,7 +434,7 @@ export default function SavingsTracker({
           ) : null}
         </SafeWrap>
       </Modal>
-    </BentoCard>
+    </>
   );
 }
 

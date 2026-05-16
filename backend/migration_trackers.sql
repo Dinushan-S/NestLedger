@@ -1,4 +1,4 @@
--- Run this entire script in your Supabase SQL editor (Dashboard → SQL Editor)
+-- Run in Supabase SQL Editor. Adds bill_trackers, savings_trackers, and tracker_id FKs.
 
 -- 1. bill_trackers table
 create table if not exists public.bill_trackers (
@@ -22,7 +22,7 @@ create table if not exists public.savings_trackers (
 
 create index if not exists idx_savings_trackers_profile_id on public.savings_trackers(profile_id);
 
--- 3. Add tracker_id to recurring_bills
+-- 3. Add tracker_id columns (safe to re-run)
 do $$
 begin
   if not exists (
@@ -31,22 +31,12 @@ begin
   ) then
     alter table public.recurring_bills add column tracker_id uuid references public.bill_trackers(id) on delete cascade;
   end if;
-end $$;
-
--- 4. Add tracker_id to bill_payments
-do $$
-begin
   if not exists (
     select 1 from information_schema.columns
     where table_name = 'bill_payments' and column_name = 'tracker_id'
   ) then
     alter table public.bill_payments add column tracker_id uuid references public.bill_trackers(id) on delete cascade;
   end if;
-end $$;
-
--- 5. Add tracker_id to savings
-do $$
-begin
   if not exists (
     select 1 from information_schema.columns
     where table_name = 'savings' and column_name = 'tracker_id'
@@ -55,7 +45,7 @@ begin
   end if;
 end $$;
 
--- 6. RLS for bill_trackers
+-- 4. RLS for bill_trackers
 alter table public.bill_trackers enable row level security;
 
 drop policy if exists "bill trackers member select" on public.bill_trackers;
@@ -76,7 +66,7 @@ drop policy if exists "bill trackers member delete" on public.bill_trackers;
 create policy "bill trackers member delete" on public.bill_trackers
 for delete using (public.is_profile_member(profile_id));
 
--- 7. RLS for savings_trackers
+-- 5. RLS for savings_trackers
 alter table public.savings_trackers enable row level security;
 
 drop policy if exists "savings trackers member select" on public.savings_trackers;
@@ -97,7 +87,7 @@ drop policy if exists "savings trackers member delete" on public.savings_tracker
 create policy "savings trackers member delete" on public.savings_trackers
 for delete using (public.is_profile_member(profile_id));
 
--- 8. Add to realtime publication
+-- 6. Add to realtime publication
 do $$
 begin
   alter publication supabase_realtime add table public.bill_trackers;
@@ -107,17 +97,5 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.savings_trackers;
-exception when duplicate_object then null;
-end $$;
-
-do $$
-begin
-  alter publication supabase_realtime add table public.bill_payments;
-exception when duplicate_object then null;
-end $$;
-
-do $$
-begin
-  alter publication supabase_realtime add table public.savings;
 exception when duplicate_object then null;
 end $$;

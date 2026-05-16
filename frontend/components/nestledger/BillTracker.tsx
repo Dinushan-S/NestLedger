@@ -9,6 +9,7 @@ import ModernButton from '../ui/ModernButton';
 import ProgressBar from '../ui/ProgressBar';
 
 type Props = {
+  trackerId: string;
   recurringBills: RecurringBill[];
   billPayments: BillPayment[];
   plans: BudgetPlan[];
@@ -48,6 +49,7 @@ const defaultPaymentForm = () => ({
   units: '',
   planId: '',
   paidBy: null as string | null,
+  name: '',
 });
 
 const now = new Date();
@@ -60,6 +62,7 @@ function getCategoryIcon(category: string): keyof typeof Ionicons.glyphMap {
 }
 
 export default function BillTracker({
+  trackerId,
   recurringBills,
   billPayments,
   plans,
@@ -79,9 +82,17 @@ export default function BillTracker({
   const [showBillDetail, setShowBillDetail] = useState(false);
   const [detailBill, setDetailBill] = useState<RecurringBill | null>(null);
 
+  const filteredBills = useMemo(() => {
+    return recurringBills.filter((b) => b.tracker_id === trackerId);
+  }, [recurringBills, trackerId]);
+
+  const filteredPayments = useMemo(() => {
+    return billPayments.filter((p) => p.tracker_id === trackerId);
+  }, [billPayments, trackerId]);
+
   const thisMonthPayments = useMemo(() => {
-    return billPayments.filter((p) => p.month === currentMonth && p.year === currentYear);
-  }, [billPayments]);
+    return filteredPayments.filter((p) => p.month === currentMonth && p.year === currentYear);
+  }, [filteredPayments]);
 
   const paidThisMonth = useMemo(() => {
     return thisMonthPayments.filter((p) => p.status === 'paid');
@@ -134,6 +145,7 @@ export default function BillTracker({
     if (!billForm.name.trim() || !billForm.dueDay.trim() || !billForm.amount.trim()) return;
     onAddBill({
       profile_id: profileId,
+      tracker_id: trackerId,
       name: billForm.name.trim(),
       category: billForm.category,
       default_amount: Number(billForm.amount),
@@ -156,6 +168,7 @@ export default function BillTracker({
       units: existing?.units ? String(existing.units) : bill.default_units ? String(bill.default_units) : '',
       planId: existing?.plan_id ?? (plans.length > 0 ? plans[0].id : ''),
       paidBy: null,
+      name: bill.name,
     });
     setShowPayment(true);
   };
@@ -166,10 +179,12 @@ export default function BillTracker({
     if (!amount || amount <= 0) return;
     onMarkPaid({
       profile_id: profileId,
+      tracker_id: trackerId,
       bill_id: selectedBill.id,
       plan_id: paymentForm.planId || null,
       amount,
       units: paymentForm.units.trim() ? Number(paymentForm.units) : null,
+      name: paymentForm.name.trim() || null,
       status: 'paid',
       date: new Date().toISOString(),
       month: currentMonth,
@@ -188,13 +203,13 @@ export default function BillTracker({
 
   const billDetailPayments = useMemo(() => {
     if (!detailBill) return [];
-    return billPayments
+    return filteredPayments
       .filter((p) => p.bill_id === detailBill.id)
       .sort((a, b) => b.year - a.year || b.month - a.month);
-  }, [detailBill, billPayments]);
+  }, [detailBill, filteredPayments]);
 
   return (
-    <BentoCard>
+    <View>
       <View style={s.headerRow}>
         <View style={s.headerContent}>
           <Text style={s.cardTitle}>Bill Tracker</Text>
@@ -224,13 +239,13 @@ export default function BillTracker({
       </View>
 
       <View style={s.billList}>
-        {recurringBills.length === 0 ? (
+        {filteredBills.length === 0 ? (
           <View style={s.emptyWrap}>
             <Ionicons color={theme.textMuted} name="receipt-outline" size={28} />
             <Text style={s.emptyText}>No recurring bills yet</Text>
           </View>
         ) : (
-          recurringBills.map((bill) => {
+          filteredBills.map((bill) => {
             const stats = billPaymentMap[bill.id] ?? { paid: 0, pending: 0, payments: [] };
             return (
               <Pressable key={bill.id} onPress={() => handleViewDetail(bill)} style={s.billRow}>
@@ -440,6 +455,17 @@ export default function BillTracker({
                 </View>
 
                 <View style={s.inputGroup}>
+                  <Text style={s.inputLabel}>Name / Description (optional)</Text>
+                  <TextInput
+                    onChangeText={(v) => setPaymentForm((f) => ({ ...f, name: v }))}
+                    placeholder="e.g. May Electricity Bill"
+                    placeholderTextColor={theme.textMuted}
+                    style={s.input}
+                    value={paymentForm.name}
+                  />
+                </View>
+
+                <View style={s.inputGroup}>
                   <Text style={s.inputLabel}>Units (optional)</Text>
                   <TextInput
                     keyboardType="numeric"
@@ -578,7 +604,7 @@ export default function BillTracker({
           ) : null}
         </SafeWrap>
       </Modal>
-    </BentoCard>
+    </View>
   );
 }
 
