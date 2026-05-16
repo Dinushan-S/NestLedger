@@ -55,51 +55,69 @@ alter table public.bill_payments enable row level security;
 alter table public.savings enable row level security;
 
 -- 5. RLS Policies for recurring_bills
+drop policy if exists "recurring bills member select" on public.recurring_bills;
 create policy "recurring bills member select" on public.recurring_bills
 for select using (public.is_profile_member(profile_id));
 
+drop policy if exists "recurring bills member insert" on public.recurring_bills;
 create policy "recurring bills member insert" on public.recurring_bills
 for insert with check (
   created_by = auth.uid() and public.is_profile_member(profile_id)
 );
 
+drop policy if exists "recurring bills member update" on public.recurring_bills;
 create policy "recurring bills member update" on public.recurring_bills
 for update using (public.is_profile_member(profile_id));
 
+drop policy if exists "recurring bills member delete" on public.recurring_bills;
 create policy "recurring bills member delete" on public.recurring_bills
 for delete using (public.is_profile_member(profile_id));
 
 -- 6. RLS Policies for bill_payments
+drop policy if exists "bill payments member select" on public.bill_payments;
 create policy "bill payments member select" on public.bill_payments
 for select using (public.is_profile_member(profile_id));
 
+drop policy if exists "bill payments member insert" on public.bill_payments;
 create policy "bill payments member insert" on public.bill_payments
 for insert with check (
   added_by = auth.uid() and public.is_profile_member(profile_id)
 );
 
+drop policy if exists "bill payments member update" on public.bill_payments;
 create policy "bill payments member update" on public.bill_payments
 for update using (public.is_profile_member(profile_id));
 
+drop policy if exists "bill payments member delete" on public.bill_payments;
 create policy "bill payments member delete" on public.bill_payments
 for delete using (public.is_profile_member(profile_id));
 
 -- 7. RLS Policies for savings
+drop policy if exists "savings member select" on public.savings;
 create policy "savings member select" on public.savings
 for select using (public.is_profile_member(profile_id));
 
+drop policy if exists "savings member insert" on public.savings;
 create policy "savings member insert" on public.savings
 for insert with check (
   added_by = auth.uid() and public.is_profile_member(profile_id)
 );
 
+drop policy if exists "savings member update" on public.savings;
 create policy "savings member update" on public.savings
 for update using (public.is_profile_member(profile_id));
 
+drop policy if exists "savings member delete" on public.savings;
 create policy "savings member delete" on public.savings
 for delete using (public.is_profile_member(profile_id));
 
 -- 8. Add to realtime publication
+do $$
+begin
+  alter publication supabase_realtime add table public.recurring_bills;
+exception when duplicate_object then null;
+end $$;
+
 do $$
 begin
   alter publication supabase_realtime add table public.bill_payments;

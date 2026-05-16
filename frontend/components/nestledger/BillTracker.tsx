@@ -6,7 +6,6 @@ import { theme, billCategories, monthNames, rs, formatShortDate } from '../../co
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
-import ProgressBar from '../ui/ProgressBar';
 
 type Props = {
   recurringBills: RecurringBill[];
@@ -202,7 +201,7 @@ export default function BillTracker({
             This month: {rs(totalPaidAmount)} paid for {paidThisMonth.length} bills
           </Text>
         </View>
-        <ModernButton onPress={handleOpenComposer} secondary text="New Bill" />
+        <ModernButton onPress={handleOpenComposer} secondary testID="bill-open-composer" text="New Bill" />
       </View>
 
       <View style={s.statRow}>
@@ -233,7 +232,7 @@ export default function BillTracker({
           recurringBills.map((bill) => {
             const stats = billPaymentMap[bill.id] ?? { paid: 0, pending: 0, payments: [] };
             return (
-              <Pressable key={bill.id} onPress={() => handleViewDetail(bill)} style={s.billRow}>
+              <Pressable key={bill.id} onPress={() => handleViewDetail(bill)} style={s.billRow} testID={`bill-row-${bill.id}`}>
                 <View style={s.billIconWrap}>
                   <Ionicons
                     color={bill.is_active ? theme.primary : theme.textMuted}
@@ -264,6 +263,7 @@ export default function BillTracker({
                     hitSlop={10}
                     onPress={() => handleOpenPayment(bill)}
                     style={s.payButton}
+                    testID={`bill-mark-paid-${bill.id}`}
                   >
                     <Ionicons color={theme.primary} name="checkmark-circle-outline" size={22} />
                   </Pressable>
@@ -298,6 +298,7 @@ export default function BillTracker({
                     placeholder="e.g. 2500"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="bill-amount-input"
                     value={billForm.amount}
                   />
                 </View>
@@ -311,6 +312,7 @@ export default function BillTracker({
                         active={billForm.category === cat.key}
                         label={cat.key}
                         onPress={() => handleCategoryChange(cat.key)}
+                        testID={`bill-category-${cat.key}`}
                       />
                     ))}
                   </View>
@@ -327,6 +329,7 @@ export default function BillTracker({
                       placeholder="e.g. 500"
                       placeholderTextColor={theme.textMuted}
                       style={s.input}
+                      testID="bill-units-input"
                       value={billForm.units}
                     />
                   </View>
@@ -340,6 +343,7 @@ export default function BillTracker({
                     placeholder="e.g. 15"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="bill-due-day-input"
                     value={billForm.dueDay}
                   />
                 </View>
@@ -352,6 +356,7 @@ export default function BillTracker({
                     placeholder="e.g. 3"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="bill-notify-days-input"
                     value={billForm.notifyDaysBefore}
                   />
                 </View>
@@ -362,6 +367,7 @@ export default function BillTracker({
                     hitSlop={10}
                     onPress={() => setBillForm((f) => ({ ...f, isRecurring: !f.isRecurring }))}
                     style={[s.toggleTrack, billForm.isRecurring && s.toggleTrackActive]}
+                    testID="bill-recurring-toggle"
                   >
                     <View style={[s.toggleThumb, billForm.isRecurring && s.toggleThumbActive]} />
                   </Pressable>
@@ -373,6 +379,7 @@ export default function BillTracker({
                     hitSlop={10}
                     onPress={() => setBillForm((f) => ({ ...f, isActive: !f.isActive }))}
                     style={[s.toggleTrack, billForm.isActive && s.toggleTrackActive]}
+                    testID="bill-active-toggle"
                   >
                     <View style={[s.toggleThumb, billForm.isActive && s.toggleThumbActive]} />
                   </Pressable>
@@ -382,6 +389,7 @@ export default function BillTracker({
                 <ModernButton
                   loading={actionBusy}
                   onPress={handleSubmitBill}
+                  testID="bill-save-button"
                   text="Save Bill"
                 />
               </Pressable>
@@ -435,6 +443,7 @@ export default function BillTracker({
                     placeholder="e.g. 2500"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="bill-payment-amount-input"
                     value={paymentForm.amount}
                   />
                 </View>
@@ -447,6 +456,7 @@ export default function BillTracker({
                     placeholder="e.g. 150 kWh"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="bill-payment-units-input"
                     value={paymentForm.units}
                   />
                 </View>
@@ -461,6 +471,7 @@ export default function BillTracker({
                           active={paymentForm.planId === plan.id}
                           label={plan.name}
                           onPress={() => setPaymentForm((f) => ({ ...f, planId: plan.id }))}
+                          testID={`bill-payment-plan-${plan.id}`}
                         />
                       ))}
                     </View>
@@ -474,6 +485,7 @@ export default function BillTracker({
                       active={paymentForm.paidBy === null}
                       label="Family Budget"
                       onPress={() => setPaymentForm((f) => ({ ...f, paidBy: null }))}
+                      testID="bill-payment-paid-by-family"
                     />
                     {members.map((m) => (
                       <CategoryChip
@@ -481,6 +493,7 @@ export default function BillTracker({
                         active={paymentForm.paidBy === m.user_id}
                         label={`${m.user_profile?.avatar_emoji ?? '👤'} ${m.user_profile?.name ?? 'Unknown'}`}
                         onPress={() => setPaymentForm((f) => ({ ...f, paidBy: m.user_id }))}
+                        testID={`bill-payment-paid-by-${m.user_id}`}
                       />
                     ))}
                   </View>
@@ -490,6 +503,7 @@ export default function BillTracker({
                 <ModernButton
                   loading={actionBusy}
                   onPress={handleSubmitPayment}
+                  testID="bill-payment-confirm"
                   text="Mark as Paid"
                 />
               </Pressable>
@@ -527,6 +541,7 @@ export default function BillTracker({
               <View style={s.actionRow}>
                 <ModernButton
                   onPress={() => { setShowBillDetail(false); handleOpenPayment(detailBill); }}
+                  testID="bill-detail-mark-paid"
                   text="Mark as Paid"
                 />
                 <ModernButton
@@ -536,6 +551,7 @@ export default function BillTracker({
                     onDeleteBill(detailBill.id);
                   }}
                   secondary
+                  testID="bill-detail-delete"
                   text="Delete"
                 />
               </View>
@@ -586,7 +602,7 @@ function SafeWrap({ children, onClose, title }: { children: React.ReactNode; onC
   return (
     <View style={s.modalScreen}>
       <View style={s.modalHeader}>
-        <Pressable hitSlop={10} onPress={onClose}>
+        <Pressable hitSlop={10} onPress={onClose} testID="bill-detail-close">
           <Ionicons color={theme.text} name="close-outline" size={28} />
         </Pressable>
         <Text style={s.modalTitle}>{title}</Text>

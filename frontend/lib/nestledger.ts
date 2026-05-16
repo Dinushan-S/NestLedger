@@ -341,8 +341,6 @@ export const expenseApi = {
   async addExpense(
     input: Omit<Expense, 'created_at' | 'id' | 'price'> & { items: Omit<ExpenseItem, 'created_at' | 'expense_id' | 'id'>[] }
   ) {
-    console.log('addExpense called with input:', JSON.stringify(input, null, 2));
-    
     const totalPrice = input.items.reduce((sum, item) => sum + item.price, 0);
     const { items, description, ...expenseData } = input;
     
@@ -358,20 +356,13 @@ export const expenseApi = {
       expensePayload.description = description.trim();
     }
     
-    console.log('Inserting expense with payload:', JSON.stringify(expensePayload, null, 2));
-    
     const { data: expense, error: expenseError } = await supabase
       .from('expenses')
       .insert(expensePayload)
       .select('*')
       .single();
     
-    if (expenseError) {
-      console.error('Expense insert error:', JSON.stringify(expenseError, null, 2));
-      throw expenseError;
-    }
-    
-    console.log('Expense inserted successfully:', JSON.stringify(expense, null, 2));
+    if (expenseError) throw expenseError;
 
     if (items.length > 0) {
       const itemsPayload = items.map(item => ({
@@ -380,18 +371,11 @@ export const expenseApi = {
         created_at: nowIso(),
       }));
       
-      console.log('Inserting items:', JSON.stringify(itemsPayload, null, 2));
-      
       const { error: itemsError } = await supabase
         .from('expense_items')
         .insert(itemsPayload);
       
-      if (itemsError) {
-        console.error('Items insert error:', JSON.stringify(itemsError, null, 2));
-        throw itemsError;
-      }
-      
-      console.log('Items inserted successfully');
+      if (itemsError) throw itemsError;
     }
 
     return { ...expense, items } as ExpenseWithItems;
@@ -487,26 +471,18 @@ export const expenseApi = {
       throw new Error('You must be logged in to delete expenses.');
     }
     
-    console.log('Deleting expense with user:', session.user.id);
-    
-    const { data, error, status } = await supabase
+    const { data, error } = await supabase
       .from('expenses')
       .delete()
       .eq('id', expenseId)
       .select('id, profile_id');
     
-    if (error) {
-      console.error('Delete expense error:', JSON.stringify({ code: error.code, details: error.details, hint: error.hint, message: error.message, status }));
-      throw new Error(error.message || 'Failed to delete expense');
-    }
+    if (error) throw new Error(error.message || 'Failed to delete expense');
     
     // RLS can block delete without returning error - check if row was actually deleted
     if (!data || data.length === 0) {
-      console.error('Delete blocked - no rows affected. User may not be a member of profile.');
       throw new Error('Unable to delete expense. You may not have permission to delete this expense.');
     }
-    
-    console.log('Delete expense success:', { status, deleted: data });
   },
   async clearPlanExpenses(planId: string) {
     const { data: { session } } = await supabase.auth.getSession();

@@ -23,6 +23,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 APP_PUBLIC_URL = os.getenv("APP_PUBLIC_URL", "")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "NestLedger")
 BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL", "")
@@ -45,6 +46,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_allowed_origins() -> list[str]:
+    configured = [origin.strip().rstrip("/") for origin in ALLOWED_ORIGINS.split(",")]
+    origins = [origin for origin in configured if origin]
+    if APP_PUBLIC_URL:
+        origins.append(APP_PUBLIC_URL.rstrip("/"))
+    return sorted(set(origins))
+
+
 def validate_runtime_config() -> None:
     required = {
         "SUPABASE_URL": SUPABASE_URL,
@@ -59,6 +68,8 @@ def validate_runtime_config() -> None:
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError(f"Missing backend configuration: {', '.join(missing)}")
+    if not get_allowed_origins():
+        raise RuntimeError("Missing backend configuration: ALLOWED_ORIGINS or APP_PUBLIC_URL")
 
 
 @app.on_event("startup")
@@ -493,7 +504,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=get_allowed_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

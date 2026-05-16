@@ -108,10 +108,11 @@ export default function SavingsTracker({
           </Text>
         </View>
         <View style={s.actionButtons}>
-          <ModernButton onPress={() => { setDepositForm({ amount: '', note: '', date: todayStr }); setShowDeposit(true); }} secondary text="Deposit" />
+          <ModernButton onPress={() => { setDepositForm({ amount: '', note: '', date: todayStr }); setShowDeposit(true); }} secondary testID="savings-open-deposit" text="Deposit" />
           <ModernButton
             onPress={() => { setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr }); setShowWithdraw(true); }}
             secondary
+            testID="savings-open-withdraw"
             text="Withdraw"
           />
         </View>
@@ -151,7 +152,7 @@ export default function SavingsTracker({
           </View>
         ) : (
           savings.slice(0, 10).map((entry) => (
-            <Pressable key={entry.id} onPress={() => viewEntryDetail(entry)} style={s.entryRow}>
+            <Pressable key={entry.id} onPress={() => viewEntryDetail(entry)} style={s.entryRow} testID={`savings-entry-${entry.id}`}>
               <View style={s.entryIconWrap}>
                 <Ionicons
                   color={entry.amount >= 0 ? theme.success : theme.danger}
@@ -181,7 +182,7 @@ export default function SavingsTracker({
       </View>
 
       {savings.length > 10 ? (
-        <Pressable onPress={() => viewEntryDetail(savings[0])} style={{ marginTop: 8 }}>
+        <Pressable onPress={() => viewEntryDetail(savings[0])} style={{ marginTop: 8 }} testID="savings-view-all">
           <Text style={s.linkText}>View all {savings.length} entries</Text>
         </Pressable>
       ) : null}
@@ -203,13 +204,14 @@ export default function SavingsTracker({
                     placeholder="e.g. 10000"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="savings-deposit-amount-input"
                     value={depositForm.amount}
                   />
                 </View>
 
                 <View style={s.inputGroup}>
                   <Text style={s.inputLabel}>Date</Text>
-                  <Pressable onPress={() => setShowDepositPicker(true)} style={s.dateButton}>
+                  <Pressable onPress={() => setShowDepositPicker(true)} style={s.dateButton} testID="savings-deposit-date-input">
                     <Text style={s.dateButtonText}>{formatShortDate(depositForm.date)}</Text>
                     <Ionicons color={theme.textMuted} name="calendar-outline" size={20} />
                   </Pressable>
@@ -230,6 +232,7 @@ export default function SavingsTracker({
                     placeholder="e.g. Monthly salary savings"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="savings-deposit-note-input"
                     value={depositForm.note}
                   />
                 </View>
@@ -238,6 +241,7 @@ export default function SavingsTracker({
                 <ModernButton
                   loading={actionBusy}
                   onPress={handleSubmitDeposit}
+                  testID="savings-deposit-confirm"
                   text="Add Deposit"
                 />
               </Pressable>
@@ -264,13 +268,14 @@ export default function SavingsTracker({
                     placeholder="e.g. 5000"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="savings-withdraw-amount-input"
                     value={withdrawForm.amount}
                   />
                 </View>
 
                 <View style={s.inputGroup}>
                   <Text style={s.inputLabel}>Date</Text>
-                  <Pressable onPress={() => setShowWithdrawPicker(true)} style={s.dateButton}>
+                  <Pressable onPress={() => setShowWithdrawPicker(true)} style={s.dateButton} testID="savings-withdraw-date-input">
                     <Text style={s.dateButtonText}>{formatShortDate(withdrawForm.date)}</Text>
                     <Ionicons color={theme.textMuted} name="calendar-outline" size={20} />
                   </Pressable>
@@ -292,6 +297,7 @@ export default function SavingsTracker({
                         active={withdrawForm.planId === ''}
                         label="Other / No plan"
                         onPress={() => setWithdrawForm((f) => ({ ...f, planId: '' }))}
+                        testID="savings-withdraw-plan-none"
                       />
                       {plans.map((plan) => (
                         <CategoryChip
@@ -299,6 +305,7 @@ export default function SavingsTracker({
                           active={withdrawForm.planId === plan.id}
                           label={plan.name}
                           onPress={() => setWithdrawForm((f) => ({ ...f, planId: plan.id }))}
+                          testID={`savings-withdraw-plan-${plan.id}`}
                         />
                       ))}
                     </View>
@@ -315,6 +322,7 @@ export default function SavingsTracker({
                           active={withdrawForm.reason === r}
                           label={r}
                           onPress={() => setWithdrawForm((f) => ({ ...f, reason: r }))}
+                          testID={`savings-withdraw-reason-${r}`}
                         />
                       ))}
                     </View>
@@ -332,6 +340,7 @@ export default function SavingsTracker({
                     }
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
+                    testID="savings-withdraw-note-input"
                     value={withdrawForm.note}
                   />
                 </View>
@@ -341,6 +350,7 @@ export default function SavingsTracker({
                   loading={actionBusy}
                   onPress={handleSubmitWithdraw}
                   destructive
+                  testID="savings-withdraw-confirm"
                   text="Withdraw"
                 />
                 </Pressable>
@@ -394,6 +404,7 @@ export default function SavingsTracker({
                   onDeleteEntry(selectedEntry.id);
                 }}
                 secondary
+                testID="savings-entry-delete"
                 text="Delete Entry"
               />
             </>
@@ -408,7 +419,7 @@ function SafeWrap({ children, onClose, title }: { children: React.ReactNode; onC
   return (
     <View style={s.modalScreen}>
       <View style={s.modalHeader}>
-        <Pressable hitSlop={10} onPress={onClose}>
+        <Pressable hitSlop={10} onPress={onClose} testID="savings-detail-close">
           <Ionicons color={theme.text} name="close-outline" size={28} />
         </Pressable>
         <Text style={s.modalTitle}>{title}</Text>
