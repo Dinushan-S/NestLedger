@@ -8,7 +8,7 @@ Latest main included: `66d25d7 feat(ui): enhance bill and savings trackers with 
 
 NestLedger is better than the previous pass, but it is still not fully production-grade for public release.
 
-The frontend static quality gates now pass after fixing the new bill tracker hook-order issue introduced by the latest main update. Security hardening and dependency audit checks are also in a better state. The backend pytest workflow now starts the PR backend in CI instead of calling the deployed production backend, and invite email delivery can be disabled for CI so tests do not depend on real SMTP delivery. The remaining release blockers are external validation gates: backend pytest cannot run on this machine because Python is not installed, full app regression has not been executed, and real Android/iOS push delivery has not been validated on physical devices.
+The frontend static quality gates now pass after fixing the new bill tracker hook-order issue introduced by the latest main update. Security hardening and dependency audit checks are also in a better state. Backend pytest now passes in GitHub Actions against the PR backend. The remaining release blockers are external validation gates: full app regression has not been executed, and real Android/iOS push delivery has not been validated on physical devices.
 
 ## Gates Run
 
@@ -20,16 +20,16 @@ The frontend static quality gates now pass after fixing the new bill tracker hoo
 | Dependency audit | `npm.cmd audit --audit-level=moderate` | Passed | 0 vulnerabilities. |
 | Expo dependency check | `npx.cmd expo install --check` | Passed | Dependencies are up to date. |
 | Expo Doctor | `npx.cmd expo-doctor` | Passed | 17/17 checks passed. |
-| Backend pytest | `py -0p`, `python --version`, `python3 --version` | Pending CI rerun | No Python runtime is installed locally. `.github/workflows/backend-tests.yml` now starts the branch backend locally in GitHub Actions with Python 3.11. |
+| Backend pytest | GitHub Actions `pytest backend/tests` | Passed | 5 tests passed, 0 failures, 0 skipped in 8.461s. Artifact: `backend_pytest_results.xml`. |
 
 ## Issues Found In This Pass
 
-### P0: Backend pytest pending CI execution
+### P0: Backend pytest passed
 
-The backend test gate cannot pass locally because Python is not installed in this workstation. The repository now includes `.github/workflows/backend-tests.yml`, which installs Python 3.11, installs backend dependencies, starts the branch backend on `127.0.0.1:8001`, validates required secrets, runs `pytest backend/tests`, and uploads a JUnit report.
+The backend test gate passed in GitHub Actions. The workflow installed Python 3.11, installed backend dependencies, started the branch backend on `127.0.0.1:8001`, validated required secrets, ran `pytest backend/tests`, and uploaded a JUnit report.
 
-Required next step:
-Configure GitHub secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; confirm seeded users and primary profile membership exist; then rerun the backend test workflow. Alternatively, install Python 3.11+ locally and run `pytest backend/tests`.
+Evidence:
+5 backend tests passed with 0 failures and 0 skipped.
 
 ### P0: Full production regression still not executed
 
@@ -75,4 +75,4 @@ Fix:
 
 Do not mark the app production-ready yet.
 
-The current code is closer to pre-release quality because TypeScript, ESLint, npm audit, Expo dependency checks, and Expo Doctor are green. However, a production-grade release still requires backend pytest, full P0 regression evidence, and real-device Android/iOS push validation.
+The current code is closer to pre-release quality because TypeScript, ESLint, npm audit, Expo dependency checks, Expo Doctor, and backend pytest are green. However, a production-grade release still requires full P0 regression evidence and real-device Android/iOS push validation.
