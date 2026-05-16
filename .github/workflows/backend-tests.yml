@@ -19,9 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      EXPO_BACKEND_URL: ${{ secrets.EXPO_BACKEND_URL }}
+      EXPO_BACKEND_URL: http://127.0.0.1:8001
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APP_PUBLIC_URL: http://127.0.0.1:8001
+      ALLOWED_ORIGINS: http://127.0.0.1:8001
+      INVITE_EMAIL_DELIVERY: disabled
 
     steps:
       - name: Checkout
@@ -41,13 +45,38 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          missing = [name for name in ("EXPO_BACKEND_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY") if not os.getenv(name)]
+          missing = [name for name in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY") if not os.getenv(name)]
           if missing:
               raise SystemExit(f"Missing required backend test secrets: {', '.join(missing)}")
           PY
 
+      - name: Start backend server
+        run: |
+          python -m uvicorn backend.server:app --host 127.0.0.1 --port 8001 > backend-server.log 2>&1 &
+          echo $! > backend-server.pid
+          python - <<'PY'
+          import sys
+          import time
+          import requests
+
+          for _ in range(30):
+              try:
+                  response = requests.get("http://127.0.0.1:8001/api/health", timeout=2)
+                  if response.status_code == 200:
+                      sys.exit(0)
+              except requests.RequestException:
+                  pass
+              time.sleep(1)
+
+          raise SystemExit("Backend server did not become healthy")
+          PY
+
       - name: Run backend pytest
         run: pytest backend/tests --junitxml=test_reports/backend_pytest_results.xml
+
+      - name: Show backend logs
+        if: always()
+        run: cat backend-server.log || true
 
       - name: Upload pytest report
         if: always()

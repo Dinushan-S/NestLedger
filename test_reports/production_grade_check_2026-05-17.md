@@ -8,7 +8,7 @@ Latest main included: `66d25d7 feat(ui): enhance bill and savings trackers with 
 
 NestLedger is better than the previous pass, but it is still not fully production-grade for public release.
 
-The frontend static quality gates now pass after fixing the new bill tracker hook-order issue introduced by the latest main update. Security hardening and dependency audit checks are also in a better state. The backend pytest blocker has a CI path now, but the test result is still pending until the GitHub workflow runs with configured secrets and seeded users. The remaining release blockers are external validation gates: backend pytest cannot run on this machine because Python is not installed, full app regression has not been executed, and real Android/iOS push delivery has not been validated on physical devices.
+The frontend static quality gates now pass after fixing the new bill tracker hook-order issue introduced by the latest main update. Security hardening and dependency audit checks are also in a better state. The backend pytest workflow now starts the PR backend in CI instead of calling the deployed production backend, and invite email delivery can be disabled for CI so tests do not depend on real SMTP delivery. The remaining release blockers are external validation gates: backend pytest cannot run on this machine because Python is not installed, full app regression has not been executed, and real Android/iOS push delivery has not been validated on physical devices.
 
 ## Gates Run
 
@@ -20,16 +20,16 @@ The frontend static quality gates now pass after fixing the new bill tracker hoo
 | Dependency audit | `npm.cmd audit --audit-level=moderate` | Passed | 0 vulnerabilities. |
 | Expo dependency check | `npx.cmd expo install --check` | Passed | Dependencies are up to date. |
 | Expo Doctor | `npx.cmd expo-doctor` | Passed | 17/17 checks passed. |
-| Backend pytest | `py -0p`, `python --version`, `python3 --version` | Pending CI | No Python runtime is installed locally. Added `.github/workflows/backend-tests.yml` so pytest can run in GitHub Actions with Python 3.11. |
+| Backend pytest | `py -0p`, `python --version`, `python3 --version` | Pending CI rerun | No Python runtime is installed locally. `.github/workflows/backend-tests.yml` now starts the branch backend locally in GitHub Actions with Python 3.11. |
 
 ## Issues Found In This Pass
 
 ### P0: Backend pytest pending CI execution
 
-The backend test gate cannot pass locally because Python is not installed in this workstation. The repository now includes `.github/workflows/backend-tests.yml`, which installs Python 3.11, installs backend dependencies, validates required secrets, runs `pytest backend/tests`, and uploads a JUnit report.
+The backend test gate cannot pass locally because Python is not installed in this workstation. The repository now includes `.github/workflows/backend-tests.yml`, which installs Python 3.11, installs backend dependencies, starts the branch backend on `127.0.0.1:8001`, validates required secrets, runs `pytest backend/tests`, and uploads a JUnit report.
 
 Required next step:
-Configure GitHub secrets `EXPO_BACKEND_URL`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY`; confirm seeded users and primary profile membership exist; then run the backend test workflow. Alternatively, install Python 3.11+ locally and run `pytest backend/tests`.
+Configure GitHub secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; confirm seeded users and primary profile membership exist; then rerun the backend test workflow. Alternatively, install Python 3.11+ locally and run `pytest backend/tests`.
 
 ### P0: Full production regression still not executed
 
@@ -67,6 +67,9 @@ Fix:
 - Added `.github/workflows/backend-tests.yml` for the pending backend pytest gate.
 - Updated `.github/workflows/deploy-all.yml` to use `npm ci` instead of Yarn.
 - Updated backend test fixtures to load `.env` files from the repository path and fail setup problems instead of skipping them.
+- Updated backend CI to test the PR backend locally instead of the deployed production backend.
+- Added `INVITE_EMAIL_DELIVERY=disabled` support for CI so invitation creation and accept-flow tests do not depend on SMTP availability.
+- Made invitation send resilient: if SMTP delivery fails, the invite record and shareable link still return successfully with `email_delivered: false`.
 
 ## Production Decision
 

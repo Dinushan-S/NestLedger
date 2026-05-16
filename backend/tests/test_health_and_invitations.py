@@ -37,11 +37,12 @@ def test_invitation_send_success(api_client, base_url, primary_access_token, pri
         timeout=40,
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
 
     data = response.json()
     assert data["invite_token"]
     assert "token=" in data["shareable_link"]
+    assert "email_delivered" in data
 
 
 def test_invitation_accept_not_found_for_invalid_token(api_client, base_url, member_access_token):
@@ -75,7 +76,7 @@ def test_invitation_send_and_accept_flow(
         json=send_payload,
         timeout=40,
     )
-    assert send_response.status_code == 200
+    assert send_response.status_code == 200, send_response.text
     invite_token = send_response.json()["invite_token"]
 
     accept_response = api_client.post(
@@ -84,7 +85,7 @@ def test_invitation_send_and_accept_flow(
         json={"invite_token": invite_token},
         timeout=40,
     )
-    assert accept_response.status_code == 200
+    assert accept_response.status_code == 200, accept_response.text
 
     accept_data = accept_response.json()
     assert accept_data["profile_id"] == primary_profile_id

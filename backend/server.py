@@ -31,6 +31,7 @@ SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_LOGIN = os.getenv("SMTP_LOGIN", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+INVITE_EMAIL_DELIVERY = os.getenv("INVITE_EMAIL_DELIVERY", "enabled").lower()
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -60,11 +61,16 @@ def validate_runtime_config() -> None:
         "SUPABASE_ANON_KEY": SUPABASE_ANON_KEY,
         "SUPABASE_SERVICE_ROLE_KEY": SUPABASE_SERVICE_ROLE_KEY,
         "APP_PUBLIC_URL": APP_PUBLIC_URL,
-        "BREVO_FROM_EMAIL": BREVO_FROM_EMAIL,
-        "SMTP_HOST": SMTP_HOST,
-        "SMTP_LOGIN": SMTP_LOGIN,
-        "SMTP_PASSWORD": SMTP_PASSWORD,
     }
+    if INVITE_EMAIL_DELIVERY != "disabled":
+        required.update(
+            {
+                "BREVO_FROM_EMAIL": BREVO_FROM_EMAIL,
+                "SMTP_HOST": SMTP_HOST,
+                "SMTP_LOGIN": SMTP_LOGIN,
+                "SMTP_PASSWORD": SMTP_PASSWORD,
+            }
+        )
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError(f"Missing backend configuration: {', '.join(missing)}")
@@ -196,7 +202,11 @@ def send_brevo_invite(
     profile_name: str,
     invite_link: str,
     fallback_link: str,
-) -> None:
+) -> bool:
+    if INVITE_EMAIL_DELIVERY == "disabled":
+        logger.info("Invite email delivery disabled; returning shareable invite link only.")
+        return False
+
     if not SMTP_HOST or not SMTP_LOGIN or not SMTP_PASSWORD or not BREVO_FROM_EMAIL:
         raise HTTPException(status_code=500, detail="Brevo email config is missing.")
 
@@ -226,11 +236,10 @@ def send_brevo_invite(
             smtp.starttls()
             smtp.login(SMTP_LOGIN, SMTP_PASSWORD)
             smtp.send_message(message)
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.error("Brevo SMTP error: %s", exc)
-        raise HTTPException(
-            status_code=500, detail="Brevo failed to send the invite email."
-        ) from exc
+        return False
 
 
 def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:
@@ -288,7 +297,7 @@ def send_invitation(
         prefer="return=representation",
     )
 
-    send_brevo_invite(
+    email_delivered = send_brevo_invite(
         recipient_email=payload.invited_email,
         inviter_name=payload.inviter_name,
         profile_name=payload.profile_name,
@@ -296,7 +305,11 @@ def send_invitation(
         fallback_link=fallback_link,
     )
 
-    return {"invite_token": invite_token, "shareable_link": fallback_link}
+    return {
+        "email_delivered": email_delivered,
+        "invite_token": invite_token,
+        "shareable_link": fallback_link,
+    }
 
 
 @api_router.post("/invitations/accept")
