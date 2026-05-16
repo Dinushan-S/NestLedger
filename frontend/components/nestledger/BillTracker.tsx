@@ -16,6 +16,9 @@ type Props = {
   userId: string;
   profileId: string;
   actionBusy: boolean;
+  viewMonth?: number;
+  viewYear?: number;
+  stats?: { paid: number; paidCount: number; pending: number; pendingCount: number; totalCount: number };
   onAddBill: (bill: Omit<RecurringBill, 'created_at' | 'id'>) => void;
   onMarkPaid: (payment: Omit<BillPayment, 'created_at' | 'id'>) => void;
   onDeleteBill: (billId: string) => void;
@@ -69,6 +72,9 @@ export default function BillTracker({
   userId,
   profileId,
   actionBusy,
+  viewMonth,
+  viewYear,
+  stats,
   onAddBill,
   onMarkPaid,
   onDeleteBill,
@@ -85,9 +91,16 @@ export default function BillTracker({
     return recurringBills.filter((b) => b.tracker_id === trackerId);
   }, [recurringBills, trackerId]);
 
-  const filteredPayments = useMemo(() => {
+  const trackerPayments = useMemo(() => {
     return billPayments.filter((p) => p.tracker_id === trackerId);
   }, [billPayments, trackerId]);
+
+  const filteredPayments = useMemo(() => {
+    if (viewMonth !== undefined && viewYear !== undefined) {
+      return trackerPayments.filter((p) => p.month === viewMonth && p.year === viewYear);
+    }
+    return trackerPayments;
+  }, [trackerPayments, viewMonth, viewYear]);
 
   const thisMonthPayments = useMemo(() => {
     return filteredPayments.filter((p) => p.month === currentMonth && p.year === currentYear);
@@ -101,11 +114,11 @@ export default function BillTracker({
     return thisMonthPayments.filter((p) => p.status === 'pending');
   }, [thisMonthPayments]);
 
-  const totalPaidAmount = useMemo(() => {
+  const totalPaidAmount = stats?.paid ?? useMemo(() => {
     return paidThisMonth.reduce((sum, p) => sum + p.amount, 0);
   }, [paidThisMonth]);
 
-  const totalPendingAmount = useMemo(() => {
+  const totalPendingAmount = stats?.pending ?? useMemo(() => {
     return pendingThisMonth.reduce((sum, p) => sum + p.amount, 0);
   }, [pendingThisMonth]);
 
@@ -223,17 +236,17 @@ export default function BillTracker({
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Paid</Text>
           <Text style={s.statPillValue}>{rs(totalPaidAmount)}</Text>
-          <Text style={s.statPillSub}>{paidThisMonth.length} bills</Text>
+          <Text style={s.statPillSub}>{stats?.paidCount ?? paidThisMonth.length} bills</Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Pending</Text>
           <Text style={[s.statPillValue, { color: theme.warning }]}>{rs(totalPendingAmount)}</Text>
-          <Text style={s.statPillSub}>{pendingThisMonth.length} bills</Text>
+          <Text style={s.statPillSub}>{stats?.pendingCount ?? pendingThisMonth.length} bills</Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Total</Text>
           <Text style={s.statPillValue}>{rs(totalPaidAmount + totalPendingAmount)}</Text>
-          <Text style={s.statPillSub}>{thisMonthPayments.length} entries</Text>
+          <Text style={s.statPillSub}>{stats?.totalCount ?? thisMonthPayments.length} entries</Text>
         </View>
       </View>
 
@@ -303,7 +316,7 @@ export default function BillTracker({
               showsVerticalScrollIndicator
             >
               <Pressable onPress={(e) => e.stopPropagation()}>
-                <Text style={s.sectionTitle}>New Recurring Bill</Text>
+                <Text style={s.sectionTitle}>New Bill</Text>
 
                 <View style={s.inputGroup}>
                   <Text style={s.inputLabel}>Amount (Rs.)</Text>

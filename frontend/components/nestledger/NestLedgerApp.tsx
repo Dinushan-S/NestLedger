@@ -298,6 +298,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   const [activeViewYear, setActiveViewYear] = useState<number>(new Date().getFullYear());
   const [activeViewMonth, setActiveViewMonth] = useState<number | 'current'>('current');
+  const [billViewYear, setBillViewYear] = useState<number>(new Date().getFullYear());
+  const [billViewMonth, setBillViewMonth] = useState<number | 'current'>('current');
+  const [savingsViewYear, setSavingsViewYear] = useState<number>(new Date().getFullYear());
+  const [savingsViewMonth, setSavingsViewMonth] = useState<number | 'current'>('current');
 
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const lastRefreshRef = useRef<number>(0);
@@ -404,6 +408,44 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
     return map;
   }, [plans, profileExpenses]);
+
+  const currentMonthBillStatsMap = useMemo(() => {
+    const monthStart = startOfMonth();
+    const now = new Date();
+    const thisMonth = now.getMonth() + 1;
+    const thisYear = now.getFullYear();
+    const map: Record<string, { paid: number; paidCount: number; pending: number; pendingCount: number; totalCount: number }> = {};
+    billTrackers.forEach((t) => {
+      const trackerBills = recurringBills.filter((b) => b.tracker_id === t.id);
+      const trackerPmts = billPayments.filter((p) => p.tracker_id === t.id);
+      const paidBills = new Set(trackerPmts.filter((p) => p.status === 'paid' && (p.month === thisMonth && p.year === thisYear)).map((p) => p.bill_id));
+      const paid = trackerPmts.filter((p) => p.status === 'paid' && (p.month === thisMonth && p.year === thisYear)).reduce((s, p) => s + p.amount, 0);
+      const pendingBills = trackerBills.filter((b) => !paidBills.has(b.id));
+      const pending = pendingBills.reduce((s, b) => s + b.default_amount, 0);
+      map[t.id] = {
+        paid,
+        paidCount: paidBills.size,
+        pending,
+        pendingCount: pendingBills.length,
+        totalCount: trackerBills.length,
+      };
+    });
+    return map;
+  }, [billTrackers, billPayments, recurringBills]);
+
+  const currentMonthSavingsStatsMap = useMemo(() => {
+    const monthStart = startOfMonth();
+    const map: Record<string, { balance: number; deposits: number; withdrawals: number; net: number }> = {};
+    savingsTrackers.forEach((t) => {
+      const entries = savings.filter((e) => e.tracker_id === t.id);
+      const balance = entries.reduce((s, e) => s + e.amount, 0);
+      const monthEntries = entries.filter((e) => new Date(e.date) >= monthStart);
+      const deposits = monthEntries.filter((e) => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+      const withdrawals = monthEntries.filter((e) => e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
+      map[t.id] = { balance, deposits, withdrawals, net: deposits - withdrawals };
+    });
+    return map;
+  }, [savings, savingsTrackers]);
 
   const filteredShoppingItems = useMemo(() => {
     if (shoppingFilter === 'Pending') {
@@ -1939,11 +1981,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   ) : null}
 
                   {billTrackers.map((tracker) => {
-                    const trackerBills = recurringBills.filter((b) => b.tracker_id === tracker.id);
-                    const trackerPayments = billPayments.filter((p) => p.tracker_id === tracker.id);
-                    const thisMonth = new Date().getMonth() + 1;
-                    const thisYear = new Date().getFullYear();
-                    const billsThisMonth = trackerBills.filter((b) => trackerPayments.some((p) => p.bill_id === b.id && p.month === thisMonth && p.year === thisYear)).length;
+                    const bStats = currentMonthBillStatsMap[tracker.id] ?? { paid: 0, paidCount: 0, pending: 0, pendingCount: 0, totalCount: 0 };
                     const renderRightActions = () => (
                       <View style={styles.deleteAction}>
                         <Pressable hitSlop={10} onPress={() => handleDeleteTracker('bill', tracker.id, tracker.name)} style={styles.deleteButton}>
@@ -1960,17 +1998,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     );
                     return (
                       <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
-                        <Pressable onPress={() => setSelectedBillTrackerId(tracker.id)}>
+                        <Pressable onPress={() => { setBillViewMonth('current'); setSelectedBillTrackerId(tracker.id); }}>
                           <BentoCard>
                             <View style={styles.rowBetween}>
                               <View style={{ flex: 1 }}>
-                                <View style={styles.statRow}>
-                                  <InfoPill label="Bills" value={billsThisMonth.toString()} />
-                                </View>
                                 <Text style={styles.cardTitle}>{tracker.name}</Text>
-                                <Text style={styles.bodyMuted}>{billsThisMonth} bill{billsThisMonth !== 1 ? 's' : ''} this month</Text>
+                                <Text style={styles.bodyMuted}>Bills this month: {bStats.totalCount}</Text>
                               </View>
                               <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                            </View>
+                            <View style={styles.statRow}>
+                              <InfoPill label="Paid" value={rs(bStats.paid)} />
+                              <InfoPill label="Pending" value={rs(bStats.pending)} />
+                              <InfoPill label="Total" value={`${bStats.totalCount} bills`} />
                             </View>
                           </BentoCard>
                         </Pressable>
@@ -1979,8 +2019,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   })}
 
                   {savingsTrackers.map((tracker) => {
-                    const trackerSavings = savings.filter((e) => e.tracker_id === tracker.id);
-                    const balance = trackerSavings.reduce((s, e) => s + e.amount, 0);
+                    const sStats = currentMonthSavingsStatsMap[tracker.id] ?? { balance: 0, deposits: 0, withdrawals: 0, net: 0 };
                     const renderRightActions = () => (
                       <View style={styles.deleteAction}>
                         <Pressable hitSlop={10} onPress={() => handleDeleteTracker('savings', tracker.id, tracker.name)} style={styles.deleteButton}>
@@ -1997,17 +2036,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     );
                     return (
                       <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
-                        <Pressable onPress={() => setSelectedSavingsTrackerId(tracker.id)}>
+                        <Pressable onPress={() => { setSavingsViewMonth('current'); setSelectedSavingsTrackerId(tracker.id); }}>
                           <BentoCard>
                             <View style={styles.rowBetween}>
-                              <View style={{ flex: 1 }}>
-                                <View style={styles.statRow}>
-                                  <InfoPill label="Savings" value={rs(balance)} />
-                                </View>
-                                <Text style={styles.cardTitle}>{tracker.name}</Text>
-                                <Text style={styles.bodyMuted}>Balance: {rs(balance)}</Text>
-                              </View>
+                              <Text style={styles.cardTitle}>{tracker.name}</Text>
                               <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                            </View>
+                            <View style={styles.statRow}>
+                              <InfoPill label="Balance" value={rs(sStats.balance)} />
+                              <InfoPill label="Deposits" value={rs(sStats.deposits)} />
+                              <InfoPill label="Net" value={rs(sStats.net)} />
                             </View>
                           </BentoCard>
                         </Pressable>
@@ -2231,19 +2269,70 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedBillTrackerId)}>
         <ModalScaffold closeTestID="close-bill-tracker-detail" onClose={() => setSelectedBillTrackerId(null)} title={billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ?? 'Bill Tracker'}>
           {selectedBillTrackerId ? (
-            <BillTracker
-              trackerId={selectedBillTrackerId}
-              actionBusy={actionBusy}
-              billPayments={billPayments}
-              members={members}
-              onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
-              onDeleteBill={handleDeleteBillFromTracker}
-              onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
-              plans={plans}
-              profileId={activeProfile?.id ?? ''}
-              recurringBills={recurringBills}
-              userId={session?.user?.id ?? ''}
-            />
+            <>
+              <View style={styles.monthSelectorWrap}>
+                <View style={styles.yearNavRow}>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => {
+                      const years = [...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort();
+                      const idx = years.indexOf(billViewYear);
+                      if (idx > 0) setBillViewYear(years[idx - 1]);
+                    }}
+                    style={styles.yearNavArrow}
+                  >
+                    <Ionicons color={theme.primary} name="chevron-back-outline" size={20} />
+                  </Pressable>
+                  <Text style={styles.yearNavText}>{billViewYear}</Text>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => {
+                      const years = [...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort();
+                      const idx = years.indexOf(billViewYear);
+                      if (idx < years.length - 1) setBillViewYear(years[idx + 1]);
+                    }}
+                    style={styles.yearNavArrow}
+                  >
+                    <Ionicons color={theme.primary} name="chevron-forward-outline" size={20} />
+                  </Pressable>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScrollRow}>
+                  <CategoryChip
+                    active={billViewMonth === 'current'}
+                    label="Current"
+                    onPress={() => setBillViewMonth('current')}
+                  />
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
+                    const hasData = billPayments.some((p) => p.tracker_id === selectedBillTrackerId && p.month === m && p.year === billViewYear);
+                    if (!hasData && !(billViewYear === new Date().getFullYear() && m === new Date().getMonth() + 1)) return null;
+                    return (
+                      <CategoryChip
+                        key={m}
+                        active={billViewMonth === m}
+                        label={monthShort[m - 1]}
+                        onPress={() => setBillViewMonth(m)}
+                      />
+                    );
+                  })}
+                </ScrollView>
+              </View>
+              <BillTracker
+                trackerId={selectedBillTrackerId}
+                stats={currentMonthBillStatsMap[selectedBillTrackerId]}
+                actionBusy={actionBusy}
+                billPayments={billPayments}
+                members={members}
+                onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
+                onDeleteBill={handleDeleteBillFromTracker}
+                onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
+                plans={plans}
+                profileId={activeProfile?.id ?? ''}
+                recurringBills={recurringBills}
+                userId={session?.user?.id ?? ''}
+                viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
+                viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
+              />
+            </>
           ) : null}
         </ModalScaffold>
       </Modal>
@@ -2251,18 +2340,69 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedSavingsTrackerId)}>
         <ModalScaffold closeTestID="close-savings-tracker-detail" onClose={() => setSelectedSavingsTrackerId(null)} title={savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)?.name ?? 'Savings Tracker'}>
           {selectedSavingsTrackerId ? (
-            <SavingsTracker
-              trackerId={selectedSavingsTrackerId}
-              actionBusy={actionBusy}
-              members={members}
-              onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
-              onDeleteEntry={handleDeleteSavingEntry}
-              onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${rs(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
-              plans={plans}
-              profileId={activeProfile?.id ?? ''}
-              savings={savings}
-              userId={session?.user?.id ?? ''}
-            />
+            <>
+              <View style={styles.monthSelectorWrap}>
+                <View style={styles.yearNavRow}>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => {
+                      const years = [...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort();
+                      const idx = years.indexOf(savingsViewYear);
+                      if (idx > 0) setSavingsViewYear(years[idx - 1]);
+                    }}
+                    style={styles.yearNavArrow}
+                  >
+                    <Ionicons color={theme.primary} name="chevron-back-outline" size={20} />
+                  </Pressable>
+                  <Text style={styles.yearNavText}>{savingsViewYear}</Text>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => {
+                      const years = [...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort();
+                      const idx = years.indexOf(savingsViewYear);
+                      if (idx < years.length - 1) setSavingsViewYear(years[idx + 1]);
+                    }}
+                    style={styles.yearNavArrow}
+                  >
+                    <Ionicons color={theme.primary} name="chevron-forward-outline" size={20} />
+                  </Pressable>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScrollRow}>
+                  <CategoryChip
+                    active={savingsViewMonth === 'current'}
+                    label="Current"
+                    onPress={() => setSavingsViewMonth('current')}
+                  />
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
+                    const hasData = savings.some((e) => e.tracker_id === selectedSavingsTrackerId && new Date(e.date).getMonth() + 1 === m && new Date(e.date).getFullYear() === savingsViewYear);
+                    if (!hasData && !(savingsViewYear === new Date().getFullYear() && m === new Date().getMonth() + 1)) return null;
+                    return (
+                      <CategoryChip
+                        key={m}
+                        active={savingsViewMonth === m}
+                        label={monthShort[m - 1]}
+                        onPress={() => setSavingsViewMonth(m)}
+                      />
+                    );
+                  })}
+                </ScrollView>
+              </View>
+              <SavingsTracker
+                trackerId={selectedSavingsTrackerId}
+                stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
+                actionBusy={actionBusy}
+                members={members}
+                onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
+                onDeleteEntry={handleDeleteSavingEntry}
+                onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${rs(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+                plans={plans}
+                profileId={activeProfile?.id ?? ''}
+                savings={savings}
+                userId={session?.user?.id ?? ''}
+                viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
+                viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
+              />
+            </>
           ) : null}
         </ModalScaffold>
       </Modal>

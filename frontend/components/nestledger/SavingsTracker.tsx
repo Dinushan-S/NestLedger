@@ -16,6 +16,9 @@ type Props = {
   userId: string;
   profileId: string;
   actionBusy: boolean;
+  viewMonth?: number;
+  viewYear?: number;
+  stats?: { balance: number; deposits: number; withdrawals: number; net: number };
   onAddDeposit: (entry: Omit<SavingsEntry, 'created_at' | 'id'>) => void;
   onWithdraw: (entry: Omit<SavingsEntry, 'created_at' | 'id'>) => void;
   onDeleteEntry: (entryId: string) => void;
@@ -33,6 +36,9 @@ export default function SavingsTracker({
   userId,
   profileId,
   actionBusy,
+  viewMonth,
+  viewYear,
+  stats,
   onAddDeposit,
   onWithdraw,
   onDeleteEntry,
@@ -47,9 +53,19 @@ export default function SavingsTracker({
   const [showDepositPicker, setShowDepositPicker] = useState(false);
   const [showWithdrawPicker, setShowWithdrawPicker] = useState(false);
 
-  const filteredSavings = useMemo(() => {
+  const trackerSavings = useMemo(() => {
     return savings.filter((e) => e.tracker_id === trackerId);
   }, [savings, trackerId]);
+
+  const filteredSavings = useMemo(() => {
+    if (viewMonth !== undefined && viewYear !== undefined) {
+      return trackerSavings.filter((e) => {
+        const d = new Date(e.date);
+        return d.getMonth() + 1 === viewMonth && d.getFullYear() === viewYear;
+      });
+    }
+    return trackerSavings;
+  }, [trackerSavings, viewMonth, viewYear]);
 
   const totalSavings = useMemo(() => {
     return filteredSavings.reduce((sum, e) => sum + e.amount, 0);
@@ -114,7 +130,7 @@ export default function SavingsTracker({
         <View style={s.headerContent}>
           <Text style={s.cardTitle}>Savings Tracker</Text>
           <Text style={s.bodyMuted}>
-            {totalSavings >= 0 ? 'Total saved' : 'Net borrowed'}: {rs(Math.abs(totalSavings))}
+            {(stats?.balance ?? totalSavings) >= 0 ? 'Total saved' : 'Net borrowed'}: {rs(Math.abs(stats?.balance ?? totalSavings))}
           </Text>
         </View>
         <View style={s.actionButtons}>
@@ -131,26 +147,26 @@ export default function SavingsTracker({
       <View style={s.statRow}>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Balance</Text>
-          <Text style={[s.statPillValue, totalSavings < 0 && { color: theme.danger }]}>
-            {rs(totalSavings)}
+          <Text style={[s.statPillValue, (stats?.balance ?? totalSavings) < 0 && { color: theme.danger }]}>
+            {rs(stats?.balance ?? totalSavings)}
           </Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>This month</Text>
-          <Text style={[s.statPillValue, thisMonthNet < 0 ? { color: theme.danger } : { color: theme.success }]}>
-            {thisMonthNet >= 0 ? '+' : ''}{rs(thisMonthNet)}
+          <Text style={[s.statPillValue, (stats?.net ?? thisMonthNet) < 0 ? { color: theme.danger } : { color: theme.success }]}>
+            {(stats?.net ?? thisMonthNet) >= 0 ? '+' : ''}{rs(stats?.net ?? thisMonthNet)}
           </Text>
           <Text style={s.statPillSub}>{thisMonthEntries.length} entries</Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Deposits</Text>
-          <Text style={s.statPillValue}>{deposits.length}</Text>
-          <Text style={s.statPillSub}>{rs(deposits.reduce((s, e) => s + e.amount, 0))} total</Text>
+          <Text style={s.statPillValue}>{rs(stats?.deposits ?? deposits.reduce((s, e) => s + e.amount, 0))}</Text>
+          <Text style={s.statPillSub}>{stats ? '' : `${deposits.length} entries`}</Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Withdrawals</Text>
-          <Text style={s.statPillValue}>{withdrawals.length}</Text>
-          <Text style={s.statPillSub}>{rs(Math.abs(withdrawals.reduce((s, e) => s + e.amount, 0)))} total</Text>
+          <Text style={s.statPillValue}>{rs(stats?.withdrawals ?? Math.abs(withdrawals.reduce((s, e) => s + e.amount, 0)))}</Text>
+          <Text style={s.statPillSub}>{stats ? '' : `${withdrawals.length} entries`}</Text>
         </View>
       </View>
 
