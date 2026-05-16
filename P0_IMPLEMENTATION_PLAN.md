@@ -91,7 +91,7 @@ py -0p
 
 - Frontend dependencies install cleanly with `npm.cmd ci`.
 - TypeScript passes with `node node_modules\typescript\bin\tsc --noEmit`.
-- ESLint passes with 0 errors and 5 existing React hook dependency warnings in `NestLedgerApp.tsx`.
+- ESLint passes with 0 errors and 0 warnings after the follow-up hook dependency cleanup.
 - Debug log scan now finds no production app logging; only `frontend/scripts/reset-project.js` logs remain.
 - Shopping typo scan confirms `shoppong` no longer exists.
 - Wildcard backend CORS scan confirms `allow_origins=["*"]` no longer exists.
@@ -129,8 +129,29 @@ The current result should be treated as:
 - Run backend pytest in an environment with Python installed.
 - Run full E2E regression for auth, household, budget, shopping, borrow/repay, billing, savings, invite, notifications, and member flows.
 - Validate Android and iOS push delivery on real devices.
-- Decide whether to migrate Expo/PostCSS dependencies to clear the remaining moderate audit findings.
-- Refactor `NestLedgerApp.tsx` after regression is stable; it still has React hook dependency warnings and remains too large for comfortable production maintenance.
+- Refactor `NestLedgerApp.tsx` after regression is stable; it is still too large for comfortable production maintenance even though the current hook warnings are resolved.
+
+### Completed In Follow-Up Pass
+
+- Resolved the remaining Expo/PostCSS audit issue without `npm audit fix --force`.
+- Added an npm override/resolution for `postcss@8.5.10`.
+- Updated Expo SDK 54 patch packages to the versions expected by Expo validation.
+- Added the missing `expo-font` peer dependency required by `@expo/vector-icons`.
+- Removed the invalid `expo.cli` field from `frontend/app.json`; `cli.appVersionSource` remains in `frontend/eas.json`.
+- Standardized frontend package management on npm by keeping `package-lock.json` and removing the stale Yarn lockfile.
+- Fixed the remaining React hook dependency warnings in `NestLedgerApp.tsx`.
+- Added a fresh pre-release production report at `test_reports/pre_release_production_2026-05-16.json`.
+- Added a real-device push validation template at `test_reports/pre_release_push_validation_template.md`.
+
+### Follow-Up Pass Verification
+
+- `npm.cmd ci`: passed.
+- `npm.cmd audit --audit-level=moderate`: passed with 0 vulnerabilities.
+- `npx.cmd expo install --check`: passed.
+- `npx.cmd expo-doctor`: passed 17/17 checks.
+- `node node_modules\typescript\bin\tsc --noEmit`: passed.
+- `node node_modules\eslint\bin\eslint.js .`: passed with 0 warnings.
+- `py -0p`: blocked because no Python runtime is installed on this workstation.
 
 ## Phase 1: Restore Test Environment
 

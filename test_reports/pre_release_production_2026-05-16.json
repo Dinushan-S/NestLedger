@@ -1,0 +1,102 @@
+{
+  "created_at": "2026-05-16",
+  "branch": "codex/p0-production-readiness",
+  "summary": "Pre-release production readiness update after P0 hardening. Frontend static, dependency, audit, and Expo health gates pass. Backend pytest and real-device push validation remain blocked by local environment/device availability.",
+  "overall_status": "blocked_external_validation_required",
+  "completed_gates": [
+    {
+      "gate": "frontend_clean_install",
+      "command": "npm.cmd ci",
+      "status": "passed",
+      "evidence": "Clean install completed with 961 packages installed."
+    },
+    {
+      "gate": "frontend_audit",
+      "command": "npm.cmd audit --audit-level=moderate",
+      "status": "passed",
+      "evidence": "0 vulnerabilities after safe PostCSS override and Expo-compatible patch updates."
+    },
+    {
+      "gate": "expo_dependency_validation",
+      "command": "npx.cmd expo install --check",
+      "status": "passed",
+      "evidence": "Dependencies are up to date for Expo SDK 54."
+    },
+    {
+      "gate": "expo_project_health",
+      "command": "npx.cmd expo-doctor",
+      "status": "passed",
+      "evidence": "17/17 checks passed."
+    },
+    {
+      "gate": "typescript",
+      "command": "node node_modules\\typescript\\bin\\tsc --noEmit",
+      "status": "passed",
+      "evidence": "No TypeScript errors."
+    },
+    {
+      "gate": "eslint",
+      "command": "node node_modules\\eslint\\bin\\eslint.js .",
+      "status": "passed",
+      "evidence": "No ESLint errors or warnings."
+    }
+  ],
+  "blocked_gates": [
+    {
+      "gate": "backend_pytest",
+      "command": "py -0p",
+      "status": "blocked",
+      "blocker": "No installed Python runtime found on this workstation.",
+      "required_next_step": "Install Python 3.11+ or run pytest in CI, then execute backend/tests with Supabase test env configured."
+    },
+    {
+      "gate": "full_e2e_regression",
+      "status": "blocked",
+      "blocker": "No committed E2E automation harness exists for the full mobile app surface; manual/device coverage is still required.",
+      "required_next_step": "Run structured manual or automated regression covering all P0 flows listed in this report."
+    },
+    {
+      "gate": "real_device_push_validation",
+      "status": "blocked",
+      "blocker": "Physical Android and iOS devices plus production-like Expo preview builds are required.",
+      "required_next_step": "Build preview artifacts, install them on real devices, and record push delivery results."
+    }
+  ],
+  "p0_regression_matrix": [
+    { "flow": "Sign up", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Sign in", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Create household profile", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Switch household profile", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Create/edit/delete/reset budget plan", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Add/edit/delete expense", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Shopping quantity, bought, linked expense, unbought", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Borrow, edit borrow, repay, member balance", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Recurring bill create/delete and payment linking", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Savings deposit/withdraw/delete/totals", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Invite second user and accept invite", "status": "not_run", "reason": "Backend pytest blocked locally; full app invite requires E2E/manual session." },
+    { "flow": "Notifications receive/read", "status": "not_run", "reason": "Requires E2E/manual app session." },
+    { "flow": "Realtime refresh for expenses, shopping, bills, payments, savings", "status": "not_run", "reason": "Requires two-user/two-session validation." },
+    { "flow": "Android push delivery foreground/background/closed", "status": "blocked", "reason": "Requires physical Android preview build." },
+    { "flow": "iOS push delivery foreground/background/closed", "status": "blocked", "reason": "Requires physical iOS preview build." }
+  ],
+  "push_validation_protocol": {
+    "build_commands": [
+      "eas build -p android --profile preview",
+      "eas build -p ios --profile preview"
+    ],
+    "required_records": [
+      "device model",
+      "OS version",
+      "build profile and build id",
+      "primary and member test accounts",
+      "permission prompt result",
+      "Expo project ID detection result",
+      "push token registration result",
+      "foreground delivery result",
+      "background delivery result",
+      "closed-app delivery result",
+      "failed push behavior"
+    ]
+  },
+  "production_decision": "Do not mark production ready until backend pytest, full app regression, and Android/iOS real-device push validation pass."
+}

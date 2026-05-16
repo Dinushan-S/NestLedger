@@ -114,13 +114,16 @@ export default function BillTracker({
     return thisMonthPayments.filter((p) => p.status === 'pending');
   }, [thisMonthPayments]);
 
-  const totalPaidAmount = stats?.paid ?? useMemo(() => {
+  const calculatedPaidAmount = useMemo(() => {
     return paidThisMonth.reduce((sum, p) => sum + p.amount, 0);
   }, [paidThisMonth]);
 
-  const totalPendingAmount = stats?.pending ?? useMemo(() => {
+  const calculatedPendingAmount = useMemo(() => {
     return pendingThisMonth.reduce((sum, p) => sum + p.amount, 0);
   }, [pendingThisMonth]);
+
+  const totalPaidAmount = stats?.paid ?? calculatedPaidAmount;
+  const totalPendingAmount = stats?.pending ?? calculatedPendingAmount;
 
   const billPaymentMap = useMemo(() => {
     const map: Record<string, { paid: number; pending: number; payments: BillPayment[] }> = {};

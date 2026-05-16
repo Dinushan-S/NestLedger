@@ -6,7 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Session } from '@supabase/supabase-js';
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -410,7 +410,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }, [plans, profileExpenses]);
 
   const currentMonthBillStatsMap = useMemo(() => {
-    const monthStart = startOfMonth();
     const now = new Date();
     const thisMonth = now.getMonth() + 1;
     const thisYear = now.getFullYear();
@@ -522,6 +521,52 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const shoppingBadgeCount = notifications.filter(
     (item) => !item.is_read && item.type.startsWith('shopping_'),
   ).length;
+  const sessionUserId = session?.user?.id;
+
+  const refreshProfileData = useCallback(async (profileId: string, force?: boolean) => {
+    if (!sessionUserId) {
+      return;
+    }
+
+    const now = Date.now();
+    if (!force && now - lastRefreshRef.current < 1000) {
+      return;
+    }
+    lastRefreshRef.current = now;
+
+    try {
+      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications, nextBillTrackers, nextSavingsTrackers, nextBills, nextPayments, nextSavings] = await Promise.all([
+        profileApi.fetchMembers(profileId),
+        budgetApi.fetchPlans(profileId),
+        expenseApi.fetchProfileExpenses(profileId),
+        shoppingApi.fetchItems(profileId),
+        notificationApi.fetchForUser(profileId, sessionUserId),
+        billApi.fetchTrackers(profileId),
+        savingsApi.fetchTrackers(profileId),
+        billApi.fetchRecurringBills(profileId),
+        billApi.fetchPayments(profileId),
+        savingsApi.fetchSavings(profileId),
+      ]);
+
+      setMembers(nextMembers);
+      setPlans(nextPlans);
+      setProfileExpenses(nextExpenses);
+      setShoppingItems(nextShopping);
+      setNotifications(nextNotifications);
+      setBillTrackers(nextBillTrackers);
+      setSavingsTrackers(nextSavingsTrackers);
+      setRecurringBills(nextBills);
+      setBillPayments(nextPayments);
+      setSavings(nextSavings);
+      nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
+      if (selectedPlanId && !nextPlans.some((plan) => plan.id === selectedPlanId)) {
+        setSelectedPlanId(null);
+      }
+    } catch (error) {
+      const message = extractError(error);
+      setSetupMessage(message);
+    }
+  }, [selectedPlanId, sessionUserId]);
 
   useEffect(() => {
     let mounted = true;
@@ -632,7 +677,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   };
 
   useEffect(() => {
-    if (!session?.user) {
+    if (!sessionUserId) {
       return;
     }
 
@@ -641,15 +686,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
       try {
         const [nextUserProfile, nextProfiles] = await Promise.all([
-          profileApi.fetchUserProfile(session.user.id),
-          profileApi.fetchAccessibleProfiles(session.user.id),
+          profileApi.fetchUserProfile(sessionUserId),
+          profileApi.fetchAccessibleProfiles(sessionUserId),
         ]);
 
         setUserProfile(nextUserProfile);
         setProfiles(nextProfiles);
         setProfileLoaded(true);
 
-        const savedId = await AsyncStorage.getItem(`nestledger-active-profile-${session.user.id}`);
+        const savedId = await AsyncStorage.getItem(`nestledger-active-profile-${sessionUserId}`);
         const fallback = nextProfiles.find((item) => item.id === savedId)?.id ?? nextProfiles[0]?.id ?? null;
         setActiveProfileId((previous) => previous ?? fallback);
         setSetupMessage(null);
@@ -669,31 +714,31 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     };
 
     bootstrap();
-  }, [session?.user?.id]);
+  }, [sessionUserId]);
 
   useEffect(() => {
-    if (!session?.user || !activeProfileId) {
+    if (!sessionUserId || !activeProfileId) {
       return;
     }
 
-    AsyncStorage.setItem(`nestledger-active-profile-${session.user.id}`, activeProfileId).catch(() => undefined);
-  }, [activeProfileId, session?.user]);
+    AsyncStorage.setItem(`nestledger-active-profile-${sessionUserId}`, activeProfileId).catch(() => undefined);
+  }, [activeProfileId, sessionUserId]);
 
   useEffect(() => {
-    if (!session?.user || !activeProfileId) {
+    if (!sessionUserId || !activeProfileId) {
       return;
     }
 
     refreshProfileData(activeProfileId);
-  }, [activeProfileId, session?.user?.id]);
+  }, [activeProfileId, refreshProfileData, sessionUserId]);
 
   useEffect(() => {
-    if (!session?.user || !activeProfileId) {
+    if (!sessionUserId || !activeProfileId) {
       return;
     }
 
     const channel = supabase
-      .channel(`nestledger-${activeProfileId}-${session.user.id}`)
+      .channel(`nestledger-${activeProfileId}-${sessionUserId}`)
       .on(
         'postgres_changes',
         { event: '*', filter: `profile_id=eq.${activeProfileId}`, schema: 'public', table: 'budget_plans' },
@@ -752,7 +797,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       )
       .on(
         'postgres_changes',
-        { event: '*', filter: `user_id=eq.${session.user.id}`, schema: 'public', table: 'notifications' },
+        { event: '*', filter: `user_id=eq.${sessionUserId}`, schema: 'public', table: 'notifications' },
         async (payload) => {
           const nextPayload = payload as { eventType: string; new?: { id?: string; message?: string } };
           const nextId = nextPayload.new?.id;
@@ -781,21 +826,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeProfileId, session?.user?.id]);
+  }, [activeProfileId, refreshProfileData, sessionUserId]);
 
   useEffect(() => {
     if (!selectedPlanId) return;
     setActiveViewYear(new Date().getFullYear());
     setActiveViewMonth('current');
   }, [selectedPlanId]);
-
-  useEffect(() => {
-    if (!session || !pendingInviteToken) {
-      return;
-    }
-
-    acceptInviteFlow(pendingInviteToken);
-  }, [pendingInviteToken, session?.access_token]);
 
   useEffect(() => {
     if (!session || !Device.isDevice) {
@@ -823,61 +860,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     };
 
     register();
-  }, [session?.access_token]);
+  }, [session]);
 
-  const refreshProfileData = async (profileId: string, force?: boolean) => {
-    if (!session?.user) {
-      return;
-    }
-
-    const now = Date.now();
-    if (!force && now - lastRefreshRef.current < 1000) {
-      return;
-    }
-    lastRefreshRef.current = now;
-
-    try {
-      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications, nextBillTrackers, nextSavingsTrackers, nextBills, nextPayments, nextSavings] = await Promise.all([
-        profileApi.fetchMembers(profileId),
-        budgetApi.fetchPlans(profileId),
-        expenseApi.fetchProfileExpenses(profileId),
-        shoppingApi.fetchItems(profileId),
-        notificationApi.fetchForUser(profileId, session.user.id),
-        billApi.fetchTrackers(profileId),
-        savingsApi.fetchTrackers(profileId),
-        billApi.fetchRecurringBills(profileId),
-        billApi.fetchPayments(profileId),
-        savingsApi.fetchSavings(profileId),
-      ]);
-
-      setMembers(nextMembers);
-      setPlans(nextPlans);
-      setProfileExpenses(nextExpenses);
-      setShoppingItems(nextShopping);
-      setNotifications(nextNotifications);
-      setBillTrackers(nextBillTrackers);
-      setSavingsTrackers(nextSavingsTrackers);
-      setRecurringBills(nextBills);
-      setBillPayments(nextPayments);
-      setSavings(nextSavings);
-      nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
-      if (selectedPlanId && !nextPlans.some((plan) => plan.id === selectedPlanId)) {
-        setSelectedPlanId(null);
-      }
-    } catch (error) {
-      const message = extractError(error);
-      setSetupMessage(message);
-    }
-  };
-
-  const announce = (message: string) => {
+  const announce = useCallback((message: string) => {
     if (Platform.OS === 'web') {
       globalThis.alert?.(message);
       return;
     }
 
     Alert.alert('NestLedger', message);
-  };
+  }, []);
 
   const showConfirm = (options: {
     body: string;
@@ -893,7 +885,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     setConfirmModal(null);
   };
 
-  const runAction = async (callback: () => Promise<void>) => {
+  const runAction = useCallback(async (callback: () => Promise<void>) => {
     setActionBusy(true);
     try {
       await callback();
@@ -902,7 +894,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     } finally {
       setActionBusy(false);
     }
-  };
+  }, [announce]);
 
   const handleAuth = async () => {
     if (!authForm.email || !authForm.password) {
@@ -1078,8 +1070,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [editSavingsTrackerForm, setEditSavingsTrackerForm] = useState({ name: '' });
   const [selectedBillTrackerId, setSelectedBillTrackerId] = useState<string | null>(null);
   const [selectedSavingsTrackerId, setSelectedSavingsTrackerId] = useState<string | null>(null);
-  const [showBillTrackerComposer, setShowBillTrackerComposer] = useState(false);
-  const [showSavingsComposer, setShowSavingsComposer] = useState<'deposit' | 'withdraw' | null>(null);
 
   const handleCreateTracker = async () => {
     if (!session?.user || !activeProfile) return;
@@ -1163,7 +1153,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const handleMarkBillPaid = async (trackerId: string, payment: Omit<BillPayment, 'created_at' | 'id'>) => {
     if (!activeProfile || !session?.user) return;
     await runAction(async () => {
-      const newPayment = await billApi.addPayment({ ...payment, tracker_id: trackerId });
+      await billApi.addPayment({ ...payment, tracker_id: trackerId });
       if (payment.plan_id && payment.amount > 0) {
         await expenseApi.addExpenseWithId({
           plan_id: payment.plan_id,
@@ -1554,7 +1544,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
   };
 
-  const acceptInviteFlow = async (token: string) => {
+  const acceptInviteFlow = useCallback(async (token: string) => {
     if (!session) {
       return;
     }
@@ -1568,7 +1558,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setShowProfileSwitcher(false);
       announce('Invitation accepted. Welcome to the shared home.');
     });
-  };
+  }, [announce, runAction, session]);
+
+  useEffect(() => {
+    if (!session || !pendingInviteToken) {
+      return;
+    }
+
+    acceptInviteFlow(pendingInviteToken);
+  }, [acceptInviteFlow, pendingInviteToken, session]);
 
   const handleSaveSettings = async () => {
     if (!session?.user || !activeProfile) {

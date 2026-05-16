@@ -1,10 +1,15 @@
 import os
+from pathlib import Path
 
 import pytest
 import requests
 from dotenv import dotenv_values
 
 # Shared fixtures for backend API auth/session and profile context
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_ENV = REPO_ROOT / "frontend" / ".env"
+BACKEND_ENV = REPO_ROOT / "backend" / ".env"
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
@@ -18,7 +23,7 @@ def _load_base_url() -> str:
     if env_url:
         return env_url.rstrip("/")
 
-    frontend_env = dotenv_values("/app/frontend/.env")
+    frontend_env = dotenv_values(FRONTEND_ENV)
     public_url = frontend_env.get("EXPO_PUBLIC_BACKEND_URL")
     if public_url:
         return str(public_url).rstrip("/")
@@ -27,7 +32,7 @@ def _load_base_url() -> str:
 
 
 def _load_supabase_url() -> str:
-    backend_env = dotenv_values("/app/backend/.env")
+    backend_env = dotenv_values(BACKEND_ENV)
     value = os.environ.get("SUPABASE_URL") or backend_env.get("SUPABASE_URL")
     if not value:
         raise RuntimeError("Missing SUPABASE_URL")
@@ -35,7 +40,7 @@ def _load_supabase_url() -> str:
 
 
 def _load_supabase_anon_key() -> str:
-    backend_env = dotenv_values("/app/backend/.env")
+    backend_env = dotenv_values(BACKEND_ENV)
     value = os.environ.get("SUPABASE_ANON_KEY") or backend_env.get("SUPABASE_ANON_KEY")
     if not value:
         raise RuntimeError("Missing SUPABASE_ANON_KEY")
@@ -98,7 +103,7 @@ def _sign_in(
         timeout=30,
     )
     if response.status_code != 200:
-        pytest.skip(f"Auth failed for {credentials['email']}: {response.status_code} {response.text}")
+        pytest.fail(f"Auth failed for {credentials['email']}: {response.status_code} {response.text}")
     return response.json()
 
 
@@ -116,7 +121,7 @@ def member_auth(api_client, supabase_auth_url, supabase_anon_key, member_credent
 def primary_access_token(primary_auth: dict) -> str:
     token = primary_auth.get("access_token")
     if not token:
-        pytest.skip("Primary token not available")
+        pytest.fail("Primary token not available")
     return token
 
 
@@ -124,7 +129,7 @@ def primary_access_token(primary_auth: dict) -> str:
 def member_access_token(member_auth: dict) -> str:
     token = member_auth.get("access_token")
     if not token:
-        pytest.skip("Member token not available")
+        pytest.fail("Member token not available")
     return token
 
 
@@ -133,7 +138,7 @@ def primary_user_id(primary_auth: dict) -> str:
     user = primary_auth.get("user") or {}
     uid = user.get("id")
     if not uid:
-        pytest.skip("Primary user id missing")
+        pytest.fail("Primary user id missing")
     return uid
 
 
@@ -149,15 +154,15 @@ def primary_profile_id(api_client, supabase_rest_url, supabase_anon_key, primary
         timeout=30,
     )
     if response.status_code != 200:
-        pytest.skip(f"Unable to fetch profile membership: {response.status_code} {response.text}")
+        pytest.fail(f"Unable to fetch profile membership: {response.status_code} {response.text}")
 
     rows = response.json()
     if not rows:
-        pytest.skip("No profile memberships for primary user")
+        pytest.fail("No profile memberships for primary user")
 
     profile_id = rows[0].get("profile_id")
     if not profile_id:
-        pytest.skip("profile_id missing in profile membership")
+        pytest.fail("profile_id missing in profile membership")
     return profile_id
 
 #deploy to google try 5
