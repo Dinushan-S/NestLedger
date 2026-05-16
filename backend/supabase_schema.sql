@@ -649,6 +649,10 @@ for delete using (public.is_profile_member(profile_id));
 do $$
 begin
   begin
+    alter publication supabase_realtime add table public.recurring_bills;
+  exception when duplicate_object then null;
+  end;
+  begin
     alter publication supabase_realtime add table public.bill_payments;
   exception when duplicate_object then null;
   end;
