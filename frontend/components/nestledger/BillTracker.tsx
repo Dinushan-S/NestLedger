@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View, Pressable, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { BillPayment, RecurringBill, Member, BudgetPlan } from '../../lib/nestledger';
-import { theme, billCategories, monthNames, rs, formatShortDate, todayISO, getCurrentMonth } from '../../constants/nestledger';
+import { theme, billCategories, monthNames, formatCurrency, formatShortDate, todayISO, getCurrentMonth } from '../../constants/nestledger';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
@@ -17,6 +17,7 @@ type Props = {
   userId: string;
   profileId: string;
   actionBusy: boolean;
+  currencyCode?: string;
   viewMonth?: number;
   viewYear?: number;
   stats?: { paid: number; paidCount: number; pending: number; pendingCount: number; totalCount: number };
@@ -73,6 +74,7 @@ export default function BillTracker({
   userId,
   profileId,
   actionBusy,
+  currencyCode: currencyCodeProp,
   viewMonth,
   viewYear,
   stats,
@@ -80,6 +82,7 @@ export default function BillTracker({
   onMarkPaid,
   onDeleteBill,
 }: Props) {
+  const currencyCode = currencyCodeProp ?? 'USD';
   const [showComposer, setShowComposer] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [selectedBill, setSelectedBill] = useState<RecurringBill | null>(null);
@@ -231,16 +234,16 @@ export default function BillTracker({
         <View style={s.headerContent}>
           <Text style={s.cardTitle}>Bill Tracker</Text>
           <Text style={s.bodyMuted}>
-            This month: {rs(totalPaidAmount)} paid for {paidThisMonth.length} bills
+            This month: {formatCurrency(totalPaidAmount, currencyCode ?? 'USD')} paid for {paidThisMonth.length} bills
           </Text>
         </View>
         <ModernButton onPress={handleOpenComposer} secondary testID="bill-open-composer" text="New Bill" />
       </View>
 
       <View style={s.statRow}>
-        <StatPill label="Paid" sub={`${stats?.paidCount ?? paidThisMonth.length} bills`} value={rs(totalPaidAmount)} />
-        <StatPill label="Pending" sub={`${stats?.pendingCount ?? pendingThisMonth.length} bills`} value={rs(totalPendingAmount)} valueColor={theme.warning} />
-        <StatPill label="Total" sub={`${stats?.totalCount ?? thisMonthPayments.length} entries`} value={rs(totalPaidAmount + totalPendingAmount)} />
+        <StatPill label="Paid" sub={`${stats?.paidCount ?? paidThisMonth.length} bills`} value={formatCurrency(totalPaidAmount, currencyCode)} />
+        <StatPill label="Pending" sub={`${stats?.pendingCount ?? pendingThisMonth.length} bills`} value={formatCurrency(totalPendingAmount, currencyCode)} valueColor={theme.warning} />
+        <StatPill label="Total" sub={`${stats?.totalCount ?? thisMonthPayments.length} entries`} value={formatCurrency(totalPaidAmount + totalPendingAmount, currencyCode)} />
       </View>
 
       <View style={s.billList}>
@@ -265,7 +268,7 @@ export default function BillTracker({
                     <Text style={s.billName}>{bill.name}</Text>
                     <Text style={s.billMeta}>
                       {bill.category} &middot; Due {bill.due_day}
-                      {bill.default_amount > 0 ? ` · ${rs(bill.default_amount)}` : ''}
+                      {bill.default_amount > 0 ? ` · ${formatCurrency(bill.default_amount, currencyCode)}` : ''}
                       {bill.notify_days_before > 0 ? ` · ${bill.notify_days_before}d before` : ''}
                     </Text>
                   </View>
@@ -312,7 +315,7 @@ export default function BillTracker({
                 <Text style={s.sectionTitle}>New Bill</Text>
 
                 <View style={s.inputGroup}>
-                  <Text style={s.inputLabel}>Amount (Rs.)</Text>
+                  <Text style={s.inputLabel}>Amount ({currencyCode})</Text>
                   <TextInput
                     keyboardType="numeric"
                     onChangeText={(v) => setBillForm((f) => ({ ...f, amount: v }))}
@@ -471,7 +474,7 @@ export default function BillTracker({
                 ) : null}
 
                 <View style={s.inputGroup}>
-                  <Text style={s.inputLabel}>Amount (Rs.)</Text>
+                  <Text style={s.inputLabel}>Amount ({currencyCode})</Text>
                   <TextInput
                     keyboardType="numeric"
                     onChangeText={(v) => setPaymentForm((f) => ({ ...f, amount: v }))}
@@ -618,7 +621,7 @@ export default function BillTracker({
                       />
                       <View style={{ flex: 1 }}>
                         <Text style={s.listTitle}>
-                          {rs(p.amount)}
+                          {formatCurrency(p.amount, currencyCode)}
                           {p.units ? ` (${p.units} units)` : ''}
                         </Text>
                         <Text style={s.listSubtitle}>

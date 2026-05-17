@@ -5,6 +5,7 @@ create table if not exists public.user_profiles (
   email text not null unique,
   name text not null,
   avatar_emoji text,
+  currency text not null default 'USD',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
