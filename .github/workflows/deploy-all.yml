@@ -3,7 +3,7 @@ name: Deploy All
 on:
   push:
     branches:
-      - new main
+      - main
   workflow_dispatch:
 
 jobs:
