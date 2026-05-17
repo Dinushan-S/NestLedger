@@ -48,6 +48,17 @@ Use this checklist before public release. Fill every result as `Pass`, `Fail`, `
 | 3.3 | Create a second household profile. | Second profile is created. |  |  | P0 |
 | 3.4 | Switch between profiles. | Data changes to the selected profile only. |  |  | P0 |
 | 3.5 | Open members view. | Current user appears as a member. |  |  | P0 |
+| 3.6 | Select or change user currency during profile setup/settings. | Selected currency persists after reload and sign in. |  |  | P0 |
+
+## 3A. Currency Display
+
+| Step | Action | Expected Result | Actual Result | Status | Severity |
+| --- | --- | --- | --- | --- | --- |
+| 3A.1 | Set currency to LKR and create a budget/expense. | Money values display as LKR/Rs. consistently. |  |  | P0 |
+| 3A.2 | Set currency to USD or another supported currency and create a budget/expense. | Money values display with the selected currency. |  |  | P0 |
+| 3A.3 | Verify dashboard, budget, expense, shopping, bill, and savings totals after currency change. | All money surfaces use the same selected currency. |  |  | P0 |
+| 3A.4 | Sign out and sign back in. | Currency preference remains correct. |  |  | P0 |
+| 3A.5 | Test a zero-decimal currency such as JPY or LKR if available. | Formatting and totals do not show confusing decimals. |  |  | P1 |
 
 ## 4. Budget
 

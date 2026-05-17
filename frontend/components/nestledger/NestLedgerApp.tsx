@@ -34,7 +34,6 @@ import {
   formatCurrency,
   formatShortDate,
   monthNames,
-  monthShort,
   shoppingCategories,
   shoppingFilters,
   startOfMonth,

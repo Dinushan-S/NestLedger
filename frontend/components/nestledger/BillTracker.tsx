@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View, Pressable, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { BillPayment, RecurringBill, Member, BudgetPlan } from '../../lib/nestledger';
-import { theme, billCategories, monthNames, formatCurrency, formatShortDate, todayISO, getCurrentMonth } from '../../constants/nestledger';
+import { theme, billCategories, monthNames, formatCurrency, formatShortDate } from '../../constants/nestledger';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
