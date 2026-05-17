@@ -73,6 +73,7 @@ import { isConfigReady } from '../../lib/config';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
+import MonthYearSelector from '../ui/MonthYearSelector';
 import ProgressBar from '../ui/ProgressBar';
 
 Notifications.setNotificationHandler({
@@ -2268,52 +2269,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         <ModalScaffold closeTestID="close-bill-tracker-detail" onClose={() => setSelectedBillTrackerId(null)} title={billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ?? 'Bill Tracker'}>
           {selectedBillTrackerId ? (
             <>
-              <View style={styles.monthSelectorWrap}>
-                <View style={styles.yearNavRow}>
-                  <Pressable
-                    hitSlop={10}
-                    onPress={() => {
-                      const years = [...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort();
-                      const idx = years.indexOf(billViewYear);
-                      if (idx > 0) setBillViewYear(years[idx - 1]);
-                    }}
-                    style={styles.yearNavArrow}
-                  >
-                    <Ionicons color={theme.primary} name="chevron-back-outline" size={20} />
-                  </Pressable>
-                  <Text style={styles.yearNavText}>{billViewYear}</Text>
-                  <Pressable
-                    hitSlop={10}
-                    onPress={() => {
-                      const years = [...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort();
-                      const idx = years.indexOf(billViewYear);
-                      if (idx < years.length - 1) setBillViewYear(years[idx + 1]);
-                    }}
-                    style={styles.yearNavArrow}
-                  >
-                    <Ionicons color={theme.primary} name="chevron-forward-outline" size={20} />
-                  </Pressable>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScrollRow}>
-                  <CategoryChip
-                    active={billViewMonth === 'current'}
-                    label="Current"
-                    onPress={() => setBillViewMonth('current')}
-                  />
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
-                    const hasData = billPayments.some((p) => p.tracker_id === selectedBillTrackerId && p.month === m && p.year === billViewYear);
-                    if (!hasData && !(billViewYear === new Date().getFullYear() && m === new Date().getMonth() + 1)) return null;
-                    return (
-                      <CategoryChip
-                        key={m}
-                        active={billViewMonth === m}
-                        label={monthShort[m - 1]}
-                        onPress={() => setBillViewMonth(m)}
-                      />
-                    );
-                  })}
-                </ScrollView>
-              </View>
+              <MonthYearSelector
+                hasMonthData={(m) => billPayments.some((p) => p.tracker_id === selectedBillTrackerId && p.month === m && p.year === billViewYear)}
+                onSetMonth={setBillViewMonth}
+                onSetYear={(y) => setBillViewYear(y)}
+                viewMonth={billViewMonth}
+                viewYear={billViewYear}
+                years={[...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort()}
+              />
               <BillTracker
                 trackerId={selectedBillTrackerId}
                 stats={currentMonthBillStatsMap[selectedBillTrackerId]}
@@ -2339,52 +2302,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         <ModalScaffold closeTestID="close-savings-tracker-detail" onClose={() => setSelectedSavingsTrackerId(null)} title={savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)?.name ?? 'Savings Tracker'}>
           {selectedSavingsTrackerId ? (
             <>
-              <View style={styles.monthSelectorWrap}>
-                <View style={styles.yearNavRow}>
-                  <Pressable
-                    hitSlop={10}
-                    onPress={() => {
-                      const years = [...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort();
-                      const idx = years.indexOf(savingsViewYear);
-                      if (idx > 0) setSavingsViewYear(years[idx - 1]);
-                    }}
-                    style={styles.yearNavArrow}
-                  >
-                    <Ionicons color={theme.primary} name="chevron-back-outline" size={20} />
-                  </Pressable>
-                  <Text style={styles.yearNavText}>{savingsViewYear}</Text>
-                  <Pressable
-                    hitSlop={10}
-                    onPress={() => {
-                      const years = [...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort();
-                      const idx = years.indexOf(savingsViewYear);
-                      if (idx < years.length - 1) setSavingsViewYear(years[idx + 1]);
-                    }}
-                    style={styles.yearNavArrow}
-                  >
-                    <Ionicons color={theme.primary} name="chevron-forward-outline" size={20} />
-                  </Pressable>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScrollRow}>
-                  <CategoryChip
-                    active={savingsViewMonth === 'current'}
-                    label="Current"
-                    onPress={() => setSavingsViewMonth('current')}
-                  />
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
-                    const hasData = savings.some((e) => e.tracker_id === selectedSavingsTrackerId && new Date(e.date).getMonth() + 1 === m && new Date(e.date).getFullYear() === savingsViewYear);
-                    if (!hasData && !(savingsViewYear === new Date().getFullYear() && m === new Date().getMonth() + 1)) return null;
-                    return (
-                      <CategoryChip
-                        key={m}
-                        active={savingsViewMonth === m}
-                        label={monthShort[m - 1]}
-                        onPress={() => setSavingsViewMonth(m)}
-                      />
-                    );
-                  })}
-                </ScrollView>
-              </View>
+              <MonthYearSelector
+                hasMonthData={(m) => savings.some((e) => e.tracker_id === selectedSavingsTrackerId && new Date(e.date).getMonth() + 1 === m && new Date(e.date).getFullYear() === savingsViewYear)}
+                onSetMonth={setSavingsViewMonth}
+                onSetYear={setSavingsViewYear}
+                viewMonth={savingsViewMonth}
+                viewYear={savingsViewYear}
+                years={[...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort()}
+              />
               <SavingsTracker
                 trackerId={selectedSavingsTrackerId}
                 stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
@@ -2409,50 +2334,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         <ModalScaffold closeTestID="close-budget-detail-modal" onClose={() => setSelectedPlanId(null)} title={selectedPlan?.name ?? 'Budget plan'}>
           {selectedPlan ? (
             <>
-              <View style={styles.monthSelectorWrap}>
-                <View style={styles.yearNavRow}>
-                  <Pressable
-                    hitSlop={10}
-                    onPress={() => {
-                      const idx = availableViewYears.indexOf(activeViewYear);
-                      if (idx > 0) setActiveViewYear(availableViewYears[idx - 1]);
-                    }}
-                    style={[styles.yearNavArrow, availableViewYears.indexOf(activeViewYear) <= 0 && styles.yearNavArrowDisabled]}
-                  >
-                    <Ionicons color={availableViewYears.indexOf(activeViewYear) <= 0 ? theme.border : theme.primary} name="chevron-back-outline" size={20} />
-                  </Pressable>
-                  <Text style={styles.yearNavText}>{activeViewYear}</Text>
-                  <Pressable
-                    hitSlop={10}
-                    onPress={() => {
-                      const idx = availableViewYears.indexOf(activeViewYear);
-                      if (idx < availableViewYears.length - 1) setActiveViewYear(availableViewYears[idx + 1]);
-                    }}
-                    style={[styles.yearNavArrow, availableViewYears.indexOf(activeViewYear) >= availableViewYears.length - 1 && styles.yearNavArrowDisabled]}
-                  >
-                    <Ionicons color={availableViewYears.indexOf(activeViewYear) >= availableViewYears.length - 1 ? theme.border : theme.primary} name="chevron-forward-outline" size={20} />
-                  </Pressable>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScrollRow}>
-                  <CategoryChip
-                    active={activeViewMonth === 'current'}
-                    label="Current"
-                    onPress={() => setActiveViewMonth('current')}
-                  />
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
-                    const hasData = availableViewMonths.includes(m);
-                    if (!hasData && !(activeViewYear === new Date().getFullYear() && m === new Date().getMonth() + 1)) return null;
-                    return (
-                      <CategoryChip
-                        key={m}
-                        active={activeViewMonth === m}
-                        label={monthShort[m - 1]}
-                        onPress={() => setActiveViewMonth(m)}
-                      />
-                    );
-                  })}
-                </ScrollView>
-              </View>
+              <MonthYearSelector
+                hasMonthData={(m) => availableViewMonths.includes(m)}
+                onSetMonth={setActiveViewMonth}
+                onSetYear={setActiveViewYear}
+                viewMonth={activeViewMonth}
+                viewYear={activeViewYear}
+                years={availableViewYears}
+              />
 
               {isViewingArchive && monthFilteredExpenses ? (
                 <>

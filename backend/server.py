@@ -147,8 +147,8 @@ def supabase_rest(
     )
 
     if not response.ok:
-        logger.error("Supabase REST error on %s: %s", table, response.text)
-        raise HTTPException(status_code=response.status_code, detail=response.text)
+        logger.error("Supabase REST error on %s (status=%s): %s", table, response.status_code, response.text)
+        raise HTTPException(status_code=response.status_code, detail="Supabase API error.")
 
     if not response.text:
         return None

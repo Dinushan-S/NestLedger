@@ -81,6 +81,16 @@ export const startOfMonth = () => {
   return date;
 };
 
+export const todayISO = () => new Date().toISOString().slice(0, 10);
+
+export const getCurrentMonth = () => {
+  const now = new Date();
+  return { month: now.getMonth() + 1, year: now.getFullYear() };
+};
+
+export const dateToISO = (date: Date | string) =>
+  typeof date === 'string' ? date.slice(0, 10) : date.toISOString().slice(0, 10);
+
 export const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',

@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, View, Pressable, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SavingsEntry, BudgetPlan, Member } from '../../lib/nestledger';
-import { theme, rs, formatShortDate } from '../../constants/nestledger';
+import { theme, rs, formatShortDate, todayISO, dateToISO } from '../../constants/nestledger';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
@@ -46,7 +46,7 @@ export default function SavingsTracker({
   const [showDeposit, setShowDeposit] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayISO();
   const [depositForm, setDepositForm] = useState({ amount: '', note: '', date: todayStr, name: '' });
   const [withdrawForm, setWithdrawForm] = useState({ amount: '', note: '', planId: '', reason: 'Other' as string, date: todayStr, name: '' });
   const [selectedEntry, setSelectedEntry] = useState<SavingsEntry | null>(null);
@@ -247,7 +247,7 @@ export default function SavingsTracker({
                     <DateTimePicker
                       display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                       mode="date"
-                      onChange={(_: any, date?: Date) => { setShowDepositPicker(false); if (date) setDepositForm((f) => ({ ...f, date: date.toISOString().slice(0, 10) })); }}
+                      onChange={(_: any, date?: Date) => { setShowDepositPicker(false); if (date) setDepositForm((f) => ({ ...f, date: dateToISO(date) })); }}
                       value={new Date(depositForm.date)}
                     />
                   ) : null}
@@ -322,7 +322,7 @@ export default function SavingsTracker({
                     <DateTimePicker
                       display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                       mode="date"
-                      onChange={(_: any, date?: Date) => { setShowWithdrawPicker(false); if (date) setWithdrawForm((f) => ({ ...f, date: date.toISOString().slice(0, 10) })); }}
+                      onChange={(_: any, date?: Date) => { setShowWithdrawPicker(false); if (date) setWithdrawForm((f) => ({ ...f, date: dateToISO(date) })); }}
                       value={new Date(withdrawForm.date)}
                     />
                   ) : null}

@@ -2,10 +2,11 @@ import { useState, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View, Pressable, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { BillPayment, RecurringBill, Member, BudgetPlan } from '../../lib/nestledger';
-import { theme, billCategories, monthNames, rs, formatShortDate } from '../../constants/nestledger';
+import { theme, billCategories, monthNames, rs, formatShortDate, todayISO, getCurrentMonth } from '../../constants/nestledger';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
+import StatPill from '../ui/StatPill';
 
 type Props = {
   trackerId: string;
@@ -150,18 +151,19 @@ export default function BillTracker({
     setBillForm((f) => ({
       ...f,
       category: cat,
-      name: `${cat} - ${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`,
+      name: cat === 'Other' ? '' : `${cat} - ${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`,
     }));
   };
 
   const needsUnits = billForm.category === 'Electricity';
 
   const handleSubmitBill = () => {
-    if (!billForm.name.trim() || !billForm.dueDay.trim() || !billForm.amount.trim()) return;
+    const finalName = billForm.category === 'Other' && !billForm.name.trim() ? 'Other' : billForm.name.trim();
+    if (!finalName || !billForm.dueDay.trim() || !billForm.amount.trim()) return;
     onAddBill({
       profile_id: profileId,
       tracker_id: trackerId,
-      name: billForm.name.trim(),
+      name: finalName,
       category: billForm.category,
       default_amount: Number(billForm.amount),
       default_units: needsUnits && billForm.units.trim() ? Number(billForm.units) : null,
@@ -236,21 +238,9 @@ export default function BillTracker({
       </View>
 
       <View style={s.statRow}>
-        <View style={s.statPill}>
-          <Text style={s.statPillLabel}>Paid</Text>
-          <Text style={s.statPillValue}>{rs(totalPaidAmount)}</Text>
-          <Text style={s.statPillSub}>{stats?.paidCount ?? paidThisMonth.length} bills</Text>
-        </View>
-        <View style={s.statPill}>
-          <Text style={s.statPillLabel}>Pending</Text>
-          <Text style={[s.statPillValue, { color: theme.warning }]}>{rs(totalPendingAmount)}</Text>
-          <Text style={s.statPillSub}>{stats?.pendingCount ?? pendingThisMonth.length} bills</Text>
-        </View>
-        <View style={s.statPill}>
-          <Text style={s.statPillLabel}>Total</Text>
-          <Text style={s.statPillValue}>{rs(totalPaidAmount + totalPendingAmount)}</Text>
-          <Text style={s.statPillSub}>{stats?.totalCount ?? thisMonthPayments.length} entries</Text>
-        </View>
+        <StatPill label="Paid" sub={`${stats?.paidCount ?? paidThisMonth.length} bills`} value={rs(totalPaidAmount)} />
+        <StatPill label="Pending" sub={`${stats?.pendingCount ?? pendingThisMonth.length} bills`} value={rs(totalPendingAmount)} valueColor={theme.warning} />
+        <StatPill label="Total" sub={`${stats?.totalCount ?? thisMonthPayments.length} entries`} value={rs(totalPaidAmount + totalPendingAmount)} />
       </View>
 
       <View style={s.billList}>
@@ -349,7 +339,21 @@ export default function BillTracker({
                   </View>
                 </View>
 
-                <Text style={s.bodyMuted}>{billForm.name}</Text>
+                {billForm.category === 'Other' ? (
+                  <View style={s.inputGroup}>
+                    <Text style={s.inputLabel}>Custom bill name</Text>
+                    <TextInput
+                      onChangeText={(v) => setBillForm((f) => ({ ...f, name: v }))}
+                      placeholder="e.g. Groceries, Maintenance..."
+                      placeholderTextColor={theme.textMuted}
+                      style={s.input}
+                      testID="bill-custom-name-input"
+                      value={billForm.name}
+                    />
+                  </View>
+                ) : (
+                  <Text style={s.bodyMuted}>{billForm.name}</Text>
+                )}
 
                 {needsUnits ? (
                   <View style={s.inputGroup}>
@@ -678,7 +682,6 @@ const s = StyleSheet.create({
   },
   statRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 10,
     marginTop: 14,
   },
