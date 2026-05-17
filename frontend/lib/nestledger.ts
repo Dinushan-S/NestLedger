@@ -8,6 +8,7 @@ export type UserProfile = {
   created_at: string;
   email: string;
   name: string;
+  currency: string;
   updated_at: string;
   user_id: string;
 };
@@ -161,6 +162,7 @@ type AuthPayload = {
 
 type CreateHouseholdPayload = {
   avatarEmoji: string;
+  currency?: string;
   familyEmoji: string;
   familyName: string;
   name: string;
@@ -233,8 +235,8 @@ export const profileApi = {
     if (error) throw error;
     return data as UserProfile | null;
   },
-  async upsertUserProfile(user: User, values: { avatarEmoji: string; name: string }) {
-    const payload = {
+  async upsertUserProfile(user: User, values: { avatarEmoji: string; name: string; currency?: string }) {
+    const payload: Record<string, string> = {
       avatar_emoji: values.avatarEmoji,
       created_at: nowIso(),
       email: user.email ?? '',
@@ -242,6 +244,9 @@ export const profileApi = {
       updated_at: nowIso(),
       user_id: user.id,
     };
+    if (values.currency) {
+      payload.currency = values.currency;
+    }
 
     const { data, error } = await supabase.from('user_profiles').upsert(payload).select('*').single();
     if (error) throw error;
@@ -250,6 +255,7 @@ export const profileApi = {
   async createHousehold(payload: CreateHouseholdPayload) {
     await this.upsertUserProfile(payload.user, {
       avatarEmoji: payload.avatarEmoji,
+      currency: payload.currency,
       name: payload.name,
     });
 

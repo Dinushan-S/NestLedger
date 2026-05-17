@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, View, Pressable, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SavingsEntry, BudgetPlan, Member } from '../../lib/nestledger';
-import { theme, rs, formatShortDate, todayISO, dateToISO } from '../../constants/nestledger';
+import { theme, formatCurrency, formatShortDate, todayISO, dateToISO } from '../../constants/nestledger';
 import BentoCard from '../ui/BentoCard';
 import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
@@ -16,6 +16,7 @@ type Props = {
   userId: string;
   profileId: string;
   actionBusy: boolean;
+  currencyCode?: string;
   viewMonth?: number;
   viewYear?: number;
   stats?: { balance: number; deposits: number; withdrawals: number; net: number };
@@ -36,6 +37,7 @@ export default function SavingsTracker({
   userId,
   profileId,
   actionBusy,
+  currencyCode: currencyCodeProp,
   viewMonth,
   viewYear,
   stats,
@@ -43,6 +45,7 @@ export default function SavingsTracker({
   onWithdraw,
   onDeleteEntry,
 }: Props) {
+  const currencyCode = currencyCodeProp ?? 'USD';
   const [showDeposit, setShowDeposit] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
@@ -130,7 +133,7 @@ export default function SavingsTracker({
         <View style={s.headerContent}>
           <Text style={s.cardTitle}>Savings Tracker</Text>
           <Text style={s.bodyMuted}>
-            {(stats?.balance ?? totalSavings) >= 0 ? 'Total saved' : 'Net borrowed'}: {rs(Math.abs(stats?.balance ?? totalSavings))}
+            {(stats?.balance ?? totalSavings) >= 0 ? 'Total saved' : 'Net borrowed'}: {formatCurrency(Math.abs(stats?.balance ?? totalSavings), currencyCode)}
           </Text>
         </View>
         <View style={s.actionButtons}>
@@ -148,24 +151,24 @@ export default function SavingsTracker({
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Balance</Text>
           <Text style={[s.statPillValue, (stats?.balance ?? totalSavings) < 0 && { color: theme.danger }]}>
-            {rs(stats?.balance ?? totalSavings)}
+            {formatCurrency(stats?.balance ?? totalSavings, currencyCode)}
           </Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>This month</Text>
           <Text style={[s.statPillValue, (stats?.net ?? thisMonthNet) < 0 ? { color: theme.danger } : { color: theme.success }]}>
-            {(stats?.net ?? thisMonthNet) >= 0 ? '+' : ''}{rs(stats?.net ?? thisMonthNet)}
+            {(stats?.net ?? thisMonthNet) >= 0 ? '+' : ''}{formatCurrency(stats?.net ?? thisMonthNet, currencyCode)}
           </Text>
           <Text style={s.statPillSub}>{thisMonthEntries.length} entries</Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Deposits</Text>
-          <Text style={s.statPillValue}>{rs(stats?.deposits ?? deposits.reduce((s, e) => s + e.amount, 0))}</Text>
+          <Text style={s.statPillValue}>{formatCurrency(stats?.deposits ?? deposits.reduce((s, e) => s + e.amount, 0), currencyCode)}</Text>
           <Text style={s.statPillSub}>{stats ? '' : `${deposits.length} entries`}</Text>
         </View>
         <View style={s.statPill}>
           <Text style={s.statPillLabel}>Withdrawals</Text>
-          <Text style={s.statPillValue}>{rs(stats?.withdrawals ?? Math.abs(withdrawals.reduce((s, e) => s + e.amount, 0)))}</Text>
+          <Text style={s.statPillValue}>{formatCurrency(stats?.withdrawals ?? Math.abs(withdrawals.reduce((s, e) => s + e.amount, 0)), currencyCode)}</Text>
           <Text style={s.statPillSub}>{stats ? '' : `${withdrawals.length} entries`}</Text>
         </View>
       </View>
@@ -188,7 +191,7 @@ export default function SavingsTracker({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.entryAmount}>
-                  {entry.amount >= 0 ? '+' : ''}{rs(entry.amount)}
+                  {entry.amount >= 0 ? '+' : ''}{formatCurrency(entry.amount, currencyCode)}
                 </Text>
                 {entry.name ? (
                   <Text style={s.entryNote} numberOfLines={1}>{entry.name}</Text>
@@ -225,12 +228,11 @@ export default function SavingsTracker({
                 <Text style={s.sectionTitle}>Add Deposit</Text>
 
                 <View style={s.inputGroup}>
-                  <Text style={s.inputLabel}>Amount (Rs.)</Text>
+                  <Text style={s.inputLabel}>Amount ({currencyCode})</Text>
                   <TextInput
                     keyboardType="numeric"
                     onChangeText={(v) => setDepositForm((f) => ({ ...f, amount: v }))}
-                    placeholder="e.g. 10000"
-                    placeholderTextColor={theme.textMuted}
+                    placeholder="e.g. 1000"
                     style={s.input}
                     testID="savings-deposit-amount-input"
                     value={depositForm.amount}
@@ -300,7 +302,7 @@ export default function SavingsTracker({
                 <Text style={s.sectionTitle}>Withdraw</Text>
 
                 <View style={s.inputGroup}>
-                  <Text style={s.inputLabel}>Amount (Rs.)</Text>
+                  <Text style={s.inputLabel}>Amount ({currencyCode})</Text>
                   <TextInput
                     keyboardType="numeric"
                     onChangeText={(v) => setWithdrawForm((f) => ({ ...f, amount: v }))}
@@ -426,7 +428,7 @@ export default function SavingsTracker({
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={s.detailAmount}>
-                      {selectedEntry.amount >= 0 ? '+' : ''}{rs(selectedEntry.amount)}
+                      {selectedEntry.amount >= 0 ? '+' : ''}{formatCurrency(selectedEntry.amount, currencyCode)}
                     </Text>
                     <Text style={s.bodyMuted}>
                       {selectedEntry.amount >= 0 ? 'Deposit' : 'Withdrawal'}

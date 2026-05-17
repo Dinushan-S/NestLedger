@@ -28,12 +28,13 @@ import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context'
 
 import {
   avatarChoices,
+  currencyOptions,
   expenseCategories,
   expenseFilters,
+  formatCurrency,
   formatShortDate,
   monthNames,
   monthShort,
-  rs,
   shoppingCategories,
   shoppingFilters,
   startOfMonth,
@@ -93,6 +94,7 @@ type TabKey = 'dashboard' | 'budget' | 'shopping' | 'profile';
 
 type CreateProfileForm = {
   avatarEmoji: string;
+  currency: string;
   familyEmoji: string;
   familyName: string;
   name: string;
@@ -141,6 +143,7 @@ type ShoppingForm = {
 
 const defaultCreateProfileForm: CreateProfileForm = {
   avatarEmoji: avatarChoices[0],
+  currency: 'USD',
   familyEmoji: avatarChoices[1],
   familyName: '',
   name: '',
@@ -269,6 +272,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const userCurrency = userProfile?.currency ?? 'USD';
+  const c = useCallback((value: number) => formatCurrency(value, userCurrency), [userCurrency]);
 
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderTime, setReminderTime] = useState('20:00'); // Default 8 PM
@@ -936,6 +941,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     await runAction(async () => {
       const profile = await profileApi.createHousehold({
         avatarEmoji: profileForm.avatarEmoji,
+        currency: profileForm.currency,
         familyEmoji: profileForm.familyEmoji,
         familyName: profileForm.familyName,
         name: profileForm.name,
@@ -1169,7 +1175,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           items: [{ name: 'Bill payment', price: payment.amount }],
         });
       }
-      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} paid a bill (${rs(payment.amount)})`, notificationTypes.expense);
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} paid a bill (${c(payment.amount)})`, notificationTypes.expense);
       await refreshProfileData(activeProfile.id, true);
     });
   };
@@ -1178,7 +1184,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     if (!activeProfile) return;
     runAction(async () => {
       await savingsApi.addEntry({ ...entry, tracker_id: trackerId });
-      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} deposited ${rs(entry.amount)} to savings`, notificationTypes.expense);
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} deposited ${c(entry.amount)} to savings`, notificationTypes.expense);
       await refreshProfileData(activeProfile.id, true);
     });
   };
@@ -1494,7 +1500,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
       await shoppingApi.markBought(pendingBoughtItem.id, session.user.id, newExpense.id);
       await notifyOtherMembers(
-        `${userProfile?.name ?? 'A member'} bought ${pendingBoughtItem.name} for ${rs(price)} ✓`,
+        `${userProfile?.name ?? 'A member'} bought ${pendingBoughtItem.name} for ${c(price)} ✓`,
         notificationTypes.shoppingBought,
       );
 
@@ -1577,6 +1583,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     await runAction(async () => {
       await profileApi.upsertUserProfile(session.user, {
         avatarEmoji: profileForm.avatarEmoji,
+        currency: profileForm.currency,
         name: profileForm.name,
       });
       await profileApi.updateHousehold(activeProfile.id, {
@@ -1597,6 +1604,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const primeSettingsForm = () => {
     setProfileForm({
       avatarEmoji: userProfile?.avatar_emoji ?? avatarChoices[0],
+      currency: userProfile?.currency ?? 'USD',
       familyEmoji: activeProfile?.emoji_avatar ?? avatarChoices[1],
       familyName: activeProfile?.name ?? '',
       name: userProfile?.name ?? '',
@@ -1843,7 +1851,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 <View style={styles.sectionGap}>
                   <BentoCard tone="highlight">
                     <Text style={styles.kicker}>Dashboard</Text>
-                    <Text style={styles.heroTitle}>{rs(monthlySpend)} spent this month</Text>
+                    <Text style={styles.heroTitle}>{c(monthlySpend)} spent this month</Text>
                     <Text style={styles.bodyMuted}>Keep your family budget clear, shared, and calm.</Text>
                   </BentoCard>
 
@@ -1851,8 +1859,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     <BentoCard style={{ width: bentoWidth }}>
                       <Text style={styles.cardEyebrow}>Active budget</Text>
                       <Text style={styles.cardTitle}>{activeBudget?.name ?? 'No plan yet'}</Text>
-                      <Text style={styles.metricText}>{rs(currentMonthPlanStatsDashboard.spent)}</Text>
-                      <Text style={styles.bodyMuted}>of {rs((activeBudget?.total_amount ?? 0) + currentMonthPlanStatsDashboard.contributions)} allocated</Text>
+                      <Text style={styles.metricText}>{c(currentMonthPlanStatsDashboard.spent)}</Text>
+                      <Text style={styles.bodyMuted}>of {c((activeBudget?.total_amount ?? 0) + currentMonthPlanStatsDashboard.contributions)} allocated</Text>
                       <View style={styles.spacer12} />
                       <ProgressBar progress={activeBudget ? currentMonthPlanStatsDashboard.spent / Math.max(activeBudget.total_amount + currentMonthPlanStatsDashboard.contributions, 1) : 0} />
                     </BentoCard>
@@ -1883,7 +1891,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       <Text style={styles.cardEyebrow}>Savings</Text>
                       {savings.length > 0 ? (
                         <>
-                          <Text style={styles.metricText}>{rs(savings.reduce((s, e) => s + e.amount, 0))}</Text>
+                          <Text style={styles.metricText}>{c(savings.reduce((s, e) => s + e.amount, 0))}</Text>
                           <Text style={styles.bodyMuted}>total saved across all plans</Text>
                         </>
                       ) : (
@@ -1966,9 +1974,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                           </View>
                         </View>
                         <View style={styles.statRow}>
-                          <InfoPill label="Allocated" value={rs(stats.allocated)} />
-                          <InfoPill label="Spent" value={rs(stats.spent)} />
-                          <InfoPill label="Left" value={rs(stats.remaining)} />
+                          <InfoPill label="Allocated" value={c(stats.allocated)} />
+                          <InfoPill label="Spent" value={c(stats.spent)} />
+                          <InfoPill label="Left" value={c(stats.remaining)} />
                         </View>
                         <ProgressBar progress={stats.spent / Math.max(stats.allocated, 1)} />
                       </BentoCard>
@@ -2007,8 +2015,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                               <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
                             </View>
                             <View style={styles.statRow}>
-                              <InfoPill label="Paid" value={rs(bStats.paid)} />
-                              <InfoPill label="Pending" value={rs(bStats.pending)} />
+                              <InfoPill label="Paid" value={c(bStats.paid)} />
+                              <InfoPill label="Pending" value={c(bStats.pending)} />
                               <InfoPill label="Total" value={`${bStats.totalCount} bills`} />
                             </View>
                           </BentoCard>
@@ -2042,9 +2050,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                               <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
                             </View>
                             <View style={styles.statRow}>
-                              <InfoPill label="Balance" value={rs(sStats.balance)} />
-                              <InfoPill label="Deposits" value={rs(sStats.deposits)} />
-                              <InfoPill label="Net" value={rs(sStats.net)} />
+                              <InfoPill label="Balance" value={c(sStats.balance)} />
+                              <InfoPill label="Deposits" value={c(sStats.deposits)} />
+                              <InfoPill label="Net" value={c(sStats.net)} />
                             </View>
                           </BentoCard>
                         </Pressable>
@@ -2217,7 +2225,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           title={editingPlanId ? 'Edit Budget Plan' : 'Create Budget Plan'}
         >
           <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="budget-plan-name-input" value={budgetForm.name} />
-          <LabeledInput keyboardType="numeric" label="Total budget (Rs.)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="budget-plan-total-input" value={budgetForm.totalAmount} />
+          <LabeledInput keyboardType="numeric" label={`Total budget (${userCurrency})`} onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="budget-plan-total-input" value={budgetForm.totalAmount} />
           <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="budget-plan-start-input" value={budgetForm.startDate} />
           <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="budget-plan-end-input" value={budgetForm.endDate} />
           <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text={editingPlanId ? 'Update plan' : 'Save plan'} />
@@ -2234,7 +2242,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           {newPlanType === 'budget' ? (
             <>
               <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="new-plan-name-input" value={budgetForm.name} />
-              <LabeledInput keyboardType="numeric" label="Total budget (Rs.)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="new-plan-total-input" value={budgetForm.totalAmount} />
+              <LabeledInput keyboardType="numeric" label={`Total budget (${userCurrency})`} onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="new-plan-total-input" value={budgetForm.totalAmount} />
               <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="new-plan-start-input" value={budgetForm.startDate} />
               <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="new-plan-end-input" value={budgetForm.endDate} />
               <ModernButton loading={actionBusy} onPress={() => { setShowNewPlanComposer(false); setShowBudgetComposer(true); }} text="Continue to create" />
@@ -2278,6 +2286,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 years={[...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort()}
               />
               <BillTracker
+                currencyCode={userCurrency}
                 trackerId={selectedBillTrackerId}
                 stats={currentMonthBillStatsMap[selectedBillTrackerId]}
                 actionBusy={actionBusy}
@@ -2311,13 +2320,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 years={[...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort()}
               />
               <SavingsTracker
+                currencyCode={userCurrency}
                 trackerId={selectedSavingsTrackerId}
                 stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
                 actionBusy={actionBusy}
                 members={members}
                 onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
                 onDeleteEntry={handleDeleteSavingEntry}
-                onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${rs(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+                onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
                 plans={plans}
                 profileId={activeProfile?.id ?? ''}
                 savings={savings}
@@ -2384,8 +2394,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     return (
                       <>
                         <BentoCard tone="highlight">
-                          <Text style={styles.metricText}>{rs(mTotalSpent)}</Text>
-                          <Text style={styles.bodyMuted}>total spent out of {rs(mAllocated)} allocated</Text>
+                          <Text style={styles.metricText}>{c(mTotalSpent)}</Text>
+                          <Text style={styles.bodyMuted}>total spent out of {c(mAllocated)} allocated</Text>
                           <View style={styles.spacer12} />
                           <ProgressBar progress={mTotalSpent / Math.max(mAllocated, 1)} />
                         </BentoCard>
@@ -2393,22 +2403,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                         <View style={styles.sectionGap}>
                           <Text style={styles.inputLabel}>Spending Breakdown</Text>
                           <View style={styles.statRow}>
-                            <InfoPill label="Plan Budget" value={rs(selectedPlan.total_amount)} />
+                            <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
                             {mContributions > 0 ? (
-                              <InfoPill label="+ Contributions" value={rs(mContributions)} />
+                              <InfoPill label="+ Contributions" value={c(mContributions)} />
                             ) : null}
-                            <InfoPill label="= Allocated" value={rs(mAllocated)} />
-                            <InfoPill label="- Family expenses" value={rs(mSpent)} />
+                            <InfoPill label="= Allocated" value={c(mAllocated)} />
+                            <InfoPill label="- Family expenses" value={c(mSpent)} />
                             {mContributions > 0 ? (
-                              <InfoPill label="- Own-pocket spent" value={rs(mContributions)} />
+                              <InfoPill label="- Own-pocket spent" value={c(mContributions)} />
                             ) : null}
                             {mBorrowed > 0 ? (
-                              <InfoPill label="- Borrowed" value={rs(mBorrowed)} />
+                              <InfoPill label="- Borrowed" value={c(mBorrowed)} />
                             ) : null}
                             {mRepaid > 0 ? (
-                              <InfoPill label="+ Repaid" value={rs(mRepaid)} />
+                              <InfoPill label="+ Repaid" value={c(mRepaid)} />
                             ) : null}
-                            <InfoPill label="= Remaining" value={rs(mRemaining)} />
+                            <InfoPill label="= Remaining" value={c(mRemaining)} />
                           </View>
                           {Object.keys(mMemberBalances).length > 0 ? (
                             <View style={styles.statRow}>
@@ -2416,7 +2426,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                 <InfoPill
                                   key={bal.name}
                                   label={`${bal.avatar} ${bal.name}`}
-                                  value={bal.owes > 0 ? `Owes ${rs(bal.owes)}` : `Credit ${rs(bal.contributed - bal.borrowed + bal.repaid)}`}
+                                  value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
                                 />
                               ))}
                             </View>
@@ -2440,7 +2450,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                           {items.map((item, idx) => (
                                             <View key={idx} style={styles.itemRow}>
                                               <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                                              <Text style={styles.itemPrice}>{rs(item.price)}</Text>
+                                              <Text style={styles.itemPrice}>{c(item.price)}</Text>
                                             </View>
                                           ))}
                                         </View>
@@ -2455,7 +2465,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                     </View>
                                     <View style={styles.expenseActions}>
                                       {items.length > 1 ? (
-                                        <Text style={styles.totalAmount}>{rs(expense.price)}</Text>
+                                        <Text style={styles.totalAmount}>{c(expense.price)}</Text>
                                       ) : null}
                                     </View>
                                   </View>
@@ -2488,13 +2498,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                   <View style={styles.borrowHeaderRow}>
                                     <View style={{ flex: 1, marginRight: 12 }}>
                                       <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                                      <Text style={styles.listSubtitle}>{`Borrowed ${rs(data.borrowed)} · Repaid ${rs(data.repaid)} · Owes ${rs(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
+                                      <Text style={styles.listSubtitle}>{`Borrowed ${c(data.borrowed)} · Repaid ${c(data.repaid)} · Owes ${c(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
                                     </View>
                                   </View>
                                   {data.records.map((record) => (
                                     <View key={record.id} style={styles.borrowRecordRow}>
                                       <View style={{ flex: 1 }}>
-                                        <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${rs(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+                                        <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
                                       </View>
                                     </View>
                                   ))}
@@ -2510,8 +2520,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               ) : (
                 <>
                   <BentoCard tone="highlight">
-                    <Text style={styles.metricText}>{rs(currentPlanMonthStats.totalSpent)}</Text>
-                    <Text style={styles.bodyMuted}>spent this month out of {rs(currentPlanMonthStats.allocated)} allocated</Text>
+                    <Text style={styles.metricText}>{c(currentPlanMonthStats.totalSpent)}</Text>
+                    <Text style={styles.bodyMuted}>spent this month out of {c(currentPlanMonthStats.allocated)} allocated</Text>
                     <View style={styles.spacer12} />
                     <ProgressBar progress={currentPlanMonthStats.totalSpent / Math.max(currentPlanMonthStats.allocated, 1)} />
                   </BentoCard>
@@ -2519,22 +2529,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   <View style={styles.sectionGap}>
                     <Text style={styles.inputLabel}>Spending Breakdown</Text>
                     <View style={styles.statRow}>
-                      <InfoPill label="Plan Budget" value={rs(selectedPlan.total_amount)} />
+                      <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
                       {currentPlanMonthStats.contributions > 0 ? (
-                        <InfoPill label="+ Contributions" value={rs(currentPlanMonthStats.contributions)} />
+                        <InfoPill label="+ Contributions" value={c(currentPlanMonthStats.contributions)} />
                       ) : null}
-                      <InfoPill label="= Allocated" value={rs(currentPlanMonthStats.allocated)} />
-                      <InfoPill label="- Family expenses" value={rs(currentPlanMonthStats.spent)} />
+                      <InfoPill label="= Allocated" value={c(currentPlanMonthStats.allocated)} />
+                      <InfoPill label="- Family expenses" value={c(currentPlanMonthStats.spent)} />
                       {currentPlanMonthStats.contributions > 0 ? (
-                        <InfoPill label="- Own-pocket spent" value={rs(currentPlanMonthStats.contributions)} />
+                        <InfoPill label="- Own-pocket spent" value={c(currentPlanMonthStats.contributions)} />
                       ) : null}
                       {currentPlanMonthStats.borrowed > 0 ? (
-                        <InfoPill label="- Borrowed" value={rs(currentPlanMonthStats.borrowed)} />
+                        <InfoPill label="- Borrowed" value={c(currentPlanMonthStats.borrowed)} />
                       ) : null}
                       {currentPlanMonthStats.repaid > 0 ? (
-                        <InfoPill label="+ Repaid" value={rs(currentPlanMonthStats.repaid)} />
+                        <InfoPill label="+ Repaid" value={c(currentPlanMonthStats.repaid)} />
                       ) : null}
-                      <InfoPill label="= Remaining" value={rs(currentPlanMonthStats.remaining)} />
+                      <InfoPill label="= Remaining" value={c(currentPlanMonthStats.remaining)} />
                     </View>
                     {Object.keys(currentPlanMonthStats.memberBalances).length > 0 ? (
                       <View style={styles.statRow}>
@@ -2542,7 +2552,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                           <InfoPill
                             key={bal.name}
                             label={`${bal.avatar} ${bal.name}`}
-                            value={bal.owes > 0 ? `Owes ${rs(bal.owes)}` : `Credit ${rs(bal.contributed - bal.borrowed + bal.repaid)}`}
+                            value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
                           />
                         ))}
                       </View>
@@ -2596,7 +2606,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                   {items.map((item, idx) => (
                                     <View key={idx} style={styles.itemRow}>
                                       <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                                      <Text style={styles.itemPrice}>{rs(item.price)}</Text>
+                                      <Text style={styles.itemPrice}>{c(item.price)}</Text>
                                     </View>
                                   ))}
                                 </View>
@@ -2612,7 +2622,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                             
                             <View style={styles.expenseActions}>
                               {hasMultipleItems ? (
-                                <Text style={styles.totalAmount}>{rs(expense.price)}</Text>
+                                <Text style={styles.totalAmount}>{c(expense.price)}</Text>
                               ) : null}
                               <View style={styles.actionButtons}>
                                 <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
@@ -2657,7 +2667,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                             <View style={styles.borrowHeaderRow}>
                               <View style={{ flex: 1, marginRight: 12 }}>
                                 <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                                <Text style={styles.listSubtitle}>{`Borrowed ${rs(data.borrowed)} · Repaid ${rs(data.repaid)} · Owes ${rs(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
+                                <Text style={styles.listSubtitle}>{`Borrowed ${c(data.borrowed)} · Repaid ${c(data.repaid)} · Owes ${c(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
                               </View>
                               <ModernButton
                                 onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
@@ -2670,7 +2680,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                             {data.records.map((record) => (
                               <View key={record.id} style={styles.borrowRecordRow}>
                                 <View style={{ flex: 1 }}>
-                                  <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${rs(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+                                  <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
                                 </View>
                                 <View style={styles.actionButtons}>
                                   <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
@@ -2716,7 +2726,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <View style={styles.fieldSection}>
             <View style={styles.rowBetween}>
               <Text style={styles.inputLabel}>Items</Text>
-              <Text style={styles.totalText}>Total: {rs(expenseTotal)}</Text>
+              <Text style={styles.totalText}>Total: {c(expenseTotal)}</Text>
             </View>
             
             {expenseForm.items.map((item, index) => (
@@ -2730,7 +2740,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 <TextInput
                   keyboardType="numeric"
                   onChangeText={(value) => updateExpenseItem(index, 'price', value)}
-                  placeholder="Rs."
+                  placeholder={userCurrency}
                   style={[styles.textInput, styles.itemPriceInput]}
                   value={item.price}
                 />
@@ -2838,7 +2848,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 {pendingBoughtItem.category ? ` • ${pendingBoughtItem.category}` : ''}
               </Text>
               <View style={styles.spacer12} />
-              <LabeledInput keyboardType="numeric" label="Price (Rs.)" onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
+              <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
               <Text style={styles.inputLabel}>Who paid?</Text>
               <View style={styles.segmentRow}>
                 <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
@@ -2862,7 +2872,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 <Modal animationType="slide" transparent visible={showBorrowComposer}>
         <BottomSheet onClose={() => { setShowBorrowComposer(false); setBorrowForm({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' }); setEditingBorrowId(null); }}>
           <Text style={styles.sectionTitle}>{editingBorrowId ? 'Edit Borrow' : 'Borrow from Budget'}</Text>
-          <LabeledInput keyboardType="numeric" label="Amount (Rs.)" onChangeText={(value) => setBorrowForm((current) => ({ ...current, amount: value }))} testID="borrow-amount-input" value={borrowForm.amount} />
+          <LabeledInput keyboardType="numeric" label={`Amount (${userCurrency})`} onChangeText={(value) => setBorrowForm((current) => ({ ...current, amount: value }))} testID="borrow-amount-input" value={borrowForm.amount} />
           <DatePickerField date={borrowForm.date} label="Date" onDateChange={(value) => setBorrowForm((current) => ({ ...current, date: value }))} testID="borrow-date-input" />
           <LabeledInput label="Description (optional)" onChangeText={(value) => setBorrowForm((current) => ({ ...current, description: value }))} testID="borrow-description-input" value={borrowForm.description} />
           <View style={styles.spacer16} />
@@ -2873,7 +2883,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       <Modal animationType="slide" transparent visible={showRepayComposer}>
         <BottomSheet onClose={() => { setShowRepayComposer(false); setRepayForm({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) }); }}>
           <Text style={styles.sectionTitle}>Repay to Budget</Text>
-          <LabeledInput keyboardType="numeric" label="Amount (Rs.)" onChangeText={(value) => setRepayForm((current) => ({ ...current, amount: value }))} testID="repay-amount-input" value={repayForm.amount} />
+          <LabeledInput keyboardType="numeric" label={`Amount (${userCurrency})`} onChangeText={(value) => setRepayForm((current) => ({ ...current, amount: value }))} testID="repay-amount-input" value={repayForm.amount} />
           <DatePickerField date={repayForm.date} label="Date" onDateChange={(value) => setRepayForm((current) => ({ ...current, date: value }))} testID="repay-date-input" />
           <View style={styles.spacer16} />
           <ModernButton loading={actionBusy} onPress={handleRepay} testID="repay-save-button" text="Repay" />
@@ -3144,6 +3154,8 @@ function ProfileFormFields({
       <LabeledInput label="Your name" onChangeText={(value: string) => onChange({ ...form, name: value })} testID={`${prefix}-name-input`} value={form.name} />
       <Text style={styles.inputLabel}>Choose your avatar</Text>
       <AvatarPicker selected={form.avatarEmoji} testIDPrefix={`${prefix}-avatar`} onPick={(value) => onChange({ ...form, avatarEmoji: value })} />
+      <Text style={styles.inputLabel}>Your currency</Text>
+      <CurrencyPicker value={form.currency} onChange={(value) => onChange({ ...form, currency: value })} />
 
       {!userOnly ? (
         <>
@@ -3164,6 +3176,26 @@ function AvatarPicker({ onPick, selected, testIDPrefix }: { onPick: (value: stri
           <Text style={styles.avatarChoiceText}>{choice}</Text>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+function CurrencyPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <View style={styles.currencyGrid}>
+      {currencyOptions.map((opt) => {
+        const active = value === opt.code;
+        return (
+          <Pressable
+            key={opt.code}
+            onPress={() => onChange(opt.code)}
+            style={[styles.currencyChip, active && styles.currencyChipActive]}
+          >
+            <Text style={[styles.currencyChipCode, active && styles.currencyChipCodeActive]}>{opt.code}</Text>
+            <Text style={[styles.currencyChipSymbol, active && styles.currencyChipSymbolActive]}>{opt.symbol}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -3293,6 +3325,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  currencyGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  currencyChip: {
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  currencyChipActive: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary,
+  },
+  currencyChipCode: {
+    color: theme.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  currencyChipCodeActive: {
+    color: theme.primary,
+  },
+  currencyChipSymbol: {
+    color: theme.textMuted,
+    fontSize: 12,
+  },
+  currencyChipSymbolActive: {
+    color: theme.primary,
   },
   badge: {
     alignItems: 'center',
