@@ -19,6 +19,8 @@ type IoniconName = ComponentProps<typeof Ionicons>['name'];
 type StepCard = {
   body: string;
   icon: IoniconName;
+  iconBackgroundColor?: string;
+  iconColor?: string;
   title: string;
 };
 
@@ -54,9 +56,9 @@ const steps: OnboardingStep[] = [
   {
     body: 'Start in Budget to create a plan, choose the total amount, set the date range, and record shared expenses against that plan.',
     cards: [
-      { body: 'Create a budget plan for this month, a trip, or a family goal.', icon: 'add-circle-outline', title: 'Create a plan' },
-      { body: 'Set the total amount and the dates that define the plan window.', icon: 'calendar-outline', title: 'Set the limits' },
-      { body: 'Add expenses and watch Dashboard reflect spend and remaining money.', icon: 'stats-chart-outline', title: 'Track progress' },
+      { body: 'Create a budget plan for this month, a trip, or a family goal.', icon: 'add-circle-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Create a plan' },
+      { body: 'Set the total amount and the dates that define the plan window.', icon: 'calendar-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Set the limits' },
+      { body: 'Add expenses and watch Dashboard reflect spend and remaining money.', icon: 'stats-chart-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Track progress' },
     ],
     highlight: 'The Dashboard summary updates from the activity inside your active plan.',
     icon: 'wallet-outline',
@@ -67,7 +69,7 @@ const steps: OnboardingStep[] = [
     body: 'Budget also holds your Bill Trackers and Savings Trackers, so routine household money stays in one place instead of scattered apps and notes.',
     cards: [
       { body: 'Bill Trackers help manage recurring payments and what is still pending.', icon: 'receipt-outline', title: 'Bills' },
-      { body: 'Savings Trackers record deposits, withdrawals, and running balances.', icon: 'leaf-outline', title: 'Savings' },
+      { body: 'Savings Trackers record deposits, withdrawals, and running balances.', icon: 'leaf-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Savings' },
       { body: 'Both live next to your budget plans so home planning stays connected.', icon: 'layers-outline', title: 'One money hub' },
     ],
     highlight: 'Use bills for recurring payments and savings for deposits or household goals.',
@@ -159,8 +161,8 @@ export default function OnboardingCarousel({ onComplete, onSkip, primaryActionTe
               <View style={styles.cardGrid}>
                 {step.cards.map((card) => (
                   <BentoCard key={`${step.title}-${card.title}`} style={[styles.detailCard, step.cards.length === 4 ? styles.halfCard : styles.fullCard]}>
-                    <View style={styles.detailIconWrap}>
-                      <Ionicons color={theme.primary} name={card.icon} size={20} />
+                    <View style={[styles.detailIconWrap, card.iconBackgroundColor ? { backgroundColor: card.iconBackgroundColor } : null]}>
+                      <Ionicons color={card.iconColor ?? theme.primary} name={card.icon} size={20} />
                     </View>
                     <Text style={styles.detailTitle}>{card.title}</Text>
                     <Text style={styles.detailBody}>{card.body}</Text>
