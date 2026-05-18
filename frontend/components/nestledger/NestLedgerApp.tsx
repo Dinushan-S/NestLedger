@@ -67,6 +67,7 @@ import {
   validateSession,
 } from '../../lib/nestledger';
 import BillTracker from './BillTracker';
+import OnboardingCarousel from './OnboardingCarousel';
 import SavingsTracker from './SavingsTracker';
 import { supabase } from '../../lib/supabase';
 import { isConfigReady } from '../../lib/config';
@@ -229,6 +230,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [authBusy, setAuthBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const sessionUserId = session?.user?.id;
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -269,8 +271,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingLoaded, setOnboardingLoaded] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const onboardingStorageKey = sessionUserId ? `nestledger-onboarding-seen-${sessionUserId}` : null;
   const userCurrency = userProfile?.currency ?? 'USD';
   const c = useCallback((value: number) => formatCurrency(value, userCurrency), [userCurrency]);
 
@@ -526,7 +531,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const shoppingBadgeCount = notifications.filter(
     (item) => !item.is_read && item.type.startsWith('shopping_'),
   ).length;
-  const sessionUserId = session?.user?.id;
+  const onboardingPrimaryActionText = useMemo(() => {
+    if (pendingInviteToken) {
+      return 'Continue to invitation';
+    }
+
+    return profiles.length > 0 ? 'Choose my home space' : 'Create my home space';
+  }, [pendingInviteToken, profiles.length]);
 
   const refreshProfileData = useCallback(async (profileId: string, force?: boolean) => {
     if (!sessionUserId) {
@@ -607,6 +618,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         setActiveProfileId(null);
         setUserProfile(null);
         setProfileLoaded(false);
+        setOnboardingLoaded(false);
+        setShowOnboarding(false);
         setMembers([]);
         setPlans([]);
         setProfileExpenses([]);
@@ -620,6 +633,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       subscription.data.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionUserId || !onboardingStorageKey) {
+      setOnboardingLoaded(false);
+      setShowOnboarding(false);
+      return;
+    }
+
+    let mounted = true;
+
+    AsyncStorage.getItem(onboardingStorageKey)
+      .then((savedValue) => {
+        if (!mounted) {
+          return;
+        }
+
+        setShowOnboarding(savedValue !== 'true');
+        setOnboardingLoaded(true);
+      })
+      .catch(() => {
+        if (!mounted) {
+          return;
+        }
+
+        setShowOnboarding(true);
+        setOnboardingLoaded(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [onboardingStorageKey, sessionUserId]);
 
   // Load reminder settings
   useEffect(() => {
@@ -926,6 +971,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setAuthBusy(false);
     }
   };
+
+  const completeOnboarding = useCallback(async () => {
+    setShowProfileSettings(false);
+    setShowOnboarding(false);
+
+    if (!onboardingStorageKey) {
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem(onboardingStorageKey, 'true');
+    } catch {
+      // Silent: failing to persist should not block the user from moving forward.
+    }
+  }, [onboardingStorageKey]);
 
   const handleCreateProfile = async () => {
     if (!session?.user) {
@@ -1567,12 +1627,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }, [announce, runAction, session]);
 
   useEffect(() => {
-    if (!session || !pendingInviteToken) {
+    if (!session || !pendingInviteToken || showOnboarding) {
       return;
     }
 
     acceptInviteFlow(pendingInviteToken);
-  }, [acceptInviteFlow, pendingInviteToken, session]);
+  }, [acceptInviteFlow, pendingInviteToken, session, showOnboarding]);
 
   const handleSaveSettings = async () => {
     if (!session?.user || !activeProfile) {
@@ -1610,6 +1670,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
     setShowProfileSettings(true);
   };
+
+  const reopenOnboarding = useCallback(() => {
+    setShowProfileSettings(false);
+    setShowOnboarding(true);
+  }, []);
 
   const handleDeleteSpace = async (profileId: string) => {
     if (!session?.user) {
@@ -1746,8 +1811,18 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     );
   }
 
-  if (session && !profileLoaded) {
+  if (session && (!profileLoaded || !onboardingLoaded)) {
     return <SplashScreen />;
+  }
+
+  if (showOnboarding) {
+    return (
+      <OnboardingCarousel
+        onComplete={completeOnboarding}
+        onSkip={completeOnboarding}
+        primaryActionText={onboardingPrimaryActionText}
+      />
+    );
   }
 
   if (!userProfile || profiles.length === 0 || showCreateProfile) {
@@ -2965,6 +3040,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           <Text style={styles.inputLabel}>Family avatar</Text>
           <AvatarPicker selected={profileForm.familyEmoji} onPick={(value) => setProfileForm((current) => ({ ...current, familyEmoji: value }))} />
           <ModernButton loading={actionBusy} onPress={handleSaveSettings} testID="settings-save-button" text="Save changes" />
+          <ModernButton onPress={reopenOnboarding} secondary testID="settings-open-onboarding" text="View onboarding again" />
           <ModernButton onPress={() => authApi.signOut()} secondary testID="settings-signout-button" text="Sign out" />
           <ModernButton destructive loading={activeProfile ? deletingProfileIds.has(activeProfile.id) : false} onPress={() => activeProfile && handleDeleteSpace(activeProfile.id)} secondary testID="settings-delete-button" text="Delete space" />
         </ModalScaffold>
