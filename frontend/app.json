@@ -43,8 +43,7 @@
           "backgroundColor": "#F6F5F2"
         }
       ],
-      "@react-native-community/datetimepicker",
-      "expo-font"
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
