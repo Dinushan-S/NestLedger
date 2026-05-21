@@ -13,9 +13,26 @@ import { theme } from '@/constants/nestledger';
 type BottomSheetProps = {
   children: ReactNode;
   onClose: () => void;
+  scrollable?: boolean;
 };
 
-export function BottomSheet({ children, onClose }: BottomSheetProps) {
+export function BottomSheet({
+  children,
+  onClose,
+  scrollable = true,
+}: BottomSheetProps) {
+  const content = scrollable ? (
+    <ScrollView
+      contentContainerStyle={styles.sheetContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator
+    >
+      {children}
+    </ScrollView>
+  ) : (
+    <View style={styles.sheetContentStatic}>{children}</View>
+  );
+
   return (
     <Pressable onPress={onClose} style={styles.sheetBackdrop}>
       <KeyboardAvoidingView
@@ -23,13 +40,9 @@ export function BottomSheet({ children, onClose }: BottomSheetProps) {
         style={styles.sheetCard}
       >
         <View style={styles.sheetGrabber} />
-        <ScrollView
-          contentContainerStyle={styles.sheetContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator
-        >
-          <Pressable onPress={(event) => event.stopPropagation()}>{children}</Pressable>
-        </ScrollView>
+        <Pressable onPress={(event) => event.stopPropagation()} style={styles.sheetBody}>
+          {content}
+        </Pressable>
       </KeyboardAvoidingView>
     </Pressable>
   );
@@ -49,9 +62,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
   },
+  sheetBody: {
+    flex: 1,
+  },
   sheetContent: {
     gap: 14,
     paddingBottom: 32,
+  },
+  sheetContentStatic: {
+    flex: 1,
   },
   sheetGrabber: {
     alignSelf: 'center',

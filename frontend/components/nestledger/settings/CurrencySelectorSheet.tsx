@@ -59,22 +59,27 @@ export function CurrencySelectorSheet({
 
   return (
     <Modal animationType="slide" transparent visible={visible}>
-      <BottomSheet onClose={onClose}>
-        <Text style={styles.title}>Choose currency</Text>
-        <Text style={styles.subtitle}>
-          Pick the currency used for your budgets, expenses, bills, and savings views.
-        </Text>
-        <TextInput
-          onChangeText={setQuery}
-          placeholder="Search currencies"
-          placeholderTextColor={theme.textMuted}
-          style={styles.searchInput}
-          value={query}
-        />
+      <BottomSheet onClose={onClose} scrollable={false}>
         <SectionList
           extraData={value}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => item.code}
+          keyboardDismissMode="on-drag"
+          ListHeaderComponent={
+            <View style={styles.listHeader}>
+              <Text style={styles.title}>Choose currency</Text>
+              <Text style={styles.subtitle}>
+                Pick the currency used for your budgets, expenses, bills, and savings views.
+              </Text>
+              <TextInput
+                onChangeText={setQuery}
+                placeholder="Search currencies"
+                placeholderTextColor={theme.textMuted}
+                style={styles.searchInput}
+                value={query}
+              />
+            </View>
+          }
           renderItem={({ item }) => (
             <CurrencyRow
               item={item}
@@ -90,6 +95,8 @@ export function CurrencySelectorSheet({
           )}
           sections={sections}
           stickySectionHeadersEnabled={false}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>No currencies found</Text>
@@ -141,6 +148,15 @@ const styles = StyleSheet.create({
     color: theme.text,
     fontSize: 16,
     fontWeight: '700',
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: 32,
+  },
+  listHeader: {
+    marginBottom: 4,
   },
   row: {
     alignItems: 'center',
