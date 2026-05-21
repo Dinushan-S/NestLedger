@@ -71,6 +71,7 @@ import MonthYearSelector from '../ui/MonthYearSelector';
 import ProgressBar from '../ui/ProgressBar';
 import { BottomSheet } from '../ui/BottomSheet';
 import { ModalScaffold } from '../ui/ModalScaffold';
+import OnboardingCarousel from './OnboardingCarousel';
 import {
   CreateProfileForm,
   LabeledInput,
@@ -292,6 +293,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
   const onboardingStorageKey = sessionUserId ? `nestledger-onboarding-seen-${sessionUserId}` : null;
+  const onboardingPrimaryActionText = userProfile && profiles.length > 0 ? 'Open your space' : 'Continue to setup';
   const userCurrency = userProfile?.currency ?? 'USD';
   const c = useCallback((value: number) => formatCurrency(value, userCurrency), [userCurrency]);
 
@@ -329,7 +331,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [savingsViewYear, setSavingsViewYear] = useState<number>(new Date().getFullYear());
   const [savingsViewMonth, setSavingsViewMonth] = useState<number | 'current'>('current');
 
-  const sessionUserId = session?.user?.id;
   const resetSessionState = useCallback(() => {
     setProfiles([]);
     setActiveProfileId(null);
@@ -1444,11 +1445,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
     setShowProfileSettings(true);
   };
-
-  const reopenOnboarding = useCallback(() => {
-    setShowProfileSettings(false);
-    setShowOnboarding(true);
-  }, []);
 
   const handleDeleteSpace = async (profileId: string) => {
     if (!session?.user) {

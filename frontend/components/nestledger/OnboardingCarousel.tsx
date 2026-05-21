@@ -145,39 +145,45 @@ export default function OnboardingCarousel({ onComplete, onSkip, primaryActionTe
         >
           {steps.map((step, index) => (
             <View key={step.title} style={[styles.slide, { width: slideWidth }]}>
-              <BentoCard tone="highlight" style={styles.heroCard}>
-                <View style={styles.heroIconWrap}>
-                  <Ionicons color={theme.primary} name={step.icon} size={28} />
-                </View>
-                <Text style={styles.kicker}>{step.kicker}</Text>
-                <Text style={styles.title}>{step.title}</Text>
-                <Text style={styles.body}>{step.body}</Text>
-                <View style={styles.highlightCard}>
-                  <Ionicons color={theme.secondary} name="sparkles-outline" size={18} />
-                  <Text style={styles.highlightText}>{step.highlight}</Text>
-                </View>
-              </BentoCard>
-
-              <View style={styles.cardGrid}>
-                {step.cards.map((card) => (
-                  <BentoCard key={`${step.title}-${card.title}`} style={[styles.detailCard, step.cards.length === 4 ? styles.halfCard : styles.fullCard]}>
-                    <View style={[styles.detailIconWrap, card.iconBackgroundColor ? { backgroundColor: card.iconBackgroundColor } : null]}>
-                      <Ionicons color={card.iconColor ?? theme.primary} name={card.icon} size={20} />
-                    </View>
-                    <Text style={styles.detailTitle}>{card.title}</Text>
-                    <Text style={styles.detailBody}>{card.body}</Text>
-                  </BentoCard>
-                ))}
-              </View>
-
-              {index === steps.length - 1 ? (
-                <BentoCard style={styles.footerNote}>
-                  <Text style={styles.footerNoteTitle}>What happens after an invite?</Text>
-                  <Text style={styles.footerNoteBody}>
-                    The invited person signs in, accepts the invite, joins the same home space, and then sees the shared members, plans, shopping activity, and notifications.
-                  </Text>
+              <ScrollView
+                contentContainerStyle={styles.slideContent}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+              >
+                <BentoCard tone="highlight" style={styles.heroCard}>
+                  <View style={styles.heroIconWrap}>
+                    <Ionicons color={theme.primary} name={step.icon} size={28} />
+                  </View>
+                  <Text style={styles.kicker}>{step.kicker}</Text>
+                  <Text style={styles.title}>{step.title}</Text>
+                  <Text style={styles.body}>{step.body}</Text>
+                  <View style={styles.highlightCard}>
+                    <Ionicons color={theme.secondary} name="sparkles-outline" size={18} />
+                    <Text style={styles.highlightText}>{step.highlight}</Text>
+                  </View>
                 </BentoCard>
-              ) : null}
+
+                <View style={styles.cardGrid}>
+                  {step.cards.map((card) => (
+                    <BentoCard key={`${step.title}-${card.title}`} style={[styles.detailCard, step.cards.length === 4 ? styles.halfCard : styles.fullCard]}>
+                      <View style={[styles.detailIconWrap, card.iconBackgroundColor ? { backgroundColor: card.iconBackgroundColor } : null]}>
+                        <Ionicons color={card.iconColor ?? theme.primary} name={card.icon} size={20} />
+                      </View>
+                      <Text style={styles.detailTitle}>{card.title}</Text>
+                      <Text style={styles.detailBody}>{card.body}</Text>
+                    </BentoCard>
+                  ))}
+                </View>
+
+                {index === steps.length - 1 ? (
+                  <BentoCard style={styles.footerNote}>
+                    <Text style={styles.footerNoteTitle}>What happens after an invite?</Text>
+                    <Text style={styles.footerNoteBody}>
+                      The invited person signs in, accepts the invite, joins the same home space, and then sees the shared members, plans, shopping activity, and notifications.
+                    </Text>
+                  </BentoCard>
+                ) : null}
+              </ScrollView>
             </View>
           ))}
         </ScrollView>
@@ -371,7 +377,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   slide: {
+    flex: 1,
     paddingRight: 20,
+  },
+  slideContent: {
+    gap: 14,
+    paddingBottom: 20,
   },
   stepText: {
     color: theme.textMuted,
