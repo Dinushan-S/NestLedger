@@ -323,6 +323,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [budgetEditMode, setBudgetEditMode] = useState(false);
+  const [editingBillTrackerId, setEditingBillTrackerId] = useState<string | null>(null);
+  const [editingSavingsTrackerId, setEditingSavingsTrackerId] = useState<string | null>(null);
+  const [editBillTrackerForm, setEditBillTrackerForm] = useState({ name: '' });
+  const [editSavingsTrackerForm, setEditSavingsTrackerForm] = useState({ name: '' });
+  const [selectedBillTrackerId, setSelectedBillTrackerId] = useState<string | null>(null);
+  const [selectedSavingsTrackerId, setSelectedSavingsTrackerId] = useState<string | null>(null);
+  const [billTrackerDetailLoading, setBillTrackerDetailLoading] = useState(false);
+  const [savingsTrackerDetailLoading, setSavingsTrackerDetailLoading] = useState(false);
 
   const [activeViewYear, setActiveViewYear] = useState<number>(new Date().getFullYear());
   const [activeViewMonth, setActiveViewMonth] = useState<number | 'current'>('current');
@@ -660,6 +668,46 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }, [selectedPlanId]);
 
   useEffect(() => {
+    if (!selectedBillTrackerId || !activeProfileId) {
+      setBillTrackerDetailLoading(false);
+      return;
+    }
+
+    let active = true;
+    setBillTrackerDetailLoading(true);
+
+    refreshProfileData(activeProfileId, true).finally(() => {
+      if (active) {
+        setBillTrackerDetailLoading(false);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [activeProfileId, refreshProfileData, selectedBillTrackerId]);
+
+  useEffect(() => {
+    if (!selectedSavingsTrackerId || !activeProfileId) {
+      setSavingsTrackerDetailLoading(false);
+      return;
+    }
+
+    let active = true;
+    setSavingsTrackerDetailLoading(true);
+
+    refreshProfileData(activeProfileId, true).finally(() => {
+      if (active) {
+        setSavingsTrackerDetailLoading(false);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [activeProfileId, refreshProfileData, selectedSavingsTrackerId]);
+
+  useEffect(() => {
     if (!session || !Device.isDevice) {
       return;
     }
@@ -905,12 +953,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showNewPlanComposer, setShowNewPlanComposer] = useState(false);
   const [newPlanType, setNewPlanType] = useState<'budget' | 'bill' | 'savings'>('budget');
   const [newPlanName, setNewPlanName] = useState('');
-  const [editingBillTrackerId, setEditingBillTrackerId] = useState<string | null>(null);
-  const [editingSavingsTrackerId, setEditingSavingsTrackerId] = useState<string | null>(null);
-  const [editBillTrackerForm, setEditBillTrackerForm] = useState({ name: '' });
-  const [editSavingsTrackerForm, setEditSavingsTrackerForm] = useState({ name: '' });
-  const [selectedBillTrackerId, setSelectedBillTrackerId] = useState<string | null>(null);
-  const [selectedSavingsTrackerId, setSelectedSavingsTrackerId] = useState<string | null>(null);
 
   const handleCreateTracker = async () => {
     if (!session?.user || !activeProfile) return;
@@ -1849,7 +1891,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     );
                     return (
                       <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
-                        <Pressable onPress={() => { setBillViewMonth('current'); setSelectedBillTrackerId(tracker.id); }}>
+                        <Pressable
+                          onPress={() => {
+                            setBillViewMonth('current');
+                            setBillTrackerDetailLoading(true);
+                            setSelectedBillTrackerId(tracker.id);
+                          }}
+                        >
                           <BentoCard>
                             <View style={styles.rowBetween}>
                               <View style={{ flex: 1 }}>
@@ -1887,7 +1935,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     );
                     return (
                       <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
-                        <Pressable onPress={() => { setSavingsViewMonth('current'); setSelectedSavingsTrackerId(tracker.id); }}>
+                        <Pressable
+                          onPress={() => {
+                            setSavingsViewMonth('current');
+                            setSavingsTrackerDetailLoading(true);
+                            setSelectedSavingsTrackerId(tracker.id);
+                          }}
+                        >
                           <BentoCard>
                             <View style={styles.rowBetween}>
                               <Text style={styles.cardTitle}>{tracker.name}</Text>
@@ -2129,25 +2183,43 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 viewYear={billViewYear}
                 years={[...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort()}
               />
-              <Suspense fallback={<ActivityIndicator color={theme.primary} size="large" />}>
-                <BillTracker
-                  currencyCode={userCurrency}
-                  trackerId={selectedBillTrackerId}
-                  stats={currentMonthBillStatsMap[selectedBillTrackerId]}
-                  actionBusy={actionBusy}
-                  billPayments={billPayments}
-                  members={members}
-                  onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
-                  onDeleteBill={handleDeleteBillFromTracker}
-                  onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
-                  plans={plans}
-                  profileId={activeProfile?.id ?? ''}
-                  recurringBills={recurringBills}
-                  userId={session?.user?.id ?? ''}
-                  viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
-                  viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
-                />
-              </Suspense>
+              {billTrackerDetailLoading ? (
+                <View style={styles.centerWrap}>
+                  <BentoCard tone="highlight" style={styles.centerCard}>
+                    <ActivityIndicator color={theme.primary} size="large" />
+                    <Text style={styles.bodyMuted}>Loading bill tracker details…</Text>
+                  </BentoCard>
+                </View>
+              ) : (
+                <Suspense
+                  fallback={
+                    <View style={styles.centerWrap}>
+                      <BentoCard tone="highlight" style={styles.centerCard}>
+                        <ActivityIndicator color={theme.primary} size="large" />
+                        <Text style={styles.bodyMuted}>Opening bill tracker…</Text>
+                      </BentoCard>
+                    </View>
+                  }
+                >
+                  <BillTracker
+                    currencyCode={userCurrency}
+                    trackerId={selectedBillTrackerId}
+                    stats={currentMonthBillStatsMap[selectedBillTrackerId]}
+                    actionBusy={actionBusy}
+                    billPayments={billPayments}
+                    members={members}
+                    onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
+                    onDeleteBill={handleDeleteBillFromTracker}
+                    onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
+                    plans={plans}
+                    profileId={activeProfile?.id ?? ''}
+                    recurringBills={recurringBills}
+                    userId={session?.user?.id ?? ''}
+                    viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
+                    viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
+                  />
+                </Suspense>
+              )}
             </>
           ) : null}
         </ModalScaffold>
@@ -2165,24 +2237,42 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 viewYear={savingsViewYear}
                 years={[...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort()}
               />
-              <Suspense fallback={<ActivityIndicator color={theme.primary} size="large" />}>
-                <SavingsTracker
-                  currencyCode={userCurrency}
-                  trackerId={selectedSavingsTrackerId}
-                  stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
-                  actionBusy={actionBusy}
-                  members={members}
-                  onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
-                  onDeleteEntry={handleDeleteSavingEntry}
-                  onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
-                  plans={plans}
-                  profileId={activeProfile?.id ?? ''}
-                  savings={savings}
-                  userId={session?.user?.id ?? ''}
-                  viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
-                  viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
-                />
-              </Suspense>
+              {savingsTrackerDetailLoading ? (
+                <View style={styles.centerWrap}>
+                  <BentoCard tone="highlight" style={styles.centerCard}>
+                    <ActivityIndicator color={theme.primary} size="large" />
+                    <Text style={styles.bodyMuted}>Loading savings tracker details…</Text>
+                  </BentoCard>
+                </View>
+              ) : (
+                <Suspense
+                  fallback={
+                    <View style={styles.centerWrap}>
+                      <BentoCard tone="highlight" style={styles.centerCard}>
+                        <ActivityIndicator color={theme.primary} size="large" />
+                        <Text style={styles.bodyMuted}>Opening savings tracker…</Text>
+                      </BentoCard>
+                    </View>
+                  }
+                >
+                  <SavingsTracker
+                    currencyCode={userCurrency}
+                    trackerId={selectedSavingsTrackerId}
+                    stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
+                    actionBusy={actionBusy}
+                    members={members}
+                    onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
+                    onDeleteEntry={handleDeleteSavingEntry}
+                    onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+                    plans={plans}
+                    profileId={activeProfile?.id ?? ''}
+                    savings={savings}
+                    userId={session?.user?.id ?? ''}
+                    viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
+                    viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
+                  />
+                </Suspense>
+              )}
             </>
           ) : null}
         </ModalScaffold>
