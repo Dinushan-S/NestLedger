@@ -25,6 +25,7 @@ export function BottomSheet({
     <ScrollView
       contentContainerStyle={styles.sheetContent}
       keyboardShouldPersistTaps="handled"
+      style={styles.sheetScroll}
       showsVerticalScrollIndicator
     >
       {children}
@@ -61,16 +62,21 @@ const styles = StyleSheet.create({
     maxHeight: '88%',
     paddingHorizontal: 20,
     paddingTop: 10,
+    width: '100%',
   },
   sheetBody: {
-    flex: 1,
+    maxHeight: '100%',
+  },
+  sheetScroll: {
+    flexGrow: 0,
   },
   sheetContent: {
     gap: 14,
     paddingBottom: 32,
   },
   sheetContentStatic: {
-    flex: 1,
+    gap: 14,
+    paddingBottom: 32,
   },
   sheetGrabber: {
     alignSelf: 'center',

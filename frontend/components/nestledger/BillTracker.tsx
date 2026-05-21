@@ -8,6 +8,8 @@ import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
 import StatPill from '../ui/StatPill';
 
+type BillPaymentDraft = Omit<BillPayment, 'created_at' | 'id' | 'name'>;
+
 type Props = {
   trackerId: string;
   recurringBills: RecurringBill[];
@@ -22,7 +24,7 @@ type Props = {
   viewYear?: number;
   stats?: { paid: number; paidCount: number; pending: number; pendingCount: number; totalCount: number };
   onAddBill: (bill: Omit<RecurringBill, 'created_at' | 'id'>) => void;
-  onMarkPaid: (payment: Omit<BillPayment, 'created_at' | 'id'>) => void;
+  onMarkPaid: (payment: BillPaymentDraft, paymentName: string | null) => void;
   onDeleteBill: (billId: string) => void;
 };
 
@@ -204,13 +206,12 @@ export default function BillTracker({
       plan_id: paymentForm.planId || null,
       amount,
       units: paymentForm.units.trim() ? Number(paymentForm.units) : null,
-      name: paymentForm.name.trim() || null,
       status: 'paid',
       date: new Date().toISOString(),
       month: currentMonth,
       year: currentYear,
       added_by: paymentForm.paidBy || userId,
-    });
+    }, paymentForm.name.trim() || null);
     setShowPayment(false);
     setSelectedBill(null);
     setPaymentForm(defaultPaymentForm());
