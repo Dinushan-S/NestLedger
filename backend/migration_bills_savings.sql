@@ -44,7 +44,18 @@ begin
   end if;
 end $$;
 
--- 5. Add tracker_id to savings
+-- 5. Add payment name to bill_payments
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'bill_payments' and column_name = 'name'
+  ) then
+    alter table public.bill_payments add column name text;
+  end if;
+end $$;
+
+-- 6. Add tracker_id to savings
 do $$
 begin
   if not exists (
@@ -55,7 +66,7 @@ begin
   end if;
 end $$;
 
--- 6. RLS for bill_trackers
+-- 7. RLS for bill_trackers
 alter table public.bill_trackers enable row level security;
 
 drop policy if exists "bill trackers member select" on public.bill_trackers;
@@ -76,7 +87,7 @@ drop policy if exists "bill trackers member delete" on public.bill_trackers;
 create policy "bill trackers member delete" on public.bill_trackers
 for delete using (public.is_profile_member(profile_id));
 
--- 7. RLS for savings_trackers
+-- 8. RLS for savings_trackers
 alter table public.savings_trackers enable row level security;
 
 drop policy if exists "savings trackers member select" on public.savings_trackers;
@@ -97,7 +108,7 @@ drop policy if exists "savings trackers member delete" on public.savings_tracker
 create policy "savings trackers member delete" on public.savings_trackers
 for delete using (public.is_profile_member(profile_id));
 
--- 8. Add to realtime publication
+-- 9. Add to realtime publication
 do $$
 begin
   alter publication supabase_realtime add table public.bill_trackers;
