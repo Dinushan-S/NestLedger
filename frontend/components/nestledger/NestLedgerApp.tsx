@@ -6,7 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Session } from '@supabase/supabase-js';
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +19,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TextInputProps,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -28,7 +27,6 @@ import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context'
 
 import {
   avatarChoices,
-  currencyOptions,
   expenseCategories,
   expenseFilters,
   formatCurrency,
@@ -37,8 +35,6 @@ import {
   shoppingCategories,
   shoppingFilters,
   startOfMonth,
-  startOfToday,
-  startOfWeek,
   theme,
 } from '../../constants/nestledger';
 import {
@@ -65,10 +61,7 @@ import {
   savingsApi,
   shoppingApi,
   validateSession,
-} from '../../lib/nestledger';
-import BillTracker from './BillTracker';
-import OnboardingCarousel from './OnboardingCarousel';
-import SavingsTracker from './SavingsTracker';
+} from '../../lib/nestledger-services';
 import { supabase } from '../../lib/supabase';
 import { isConfigReady } from '../../lib/config';
 import BentoCard from '../ui/BentoCard';
@@ -76,6 +69,37 @@ import CategoryChip from '../ui/CategoryChip';
 import ModernButton from '../ui/ModernButton';
 import MonthYearSelector from '../ui/MonthYearSelector';
 import ProgressBar from '../ui/ProgressBar';
+import { BottomSheet } from '../ui/BottomSheet';
+import { ModalScaffold } from '../ui/ModalScaffold';
+import {
+  CreateProfileForm,
+  LabeledInput,
+  ProfileFormFields,
+} from './forms/ProfileFormControls';
+import { useNestLedgerBootstrap } from './hooks/useNestLedgerBootstrap';
+import { useProfileDataController } from './hooks/useProfileDataController';
+import {
+  buildAvailableViewMonths,
+  buildAvailableViewYears,
+  buildCurrentMonthBillStatsMap,
+  buildCurrentMonthSavingsStatsMap,
+  buildCurrentMonthStatsMap,
+  buildCurrentPlanExpenses,
+  buildCurrentPlanMonthStats,
+  buildMemberMap,
+  buildPersonalContributions,
+  filterExpensesForView,
+  filterMonthExpenses,
+  filterShoppingItems,
+} from './selectors';
+
+const BillTracker = lazy(() => import('./BillTracker'));
+const SavingsTracker = lazy(() => import('./SavingsTracker'));
+const ProfileSettingsModal = lazy(() =>
+  import('./settings/ProfileSettingsModal').then((module) => ({
+    default: module.ProfileSettingsModal,
+  })),
+);
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -91,14 +115,6 @@ type Props = {
 };
 
 type TabKey = 'dashboard' | 'budget' | 'shopping' | 'profile';
-
-type CreateProfileForm = {
-  avatarEmoji: string;
-  currency: string;
-  familyEmoji: string;
-  familyName: string;
-  name: string;
-};
 
 type BudgetForm = {
   endDate: string;
@@ -313,8 +329,56 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [savingsViewYear, setSavingsViewYear] = useState<number>(new Date().getFullYear());
   const [savingsViewMonth, setSavingsViewMonth] = useState<number | 'current'>('current');
 
-  const seenNotificationIds = useRef<Set<string>>(new Set());
-  const lastRefreshRef = useRef<number>(0);
+  const sessionUserId = session?.user?.id;
+  const resetSessionState = useCallback(() => {
+    setProfiles([]);
+    setActiveProfileId(null);
+    setUserProfile(null);
+    setProfileLoaded(false);
+    setMembers([]);
+    setPlans([]);
+    setProfileExpenses([]);
+    setShoppingItems([]);
+    setNotifications([]);
+    setBillTrackers([]);
+    setSavingsTrackers([]);
+    setRecurringBills([]);
+    setBillPayments([]);
+    setSavings([]);
+  }, []);
+
+  useNestLedgerBootstrap({
+    activeProfileId,
+    onSchemaMissing: isSchemaMissing,
+    onSessionCleared: resetSessionState,
+    sessionUserId,
+    setActiveProfileId,
+    setBooting,
+    setBusy,
+    setProfileLoaded,
+    setProfiles,
+    setSession,
+    setSetupMessage,
+    setUserProfile,
+  });
+
+  const { refreshProfileData, seenNotificationIds } = useProfileDataController({
+    onError: setSetupMessage,
+    selectedPlanId,
+    sessionUserId,
+    setBillPayments,
+    setBillTrackers,
+    setMembers,
+    setNotifications,
+    setPlans,
+    setProfileExpenses,
+    setRecurringBills,
+    setSavings,
+    setSavingsTrackers,
+    setSelectedPlanId,
+    setShoppingItems,
+  });
+
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId) ?? null,
     [activeProfileId, profiles],
@@ -324,315 +388,73 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     [plans, selectedPlanId],
   );
 
-  const availableViewYears = useMemo(() => {
-    if (!selectedPlan) return [new Date().getFullYear()];
-    const planExpenses = profileExpenses.filter((e) => e.plan_id === selectedPlan.id);
-    const years = new Set<number>();
-    years.add(new Date(selectedPlan.start_date).getFullYear());
-    years.add(new Date().getFullYear());
-    if (selectedPlan.end_date) years.add(new Date(selectedPlan.end_date).getFullYear());
-    planExpenses.forEach((e) => years.add(new Date(e.date).getFullYear()));
-    return [...years].sort();
-  }, [profileExpenses, selectedPlan]);
+  const availableViewYears = useMemo(
+    () => buildAvailableViewYears(profileExpenses, selectedPlan),
+    [profileExpenses, selectedPlan],
+  );
 
-  const availableViewMonths = useMemo(() => {
-    if (!selectedPlan) return [];
-    const planExpenses = profileExpenses.filter((e) => e.plan_id === selectedPlan.id);
-    const months = new Set<number>();
-    planExpenses.forEach((e) => {
-      if (new Date(e.date).getFullYear() === activeViewYear) {
-        months.add(new Date(e.date).getMonth() + 1);
-      }
-    });
-    const now = new Date();
-    if (activeViewYear === new Date(selectedPlan.start_date).getFullYear()) {
-      months.add(new Date(selectedPlan.start_date).getMonth() + 1);
-    }
-    if (activeViewYear === now.getFullYear()) {
-      months.add(now.getMonth() + 1);
-    }
-    return [...months].sort();
-  }, [profileExpenses, selectedPlan, activeViewYear]);
+  const availableViewMonths = useMemo(
+    () => buildAvailableViewMonths(activeViewYear, profileExpenses, selectedPlan),
+    [activeViewYear, profileExpenses, selectedPlan],
+  );
 
   const isViewingArchive = activeViewMonth !== 'current';
 
-  const monthFilteredExpenses = useMemo(() => {
-    if (!selectedPlan || activeViewMonth === 'current') return null;
-    return profileExpenses.filter((e) => {
-      if (e.plan_id !== selectedPlan.id) return false;
-      const d = new Date(e.date);
-      return d.getFullYear() === activeViewYear && d.getMonth() + 1 === activeViewMonth;
-    });
-  }, [profileExpenses, selectedPlan, activeViewYear, activeViewMonth]);
+  const monthFilteredExpenses = useMemo(
+    () =>
+      filterMonthExpenses({
+        activeViewMonth,
+        activeViewYear,
+        profileExpenses,
+        selectedPlan,
+      }),
+    [activeViewMonth, activeViewYear, profileExpenses, selectedPlan],
+  );
 
-  const memberMap = useMemo(() => {
-    return new Map(
-      members.map((member) => [
-        member.user_id,
-        {
-          avatar: member.user_profile?.avatar_emoji ?? '🏡',
-          email: member.user_profile?.email ?? '',
-          name: member.user_profile?.name ?? 'Member',
-        },
-      ]),
-    );
-  }, [members]);
-
-  const currentPlanExpenses = useMemo(() => {
-    return profileExpenses.filter((expense) => {
-      const plan = plans.find((p) => p.id === expense.plan_id);
-      if (!plan) return true;
-      if (expense.is_borrow) return true;
-      return new Date(expense.date) >= new Date(plan.start_date);
-    });
-  }, [profileExpenses, plans]);
-
-  const personalContributions = useMemo(() => {
-    const contributions: Record<string, { member: { avatar: string; name: string }; total: number }> = {};
-    currentPlanExpenses.forEach((expense) => {
-      if (expense.paid_by && !expense.is_borrow) {
-        const member = memberMap.get(expense.paid_by);
-        if (member) {
-          if (!contributions[expense.paid_by]) {
-            contributions[expense.paid_by] = { member, total: 0 };
-          }
-          contributions[expense.paid_by].total += Number(expense.price ?? 0);
-        }
-      }
-    });
-    return contributions;
-  }, [currentPlanExpenses, memberMap]);
-
-  const currentMonthStatsMap = useMemo(() => {
-    const monthStart = startOfMonth();
-    const map: Record<string, { spent: number; allocated: number; remaining: number }> = {};
-    plans.forEach((plan) => {
-      const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= monthStart && e.plan_id === plan.id);
-      const family = monthExpenses.filter((e) => !e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
-      const contributions = monthExpenses.filter((e) => e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
-      const borrowed = monthExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
-      const repaid = monthExpenses.filter((e) => e.is_borrow && e.price < 0).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
-      const total = family + contributions + borrowed - repaid;
-      const allocated = plan.total_amount + contributions;
-      map[plan.id] = { spent: total, allocated, remaining: Math.max(allocated - total, 0) };
-    });
-    return map;
-  }, [plans, profileExpenses]);
-
-  const currentMonthBillStatsMap = useMemo(() => {
-    const now = new Date();
-    const thisMonth = now.getMonth() + 1;
-    const thisYear = now.getFullYear();
-    const map: Record<string, { paid: number; paidCount: number; pending: number; pendingCount: number; totalCount: number }> = {};
-    billTrackers.forEach((t) => {
-      const trackerBills = recurringBills.filter((b) => b.tracker_id === t.id);
-      const trackerPmts = billPayments.filter((p) => p.tracker_id === t.id);
-      const paidBills = new Set(trackerPmts.filter((p) => p.status === 'paid' && (p.month === thisMonth && p.year === thisYear)).map((p) => p.bill_id));
-      const paid = trackerPmts.filter((p) => p.status === 'paid' && (p.month === thisMonth && p.year === thisYear)).reduce((s, p) => s + p.amount, 0);
-      const pendingBills = trackerBills.filter((b) => !paidBills.has(b.id));
-      const pending = pendingBills.reduce((s, b) => s + b.default_amount, 0);
-      map[t.id] = {
-        paid,
-        paidCount: paidBills.size,
-        pending,
-        pendingCount: pendingBills.length,
-        totalCount: trackerBills.length,
-      };
-    });
-    return map;
-  }, [billTrackers, billPayments, recurringBills]);
-
-  const currentMonthSavingsStatsMap = useMemo(() => {
-    const monthStart = startOfMonth();
-    const map: Record<string, { balance: number; deposits: number; withdrawals: number; net: number }> = {};
-    savingsTrackers.forEach((t) => {
-      const entries = savings.filter((e) => e.tracker_id === t.id);
-      const balance = entries.reduce((s, e) => s + e.amount, 0);
-      const monthEntries = entries.filter((e) => new Date(e.date) >= monthStart);
-      const deposits = monthEntries.filter((e) => e.amount > 0).reduce((s, e) => s + e.amount, 0);
-      const withdrawals = monthEntries.filter((e) => e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
-      map[t.id] = { balance, deposits, withdrawals, net: deposits - withdrawals };
-    });
-    return map;
-  }, [savings, savingsTrackers]);
-
-  const filteredShoppingItems = useMemo(() => {
-    if (shoppingFilter === 'Pending') {
-      return shoppingItems.filter((item) => !item.is_bought);
-    }
-
-    if (shoppingFilter === 'Bought') {
-      return shoppingItems.filter((item) => item.is_bought);
-    }
-
-    return shoppingItems;
-  }, [shoppingFilter, shoppingItems]);
-
-  const currentPlanMonthStats = useMemo(() => {
-    if (!selectedPlan) return { allocated: 0, borrowed: 0, contributions: 0, memberBalances: {}, remaining: 0, repaid: 0, spent: 0, totalSpent: 0 };
-    const monthStart = startOfMonth();
-    const planExpenses = currentPlanExpenses.filter((e) => e.plan_id === selectedPlan.id);
-    const monthNonBorrow = planExpenses.filter((e) => !e.is_borrow && new Date(e.date) >= monthStart);
-    const spent = monthNonBorrow.filter((e) => !e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
-    const contributions = monthNonBorrow.filter((e) => e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
-    const borrowed = planExpenses.filter((e) => e.plan_id === selectedPlan.id && e.is_borrow && e.price > 0 && new Date(e.date) >= monthStart).reduce((s, e) => s + Number(e.price ?? 0), 0);
-    const repaid = planExpenses.filter((e) => e.plan_id === selectedPlan.id && e.is_borrow && e.price < 0 && new Date(e.date) >= monthStart).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
-    const totalSpent = spent + contributions + borrowed - repaid;
-    const allocated = selectedPlan.total_amount + contributions;
-    const remaining = Math.max(allocated - totalSpent, 0);
-    const memberBalances: Record<string, { avatar: string; borrowed: number; contributed: number; name: string; owes: number; repaid: number }> = {};
-    planExpenses.filter((e) => new Date(e.date) >= monthStart).forEach((e) => {
-      if (!e.is_borrow) return;
-      const userId = e.used_by ?? e.added_by;
-      const member = memberMap.get(userId);
-      if (!member) return;
-      if (!memberBalances[userId]) memberBalances[userId] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
-      if (e.price > 0) memberBalances[userId].borrowed += e.price;
-      else memberBalances[userId].repaid += Math.abs(e.price);
-    });
-    monthNonBorrow.filter((e) => e.paid_by).forEach((e) => {
-      const member = memberMap.get(e.paid_by!);
-      if (!member) return;
-      if (!memberBalances[e.paid_by!]) memberBalances[e.paid_by!] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
-      memberBalances[e.paid_by!].contributed += Number(e.price ?? 0);
-    });
-    Object.values(memberBalances).forEach((bal) => {
-      bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
-    });
-    return { allocated, borrowed, contributions, memberBalances, remaining, repaid, spent, totalSpent };
-  }, [currentPlanExpenses, memberMap, selectedPlan]);
-
-  const filteredExpenses = useMemo(() => {
-    if (!selectedPlan) {
-      return [];
-    }
-
-    const planStartDate = new Date(selectedPlan.start_date);
-    const base = profileExpenses.filter((expense) => expense.plan_id === selectedPlan.id && !expense.is_borrow && new Date(expense.date) >= planStartDate);
-    const today = startOfToday();
-    const weekStart = startOfWeek();
-    const monthStart = startOfMonth();
-
-    return base.filter((expense) => {
-      const expenseDate = new Date(expense.date);
-      const matchesWindow =
-        expenseView === 'Day'
-          ? expenseDate >= today
-          : expenseView === 'Week'
-            ? expenseDate >= weekStart
-            : expenseDate >= monthStart;
-
-      const matchesCategory = expenseCategoryFilter === 'All' || expense.category === expenseCategoryFilter;
-      return matchesWindow && matchesCategory;
-    });
-  }, [expenseCategoryFilter, expenseView, profileExpenses, selectedPlan]);
+  const memberMap = useMemo(() => buildMemberMap(members), [members]);
+  const currentPlanExpenses = useMemo(
+    () => buildCurrentPlanExpenses(plans, profileExpenses),
+    [plans, profileExpenses],
+  );
+  const personalContributions = useMemo(
+    () => buildPersonalContributions(currentPlanExpenses, memberMap),
+    [currentPlanExpenses, memberMap],
+  );
+  const currentMonthStatsMap = useMemo(
+    () => buildCurrentMonthStatsMap(plans, profileExpenses),
+    [plans, profileExpenses],
+  );
+  const currentMonthBillStatsMap = useMemo(
+    () => buildCurrentMonthBillStatsMap(billPayments, billTrackers, recurringBills),
+    [billPayments, billTrackers, recurringBills],
+  );
+  const currentMonthSavingsStatsMap = useMemo(
+    () => buildCurrentMonthSavingsStatsMap(savings, savingsTrackers),
+    [savings, savingsTrackers],
+  );
+  const filteredShoppingItems = useMemo(
+    () => filterShoppingItems(shoppingFilter, shoppingItems),
+    [shoppingFilter, shoppingItems],
+  );
+  const currentPlanMonthStats = useMemo(
+    () => buildCurrentPlanMonthStats(currentPlanExpenses, memberMap, selectedPlan),
+    [currentPlanExpenses, memberMap, selectedPlan],
+  );
+  const filteredExpenses = useMemo(
+    () =>
+      filterExpensesForView({
+        expenseCategoryFilter,
+        expenseView,
+        profileExpenses,
+        selectedPlan,
+      }),
+    [expenseCategoryFilter, expenseView, profileExpenses, selectedPlan],
+  );
 
   const unreadCount = notifications.filter((item) => !item.is_read).length;
   const shoppingBadgeCount = notifications.filter(
     (item) => !item.is_read && item.type.startsWith('shopping_'),
   ).length;
-  const onboardingPrimaryActionText = useMemo(() => {
-    if (pendingInviteToken) {
-      return 'Continue to invitation';
-    }
-
-    return profiles.length > 0 ? 'Choose my home space' : 'Create my home space';
-  }, [pendingInviteToken, profiles.length]);
-
-  const refreshProfileData = useCallback(async (profileId: string, force?: boolean) => {
-    if (!sessionUserId) {
-      return;
-    }
-
-    const now = Date.now();
-    if (!force && now - lastRefreshRef.current < 1000) {
-      return;
-    }
-    lastRefreshRef.current = now;
-
-    try {
-      const [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications, nextBillTrackers, nextSavingsTrackers, nextBills, nextPayments, nextSavings] = await Promise.all([
-        profileApi.fetchMembers(profileId),
-        budgetApi.fetchPlans(profileId),
-        expenseApi.fetchProfileExpenses(profileId),
-        shoppingApi.fetchItems(profileId),
-        notificationApi.fetchForUser(profileId, sessionUserId),
-        billApi.fetchTrackers(profileId),
-        savingsApi.fetchTrackers(profileId),
-        billApi.fetchRecurringBills(profileId),
-        billApi.fetchPayments(profileId),
-        savingsApi.fetchSavings(profileId),
-      ]);
-
-      setMembers(nextMembers);
-      setPlans(nextPlans);
-      setProfileExpenses(nextExpenses);
-      setShoppingItems(nextShopping);
-      setNotifications(nextNotifications);
-      setBillTrackers(nextBillTrackers);
-      setSavingsTrackers(nextSavingsTrackers);
-      setRecurringBills(nextBills);
-      setBillPayments(nextPayments);
-      setSavings(nextSavings);
-      nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
-      if (selectedPlanId && !nextPlans.some((plan) => plan.id === selectedPlanId)) {
-        setSelectedPlanId(null);
-      }
-    } catch (error) {
-      const message = extractError(error);
-      setSetupMessage(message);
-    }
-  }, [selectedPlanId, sessionUserId]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const initialize = async () => {
-      if (!isConfigReady) {
-        setBooting(false);
-        return;
-      }
-
-      try {
-        const currentSession = await authApi.getSession();
-        if (mounted) {
-          setSession(currentSession);
-        }
-      } catch (error) {
-        if (mounted) {
-          setSetupMessage(extractError(error));
-        }
-      } finally {
-        if (mounted) {
-          setBooting(false);
-        }
-      }
-    };
-
-    initialize();
-
-    const subscription = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      if (!nextSession) {
-        setProfiles([]);
-        setActiveProfileId(null);
-        setUserProfile(null);
-        setProfileLoaded(false);
-        setOnboardingLoaded(false);
-        setShowOnboarding(false);
-        setMembers([]);
-        setPlans([]);
-        setProfileExpenses([]);
-        setShoppingItems([]);
-        setNotifications([]);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.data.subscription.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     if (!sessionUserId || !onboardingStorageKey) {
@@ -727,60 +549,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   };
 
   useEffect(() => {
-    if (!sessionUserId) {
-      return;
-    }
-
-    const bootstrap = async () => {
-      setBusy(true);
-
-      try {
-        const [nextUserProfile, nextProfiles] = await Promise.all([
-          profileApi.fetchUserProfile(sessionUserId),
-          profileApi.fetchAccessibleProfiles(sessionUserId),
-        ]);
-
-        setUserProfile(nextUserProfile);
-        setProfiles(nextProfiles);
-        setProfileLoaded(true);
-
-        const savedId = await AsyncStorage.getItem(`nestledger-active-profile-${sessionUserId}`);
-        const fallback = nextProfiles.find((item) => item.id === savedId)?.id ?? nextProfiles[0]?.id ?? null;
-        setActiveProfileId((previous) => previous ?? fallback);
-        setSetupMessage(null);
-      } catch (error) {
-        const message = extractError(error);
-        setProfileLoaded(true);
-        if (isSchemaMissing(message)) {
-          setSetupMessage(
-            'Supabase tables are not ready yet. Run /app/backend/supabase_schema.sql in Supabase SQL Editor or send the Transaction Pooler URI so I can apply it for you.',
-          );
-        } else {
-          setSetupMessage(message);
-        }
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    bootstrap();
-  }, [sessionUserId]);
-
-  useEffect(() => {
-    if (!sessionUserId || !activeProfileId) {
-      return;
-    }
-
-    AsyncStorage.setItem(`nestledger-active-profile-${sessionUserId}`, activeProfileId).catch(() => undefined);
-  }, [activeProfileId, sessionUserId]);
-
-  useEffect(() => {
     if (!sessionUserId || !activeProfileId) {
       return;
     }
 
     refreshProfileData(activeProfileId);
-  }, [activeProfileId, refreshProfileData, sessionUserId]);
+  }, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
 
   useEffect(() => {
     if (!sessionUserId || !activeProfileId) {
@@ -876,7 +650,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeProfileId, refreshProfileData, sessionUserId]);
+  }, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
 
   useEffect(() => {
     if (!selectedPlanId) return;
@@ -2359,23 +2133,25 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 viewYear={billViewYear}
                 years={[...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort()}
               />
-              <BillTracker
-                currencyCode={userCurrency}
-                trackerId={selectedBillTrackerId}
-                stats={currentMonthBillStatsMap[selectedBillTrackerId]}
-                actionBusy={actionBusy}
-                billPayments={billPayments}
-                members={members}
-                onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
-                onDeleteBill={handleDeleteBillFromTracker}
-                onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
-                plans={plans}
-                profileId={activeProfile?.id ?? ''}
-                recurringBills={recurringBills}
-                userId={session?.user?.id ?? ''}
-                viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
-                viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
-              />
+              <Suspense fallback={<ActivityIndicator color={theme.primary} size="large" />}>
+                <BillTracker
+                  currencyCode={userCurrency}
+                  trackerId={selectedBillTrackerId}
+                  stats={currentMonthBillStatsMap[selectedBillTrackerId]}
+                  actionBusy={actionBusy}
+                  billPayments={billPayments}
+                  members={members}
+                  onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
+                  onDeleteBill={handleDeleteBillFromTracker}
+                  onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
+                  plans={plans}
+                  profileId={activeProfile?.id ?? ''}
+                  recurringBills={recurringBills}
+                  userId={session?.user?.id ?? ''}
+                  viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
+                  viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
+                />
+              </Suspense>
             </>
           ) : null}
         </ModalScaffold>
@@ -2393,22 +2169,24 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 viewYear={savingsViewYear}
                 years={[...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort()}
               />
-              <SavingsTracker
-                currencyCode={userCurrency}
-                trackerId={selectedSavingsTrackerId}
-                stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
-                actionBusy={actionBusy}
-                members={members}
-                onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
-                onDeleteEntry={handleDeleteSavingEntry}
-                onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
-                plans={plans}
-                profileId={activeProfile?.id ?? ''}
-                savings={savings}
-                userId={session?.user?.id ?? ''}
-                viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
-                viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
-              />
+              <Suspense fallback={<ActivityIndicator color={theme.primary} size="large" />}>
+                <SavingsTracker
+                  currencyCode={userCurrency}
+                  trackerId={selectedSavingsTrackerId}
+                  stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
+                  actionBusy={actionBusy}
+                  members={members}
+                  onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
+                  onDeleteEntry={handleDeleteSavingEntry}
+                  onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+                  plans={plans}
+                  profileId={activeProfile?.id ?? ''}
+                  savings={savings}
+                  userId={session?.user?.id ?? ''}
+                  viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
+                  viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
+                />
+              </Suspense>
             </>
           ) : null}
         </ModalScaffold>
@@ -3032,19 +2810,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         </ModalScaffold>
       </Modal>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showProfileSettings}>
-        <ModalScaffold closeTestID="close-settings-modal" onClose={() => setShowProfileSettings(false)} title="Profile Settings">
-          <Text style={styles.inputLabel}>Your profile</Text>
-          <ProfileFormFields form={profileForm} onChange={setProfileForm} userOnly />
-          <LabeledInput label="Family profile name" onChangeText={(value) => setProfileForm((current) => ({ ...current, familyName: value }))} testID="settings-family-name-input" value={profileForm.familyName} />
-          <Text style={styles.inputLabel}>Family avatar</Text>
-          <AvatarPicker selected={profileForm.familyEmoji} onPick={(value) => setProfileForm((current) => ({ ...current, familyEmoji: value }))} />
-          <ModernButton loading={actionBusy} onPress={handleSaveSettings} testID="settings-save-button" text="Save changes" />
-          <ModernButton onPress={reopenOnboarding} secondary testID="settings-open-onboarding" text="View onboarding again" />
-          <ModernButton onPress={() => authApi.signOut()} secondary testID="settings-signout-button" text="Sign out" />
-          <ModernButton destructive loading={activeProfile ? deletingProfileIds.has(activeProfile.id) : false} onPress={() => activeProfile && handleDeleteSpace(activeProfile.id)} secondary testID="settings-delete-button" text="Delete space" />
-        </ModalScaffold>
-      </Modal>
+      <Suspense fallback={null}>
+        <ProfileSettingsModal
+          actionBusy={actionBusy}
+          deletingProfile={activeProfile ? deletingProfileIds.has(activeProfile.id) : false}
+          onChange={setProfileForm}
+          onClose={() => setShowProfileSettings(false)}
+          onDeleteSpace={() => activeProfile && handleDeleteSpace(activeProfile.id)}
+          onSave={handleSaveSettings}
+          onSignOut={() => authApi.signOut()}
+          profileForm={profileForm}
+          visible={showProfileSettings}
+        />
+      </Suspense>
 
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showExpenseFilters}>
         <ModalScaffold closeTestID="close-expense-filters-modal" onClose={() => setShowExpenseFilters(false)} title="Filter Expenses">
@@ -3093,15 +2871,6 @@ function EmptyState({ title, body }: { body: string; title: string }) {
     <View style={styles.emptyWrap}>
       <Text style={styles.cardTitle}>{title}</Text>
       <Text style={styles.bodyMuted}>{body}</Text>
-    </View>
-  );
-}
-
-function LabeledInput({ label, ...props }: { label: string } & TextInputProps) {
-  return (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput placeholderTextColor={theme.textMuted} style={styles.input} {...props} />
     </View>
   );
 }
@@ -3211,70 +2980,6 @@ function QuickActionCard({
   );
 }
 
-function ProfileFormFields({
-  form,
-  onChange,
-  testIDPrefix,
-  userOnly,
-}: {
-  form: CreateProfileForm;
-  onChange: (value: CreateProfileForm) => void;
-  testIDPrefix?: string;
-  userOnly?: boolean;
-}) {
-  const prefix = testIDPrefix ?? (userOnly ? 'settings' : 'create-profile');
-
-  return (
-    <>
-      <LabeledInput label="Your name" onChangeText={(value: string) => onChange({ ...form, name: value })} testID={`${prefix}-name-input`} value={form.name} />
-      <Text style={styles.inputLabel}>Choose your avatar</Text>
-      <AvatarPicker selected={form.avatarEmoji} testIDPrefix={`${prefix}-avatar`} onPick={(value) => onChange({ ...form, avatarEmoji: value })} />
-      <Text style={styles.inputLabel}>Your currency</Text>
-      <CurrencyPicker value={form.currency} onChange={(value) => onChange({ ...form, currency: value })} />
-
-      {!userOnly ? (
-        <>
-          <LabeledInput label="Family / home name" onChangeText={(value: string) => onChange({ ...form, familyName: value })} testID={`${prefix}-family-name-input`} value={form.familyName} />
-          <Text style={styles.inputLabel}>Family avatar</Text>
-          <AvatarPicker selected={form.familyEmoji} testIDPrefix={`${prefix}-family-avatar`} onPick={(value) => onChange({ ...form, familyEmoji: value })} />
-        </>
-      ) : null}
-    </>
-  );
-}
-
-function AvatarPicker({ onPick, selected, testIDPrefix }: { onPick: (value: string) => void; selected: string; testIDPrefix?: string }) {
-  return (
-    <View style={styles.avatarGrid}>
-      {avatarChoices.map((choice) => (
-        <Pressable key={choice} onPress={() => onPick(choice)} style={[styles.avatarChoice, selected === choice && styles.avatarChoiceActive]} testID={testIDPrefix ? `${testIDPrefix}-${choice}` : undefined}>
-          <Text style={styles.avatarChoiceText}>{choice}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
-function CurrencyPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <View style={styles.currencyGrid}>
-      {currencyOptions.map((opt) => {
-        const active = value === opt.code;
-        return (
-          <Pressable
-            key={opt.code}
-            onPress={() => onChange(opt.code)}
-            style={[styles.currencyChip, active && styles.currencyChipActive]}
-          >
-            <Text style={[styles.currencyChipCode, active && styles.currencyChipCodeActive]}>{opt.code}</Text>
-            <Text style={[styles.currencyChipSymbol, active && styles.currencyChipSymbolActive]}>{opt.symbol}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 function ConfirmModal({
   body,
   confirmText,
@@ -3314,49 +3019,6 @@ function ConfirmModal({
         </Pressable>
       </Pressable>
     </Modal>
-  );
-}
-
-function ModalScaffold({
-  children,
-  closeTestID,
-  onClose,
-  rightAction,
-  title,
-}: {
-  children: ReactNode;
-  closeTestID?: string;
-  onClose: () => void;
-  rightAction?: ReactNode;
-  title: string;
-}) {
-  const insets = useSafeAreaInsets();
-  return (
-    <SafeAreaView style={[styles.modalScreen, { paddingTop: insets.top }]}>
-      <View style={styles.modalHeader}>
-        <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
-          <Ionicons color={theme.text} name="close-outline" size={28} />
-        </Pressable>
-        <Text style={styles.modalTitle}>{title}</Text>
-        <View>{rightAction}</View>
-      </View>
-      <ScrollView contentContainerStyle={styles.modalContent}>{children}</ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function BottomSheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
-  return (
-    <Pressable onPress={onClose} style={styles.sheetBackdrop}>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.sheetCard}>
-        <View style={styles.sheetGrabber} />
-        <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
-          <Pressable onPress={(event) => event.stopPropagation()}>
-            {children}
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Pressable>
   );
 }
 

@@ -8,7 +8,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "node ./node_modules/eslint/bin/eslint.js .",
+    "test": "jest --runInBand",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",
@@ -21,9 +23,7 @@
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
-    "expo-font": "~14.0.11",
     "expo-linking": "~8.0.12",
-    "expo-localization": "~17.0.8",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.22",
     "expo-splash-screen": "~31.0.13",
@@ -42,10 +42,14 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
     "babel-plugin-transform-remove-console": "^6.0.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "jest-expo": "^55.0.18",
+    "react-test-renderer": "^19.1.0",
     "typescript": "~5.9.3"
   },
   "overrides": {
@@ -53,6 +57,12 @@
   },
   "resolutions": {
     "postcss": "8.5.10"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "setupFilesAfterEnv": [
+      "<rootDir>/test/setup.ts"
+    ]
   },
   "private": true,
   "packageManager": "npm@11.9.0"
