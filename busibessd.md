@@ -1,91 +1,216 @@
 # NestLedger Business Perspective Audit
 
+Date: 2026-05-17
+Status: Pre-release review after latest main changes, including multi-currency support
+
 ## Business Verdict
 
-NestLedger is a valid MVP idea, but it is not yet a strong production business app.
+NestLedger is now a stronger MVP and closer to a release candidate, but it is still not ready for public production.
 
-The problem is real: families, couples, roommates, and shared homes often struggle with shared expenses, grocery lists, and who paid for what. Apps like Splitwise, YNAB, and OurGroceries show that there is demand for shared money and household coordination tools.
+The new multi-currency support is a meaningful business improvement. Earlier, the product was easier to position as an LKR-first household finance app. Now it can support a broader household market: Sri Lanka, expat families, students, shared homes, and international households that do not use LKR.
 
-However, NestLedger's business positioning is still unclear. Right now it looks like a mix of:
+That improves the product opportunity, but it also increases the testing responsibility. Currency touches every money workflow: budgets, expenses, shopping-linked expenses, bills, savings, notifications, and summaries. A currency display bug is not cosmetic in a finance app. It directly affects user trust.
 
-- Splitwise-style shared expense tracking
-- YNAB-style family budgeting
-- OurGroceries-style shared shopping list
-- Household notification and reminder tool
+Current decision: **controlled beta after full P0 regression**, not public production.
 
-That combination is useful, but the product needs a sharper reason for users to choose it.
+## What Changed In The Latest Main Code
 
-## Main Business Problem
+Latest main includes multi-currency support.
 
-NestLedger is trying to do several things at once, but it does not yet have one very strong hook.
+Business impact:
 
-For a production app, the main point should be something like:
+- Better global positioning beyond only Sri Lankan households.
+- Stronger onboarding because users can choose their own currency.
+- Better fit for expat families, roommates, and cross-country households.
+- Higher trust if all money screens display one consistent currency.
 
-> A simple money and shopping app for families in Sri Lanka and shared households using LKR, designed to manage shared home spending without confusion.
+New business risk:
 
-That is stronger than only saying "expense manager plus shopping list."
+- Currency must be tested across all P0 money flows before release.
+- Users may lose trust quickly if one screen shows USD while another shows LKR/Rs.
+- Zero-decimal currencies and symbol display need review.
+- App store copy should avoid claiming automatic exchange-rate conversion unless the app actually supports conversion.
+
+## Updated Positioning
+
+Do not position NestLedger as a generic expense tracker.
+
+Recommended positioning:
+
+> A shared household finance app for families and roommates to manage budgets, groceries, bills, savings, and shared spending in their own currency.
+
+This is stronger than the previous LKR-only positioning because it keeps the household focus while allowing broader markets.
+
+Recommended first market message:
+
+> Manage your home money together: budgets, groceries, bills, savings, and shared expenses in one family space.
 
 ## MVP Quality
 
-As an MVP, NestLedger is good if it can prove these questions:
+What is strong now:
 
-1. Will families actually use one shared space together?
-2. Will users enter expenses regularly?
-3. Does the shopping list feature increase daily usage?
-4. Do invites work smoothly enough for non-technical family members?
-5. Is LKR/local household budgeting a real advantage over global apps?
+- Shared household profiles are a good foundation.
+- Expenses, shopping, bills, and savings now fit one real household workflow.
+- Multi-currency makes the app more flexible for different markets.
+- Invite flow is backend-tested.
+- Backend pytest passed: 5/5 tests, 0 failures, 0 skipped.
+- Frontend TypeScript passed after latest main pull.
+- npm audit passed with 0 vulnerabilities.
+- Security hardening is improved through restricted backend CORS.
+- Debug logging risk has been reduced.
 
-If the MVP can answer those questions, it has value. But for production, the business must prove retention, not just features.
+What still needs proof:
 
-## What Is Missing For Production Business Level
+- Full P0 regression after the multi-currency merge.
+- Currency consistency across dashboard, budget, expense, shopping, bills, savings, and notifications.
+- Two-user realtime behavior after the modular UI and currency changes.
+- Real Android/iOS push notification delivery on physical devices.
+- Real household usability: can non-technical family members understand and use it without help?
 
-The biggest missing pieces are:
+## P0 Business Regression Focus
 
-- Clear target customer: families, couples, roommates, students, Sri Lankan households, or global users?
-- Clear unique selling point: why NestLedger instead of Splitwise, YNAB, Google Sheets, WhatsApp, or a notes app?
-- Pricing model: free, subscription, family plan, ads, premium reports, or a freemium model?
-- Trust story: users are entering financial data, so privacy and security messaging must be strong.
-- Onboarding: first-time users must understand the value in under 1 minute.
-- App store readiness: screenshots, description, support email, privacy policy, FAQ, and ratings strategy.
-- Customer support process: users need help with login, invites, lost data, family members, and wrong expenses.
-- Retention loop: daily reminder, weekly summary, monthly budget close, shopping usage, and family notifications.
-- Market validation: at least 20 to 50 real households should test it before public launch.
+The P0 regression checklist now needs currency checks because currency is part of the core financial experience.
+
+Must-pass P0 areas:
+
+- Signup and signin
+- Create profile with selected currency
+- Currency persistence after signout/signin
+- Budget create/edit/delete/reset with correct currency display
+- Expense add/edit/delete with correct totals
+- Shopping item bought with linked expense and correct currency
+- Borrow/repay member balance with correct currency
+- Bill payment with correct currency and budget link behavior
+- Savings deposit/withdraw/delete with correct currency totals
+- Invite second user and accept invite
+- Member view
+- Notifications receive/read
+- Realtime updates across two sessions
+
+If any currency flow displays the wrong symbol, wrong rounding, or inconsistent totals, public release should be blocked.
+
+## Production Business Readiness
+
+Current score:
+
+- Idea: 8/10
+- MVP feature set: 8.5/10
+- Technical gate confidence: 7/10
+- Market clarity: 6/10
+- Monetization readiness: 3/10
+- Customer trust readiness: 6/10
+- Overall production business readiness: 6.5/10
+
+The score improved because multi-currency broadens market fit and backend tests are passing. It is still below production-ready because app-level regression and real-device push validation remain incomplete.
+
+## Main Launch Risks
+
+### 1. Trust Risk
+
+Users are entering household money data. Trust is the product.
+
+Needed before launch:
+
+- Clear privacy policy
+- Support contact
+- Data deletion explanation
+- Secure invite behavior
+- No sensitive production logs
+- Consistent currency formatting across all money screens
+- Clear explanation that the app records values in the chosen currency and does not automatically convert exchange rates unless that feature is added later
+
+### 2. Reliability Risk
+
+Backend pytest passing is a strong signal, but production reliability depends on end-to-end user flows.
+
+Needed before launch:
+
+- Full P0 regression report
+- Currency regression evidence
+- Two-user realtime validation
+- Android and iOS push validation
+- Evidence that bills and savings still work after the multi-currency merge
+
+### 3. Positioning Risk
+
+Multi-currency can make the app more global, but the product should not become too broad.
+
+Keep the wedge focused:
+
+- Shared household budget
+- Grocery spending
+- Bills and savings in one home space
+- Easy invite for spouse, family, or roommate
+- User-selected currency
+
+Avoid claiming:
+
+- Bank sync
+- Tax support
+- Investment tracking
+- Automatic exchange-rate conversion
+- Enterprise accounting
+
+### 4. Retention Risk
+
+A finance app only becomes a business if people use it every week.
+
+Retention loops to validate:
+
+- Weekly home spending summary
+- Monthly budget reset/close
+- Shopping-to-expense conversion
+- Bill payment reminders
+- Savings progress tracking
+- Family notifications
+
+## Recommended Pre-Release Business Plan
+
+1. Run the full P0 checklist after the multi-currency merge.
+2. Include currency checks in every money flow.
+3. Validate push notifications on one Android and one iOS physical device.
+4. Test with 5 to 10 real households before public launch.
+5. Rewrite app store messaging around shared household finance, not generic expense tracking.
+6. Prepare privacy, support, FAQ, screenshots, and onboarding copy.
+7. Track MVP metrics:
+   - household created
+   - currency selected
+   - second member invited
+   - first budget created
+   - first shopping item bought
+   - first bill paid
+   - first savings entry added
+   - week-two return
 
 ## Popular App Lessons
 
 Splitwise wins because it has one clear job: who owes who.
 
-YNAB wins because it sells a method: control your money before spending it.
+YNAB wins because it sells a method: control money before spending.
 
-OurGroceries wins because it is simple and daily: everyone sees the same shopping list instantly.
+OurGroceries wins because it is simple and daily.
 
-NestLedger should not compete with all of them at once. It should pick a focused wedge, for example:
+NestLedger should combine those lessons carefully, but not try to look like all three.
 
-> The shared home budget app for families who manage groceries, bills, and daily expenses together.
+The focused wedge should be:
 
-## Recommended Business Direction
+> The shared household budget and grocery money app, in your currency.
 
-For the first production version, focus on:
+## Release Recommendation
 
-1. Shared household expense tracking
-2. Monthly family budget
-3. Shared shopping list connected to spending
-4. Simple invite flow
-5. LKR-first experience
-6. Weekly/monthly summary
+Do not release publicly yet.
 
-Do not over-focus on advanced analytics, many roles, bank sync, or complex finance features yet.
+The app is acceptable for a controlled beta only after the updated P0 regression passes. For public production, finish:
 
-## Production Readiness From Business View
-
-- Idea: 7/10
-- MVP feature set: 7/10
-- Market clarity: 4/10
-- Monetization readiness: 3/10
-- Production business readiness: 5/10
+- Full P0 regression evidence, including currency
+- Real-device push validation
+- App store readiness materials
+- Real household pilot feedback
 
 ## Final Business Conclusion
 
-NestLedger is a good MVP, but it is not yet production business-ready.
+NestLedger is becoming a serious household finance product. Multi-currency support makes the opportunity bigger and the product less limited to one local market.
 
-Before releasing publicly, define the target market, test with real families, simplify the product promise, prepare the trust/support/release materials, and measure whether users return every week.
+But production business readiness is not only about having more features. For a finance-related family app, production means users can trust every amount, every currency symbol, every invite, every notification, and every realtime update.
+
+Current decision: **controlled beta ready only after P0 regression passes; not public production-ready until push validation and real household pilot feedback are complete**.

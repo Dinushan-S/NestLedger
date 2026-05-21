@@ -246,6 +246,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [authBusy, setAuthBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const sessionUserId = session?.user?.id;
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -286,8 +287,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingLoaded, setOnboardingLoaded] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const onboardingStorageKey = sessionUserId ? `nestledger-onboarding-seen-${sessionUserId}` : null;
   const userCurrency = userProfile?.currency ?? 'USD';
   const c = useCallback((value: number) => formatCurrency(value, userCurrency), [userCurrency]);
 
@@ -451,6 +455,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const shoppingBadgeCount = notifications.filter(
     (item) => !item.is_read && item.type.startsWith('shopping_'),
   ).length;
+
+  useEffect(() => {
+    if (!sessionUserId || !onboardingStorageKey) {
+      setOnboardingLoaded(false);
+      setShowOnboarding(false);
+      return;
+    }
+
+    let mounted = true;
+
+    AsyncStorage.getItem(onboardingStorageKey)
+      .then((savedValue) => {
+        if (!mounted) {
+          return;
+        }
+
+        setShowOnboarding(savedValue !== 'true');
+        setOnboardingLoaded(true);
+      })
+      .catch(() => {
+        if (!mounted) {
+          return;
+        }
+
+        setShowOnboarding(true);
+        setOnboardingLoaded(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [onboardingStorageKey, sessionUserId]);
 
   // Load reminder settings
   useEffect(() => {
@@ -709,6 +745,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setAuthBusy(false);
     }
   };
+
+  const completeOnboarding = useCallback(async () => {
+    setShowProfileSettings(false);
+    setShowOnboarding(false);
+
+    if (!onboardingStorageKey) {
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem(onboardingStorageKey, 'true');
+    } catch {
+      // Silent: failing to persist should not block the user from moving forward.
+    }
+  }, [onboardingStorageKey]);
 
   const handleCreateProfile = async () => {
     if (!session?.user) {
@@ -1350,12 +1401,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }, [announce, runAction, session]);
 
   useEffect(() => {
-    if (!session || !pendingInviteToken) {
+    if (!session || !pendingInviteToken || showOnboarding) {
       return;
     }
 
     acceptInviteFlow(pendingInviteToken);
-  }, [acceptInviteFlow, pendingInviteToken, session]);
+  }, [acceptInviteFlow, pendingInviteToken, session, showOnboarding]);
 
   const handleSaveSettings = async () => {
     if (!session?.user || !activeProfile) {
@@ -1393,6 +1444,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
     setShowProfileSettings(true);
   };
+
+  const reopenOnboarding = useCallback(() => {
+    setShowProfileSettings(false);
+    setShowOnboarding(true);
+  }, []);
 
   const handleDeleteSpace = async (profileId: string) => {
     if (!session?.user) {
@@ -1529,8 +1585,18 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     );
   }
 
-  if (session && !profileLoaded) {
+  if (session && (!profileLoaded || !onboardingLoaded)) {
     return <SplashScreen />;
+  }
+
+  if (showOnboarding) {
+    return (
+      <OnboardingCarousel
+        onComplete={completeOnboarding}
+        onSkip={completeOnboarding}
+        primaryActionText={onboardingPrimaryActionText}
+      />
+    );
   }
 
   if (!userProfile || profiles.length === 0 || showCreateProfile) {
