@@ -22,7 +22,7 @@ create table if not exists public.savings_trackers (
 
 create index if not exists idx_savings_trackers_profile_id on public.savings_trackers(profile_id);
 
--- 3. Add tracker_id columns (safe to re-run)
+-- 3. Add bill/savings compatibility columns (safe to re-run)
 do $$
 begin
   if not exists (
@@ -36,6 +36,12 @@ begin
     where table_name = 'bill_payments' and column_name = 'tracker_id'
   ) then
     alter table public.bill_payments add column tracker_id uuid references public.bill_trackers(id) on delete cascade;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'bill_payments' and column_name = 'name'
+  ) then
+    alter table public.bill_payments add column name text;
   end if;
   if not exists (
     select 1 from information_schema.columns
