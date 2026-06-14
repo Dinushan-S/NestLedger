@@ -13,12 +13,15 @@ export type UserProfile = {
   user_id: string;
 };
 
+export type SpaceType = 'personal' | 'family' | 'trip_family' | 'trip_friends' | 'shared_living';
+
 export type HouseholdProfile = {
   created_at: string;
   created_by: string;
   emoji_avatar: string | null;
   id: string;
   name: string;
+  space_type: SpaceType;
   bill_tracker_enabled: boolean;
   savings_tracker_enabled: boolean;
 };
@@ -166,6 +169,7 @@ type CreateHouseholdPayload = {
   familyEmoji: string;
   familyName: string;
   name: string;
+  spaceType: SpaceType;
   user: User;
 };
 
@@ -264,6 +268,7 @@ export const profileApi = {
       created_by: payload.user.id,
       emoji_avatar: payload.familyEmoji,
       name: payload.familyName.trim(),
+      space_type: payload.spaceType,
     };
 
     const { data: profile, error: profileError } = await supabase.from('profiles').insert(profileInsert).select('*').single();
@@ -319,7 +324,7 @@ export const profileApi = {
     if (error) throw error;
     return data as HouseholdProfile;
   },
-  async updateHousehold(profileId: string, values: Partial<Pick<HouseholdProfile, 'bill_tracker_enabled' | 'emoji_avatar' | 'name' | 'savings_tracker_enabled'>>) {
+  async updateHousehold(profileId: string, values: Partial<Pick<HouseholdProfile, 'bill_tracker_enabled' | 'emoji_avatar' | 'name' | 'savings_tracker_enabled' | 'space_type'>>) {
     const { data, error } = await supabase
       .from('profiles')
       .update(values)

@@ -34,6 +34,7 @@ import {
   monthNames,
   shoppingCategories,
   shoppingFilters,
+  getCycleStart,
   startOfMonth,
   theme,
 } from '../../constants/nestledger';
@@ -49,6 +50,7 @@ import {
   SavingsEntry,
   SavingsTrackerMeta,
   ShoppingItem,
+  SpaceType,
   UserProfile,
   authApi,
   billApi,
@@ -94,8 +96,8 @@ import {
   filterShoppingItems,
 } from './selectors';
 
-const BillTracker = lazy(() => import('./BillTracker'));
-const SavingsTracker = lazy(() => import('./SavingsTracker'));
+import { BillTracker as BillTrackerComponent } from './BillTracker';
+import { SavingsTracker as SavingsTrackerComponent } from './SavingsTracker';
 const ProfileSettingsModal = lazy(() =>
   import('./settings/ProfileSettingsModal').then((module) => ({
     default: module.ProfileSettingsModal,
@@ -164,6 +166,7 @@ const defaultCreateProfileForm: CreateProfileForm = {
   familyEmoji: avatarChoices[1],
   familyName: '',
   name: '',
+  spaceType: 'personal',
 };
 
 const defaultBudgetForm = (): BudgetForm => {
@@ -236,6 +239,28 @@ const notificationTypes = {
   shoppingBought: 'shopping_item_bought',
 };
 
+const SPACE_TYPES: { type: SpaceType; emoji: string; label: string; desc: string }[] = [
+  { type: 'personal',     emoji: '🙋', label: 'Personal',      desc: 'Track your own spending. Add a partner anytime.' },
+  { type: 'family',       emoji: '🏠', label: 'Family / Home', desc: 'Household budget shared with your family.' },
+  { type: 'trip_family',  emoji: '✈️', label: 'Family Trip',   desc: 'Travel budget for the whole family.' },
+  { type: 'trip_friends', emoji: '🧳', label: 'Friend Trip',   desc: 'Trip with friends — track who paid what.' },
+  { type: 'shared_living',emoji: '🏡', label: 'Shared Living', desc: 'Friends sharing a house or flat.' },
+];
+
+const spaceTypeName = (type?: string | null): string => {
+  switch (type) {
+    case 'personal':      return 'Personal';
+    case 'family':        return 'Home';
+    case 'trip_family':   return 'Trip';
+    case 'trip_friends':  return 'Trip';
+    case 'shared_living': return 'Shared Living';
+    default:              return 'Space';
+  }
+};
+
+const isSplitSpace = (type?: string | null) =>
+  type === 'trip_friends' || type === 'shared_living';
+
 export default function NestLedgerApp({ initialInviteToken }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -279,6 +304,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showBorrowComposer, setShowBorrowComposer] = useState(false);
   const [showRepayComposer, setShowRepayComposer] = useState(false);
   const [editingBorrowId, setEditingBorrowId] = useState<string | null>(null);
+  const [expandedBorrowUser, setExpandedBorrowUser] = useState<string | null>(null);
   const [borrowForm, setBorrowForm] = useState<BorrowForm>({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' });
   const [repayForm, setRepayForm] = useState<RepayForm>({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) });
   const [showShoppingComposer, setShowShoppingComposer] = useState(false);
@@ -292,6 +318,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [onboardingLoaded, setOnboardingLoaded] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const [profileSetupStep, setProfileSetupStep] = useState<'type' | 'details'>('type');
+  const [showBreakdownDetails, setShowBreakdownDetails] = useState(false);
+  const [migrationSpaceType, setMigrationSpaceType] = useState<SpaceType>('family');
+  const [migrationCardVisible, setMigrationCardVisible] = useState(false);
   const onboardingStorageKey = sessionUserId ? `nestledger-onboarding-seen-${sessionUserId}` : null;
   const onboardingPrimaryActionText = userProfile && profiles.length > 0 ? 'Open your space' : 'Continue to setup';
   const userCurrency = userProfile?.currency ?? 'USD';
@@ -396,6 +426,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     () => plans.find((plan) => plan.id === selectedPlanId) ?? null,
     [plans, selectedPlanId],
   );
+
+  // Derived space helpers
+  const showSplitFields = isSplitSpace(activeProfile?.space_type);
 
   const availableViewYears = useMemo(
     () => buildAvailableViewYears(profileExpenses, selectedPlan),
@@ -565,6 +598,18 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     refreshProfileData(activeProfileId);
   }, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
 
+  // Show migration card for existing users who haven't set their space type yet
+  useEffect(() => {
+    if (!activeProfileId || !activeProfile) return;
+    const key = `nestledger-space-type-set-${activeProfileId}`;
+    AsyncStorage.getItem(key).then((val) => {
+      if (!val) {
+        setMigrationSpaceType((activeProfile.space_type as SpaceType) ?? 'family');
+        setMigrationCardVisible(true);
+      }
+    }).catch(() => {});
+  }, [activeProfileId, activeProfile]);
+
   useEffect(() => {
     if (!sessionUserId || !activeProfileId) {
       return;
@@ -665,6 +710,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     if (!selectedPlanId) return;
     setActiveViewYear(new Date().getFullYear());
     setActiveViewMonth('current');
+    setShowBreakdownDetails(false);
   }, [selectedPlanId]);
 
   useEffect(() => {
@@ -816,7 +862,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     if (!profileForm.name.trim() || !profileForm.familyName.trim()) {
-      announce('Add your name and the family profile name first.');
+      announce('Add your name and the space name first.');
       return;
     }
 
@@ -827,6 +873,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         familyEmoji: profileForm.familyEmoji,
         familyName: profileForm.familyName,
         name: profileForm.name,
+        spaceType: (profileForm.spaceType as SpaceType) ?? 'personal',
         user: session.user,
       });
 
@@ -1113,8 +1160,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               category,
               date: new Date(expenseForm.date).toISOString(),
               description: expenseForm.description.trim() || null,
-              paid_by: expenseForm.paidBy,
-              used_by: expenseForm.paidBy === null ? expenseForm.usedBy : null,
+              paid_by: showSplitFields ? expenseForm.paidBy : null,
+              used_by: showSplitFields && expenseForm.paidBy === null ? expenseForm.usedBy : null,
             } as any,
             items
           );
@@ -1126,10 +1173,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             description: expenseForm.description.trim() || null,
             is_borrow: expenseForm.is_borrow,
             items,
-            paid_by: expenseForm.paidBy,
+            paid_by: showSplitFields ? expenseForm.paidBy : null,
             plan_id: selectedPlan.id,
             profile_id: selectedPlan.profile_id,
-            used_by: expenseForm.paidBy === null ? expenseForm.usedBy : null,
+            used_by: showSplitFields && expenseForm.paidBy === null ? expenseForm.usedBy : null,
           });
           const itemNames = items.map(i => i.name).join(', ');
           await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
@@ -1465,6 +1512,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       await profileApi.updateHousehold(activeProfile.id, {
         emoji_avatar: profileForm.familyEmoji,
         name: profileForm.familyName,
+        space_type: (profileForm.spaceType as SpaceType) ?? 'personal',
       });
 
       const [nextUserProfile, nextProfiles] = await Promise.all([
@@ -1484,6 +1532,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       familyEmoji: activeProfile?.emoji_avatar ?? avatarChoices[1],
       familyName: activeProfile?.name ?? '',
       name: userProfile?.name ?? '',
+      spaceType: activeProfile?.space_type ?? 'personal',
     });
     setShowProfileSettings(true);
   };
@@ -1539,20 +1588,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
   };
 
-  const monthlySpend = useMemo(() => {
-    const monthStart = startOfMonth();
-    return profileExpenses
-      .filter((item) => !item.is_borrow && new Date(item.date) >= monthStart)
-      .reduce((total, item) => total + Number(item.price), 0);
-  }, [profileExpenses]);
-
   const latestActivities = notifications.slice(0, 4);
   const activeBudget = plans[0];
+
+  const monthlySpend = useMemo(() => {
+    const cycleStart = activeBudget ? getCycleStart(activeBudget.start_date) : startOfMonth();
+    return profileExpenses
+      .filter((item) => !item.is_borrow && new Date(item.date) >= cycleStart)
+      .reduce((total, item) => total + Number(item.price), 0);
+  }, [activeBudget, profileExpenses]);
+
   const currentMonthPlanStatsDashboard = useMemo(() => {
     if (!activeBudget) return { spent: 0, contributions: 0 };
     const planId = activeBudget.id;
-    const monthStart = startOfMonth();
-    const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= monthStart && e.plan_id === planId);
+    const cycleStart = getCycleStart(activeBudget.start_date);
+    const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= cycleStart && e.plan_id === planId);
     const family = monthExpenses.filter((e) => !e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
     const contributions = monthExpenses.filter((e) => e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
     const borrowed = monthExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
@@ -1577,7 +1627,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   if (!session) {
     return (
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={styles.authWrap}>
+        <ScrollView contentContainerStyle={styles.authWrap} showsVerticalScrollIndicator={false}>
           <BentoCard tone="highlight" style={styles.authCard}>
             <Text style={styles.kicker}>NestLedger</Text>
             <Text style={styles.heroTitle}>Shared home budgeting without the chaos.</Text>
@@ -1639,16 +1689,61 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   if (!userProfile || profiles.length === 0 || showCreateProfile) {
     const isFirstSetup = !userProfile || profiles.length === 0;
+
+    if (profileSetupStep === 'type') {
+      return (
+        <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
+          <ScrollView contentContainerStyle={styles.authWrap} showsVerticalScrollIndicator={false}>
+            <BentoCard tone="highlight" style={styles.authCard}>
+              <Text style={styles.kicker}>{isFirstSetup ? 'Welcome to NestLedger' : 'New space'}</Text>
+              <Text style={styles.heroTitle}>What would you like to track?</Text>
+              <Text style={styles.bodyMuted}>Choose a space type — you can always change it later in settings.</Text>
+              <View style={styles.spaceTypeGrid}>
+                {SPACE_TYPES.map((st) => {
+                  const selected = profileForm.spaceType === st.type;
+                  return (
+                    <Pressable
+                      key={st.type}
+                      onPress={() => setProfileForm({ ...profileForm, spaceType: st.type })}
+                      style={[styles.spaceTypeCard, selected && styles.spaceTypeCardActive]}
+                    >
+                      <Text style={styles.spaceTypeEmoji}>{st.emoji}</Text>
+                      <Text style={[styles.spaceTypeLabel, selected && styles.spaceTypeLabelActive]}>{st.label}</Text>
+                      <Text style={[styles.spaceTypeDesc, selected && styles.spaceTypeDescActive]}>{st.desc}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ModernButton
+                onPress={() => setProfileSetupStep('details')}
+                testID="space-type-next"
+                text="Continue →"
+              />
+              {!isFirstSetup ? (
+                <ModernButton onPress={() => setShowCreateProfile(false)} secondary testID="create-profile-cancel" text="Cancel" />
+              ) : null}
+            </BentoCard>
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
+
     return (
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={styles.authWrap}>
+        <ScrollView contentContainerStyle={styles.authWrap} showsVerticalScrollIndicator={false}>
           <BentoCard tone="highlight" style={styles.authCard}>
-            <Text style={styles.kicker}>{isFirstSetup ? 'Set up your shared home' : 'Create new space'}</Text>
-            <Text style={styles.heroTitle}>{isFirstSetup ? 'Create your first NestLedger profile.' : 'Add another family space.'}</Text>
-            <Text style={styles.bodyMuted}>{isFirstSetup ? 'This creates your member identity and the first family/home space.' : 'Create a separate budget space for another household or family.'}</Text>
+            <Pressable onPress={() => setProfileSetupStep('type')} style={styles.backRow}>
+              <Ionicons color={theme.primary} name="chevron-back" size={18} />
+              <Text style={styles.backRowText}>Change type</Text>
+            </Pressable>
+            <Text style={styles.kicker}>{isFirstSetup ? 'Set up your space' : 'Create new space'}</Text>
+            <Text style={styles.heroTitle}>
+              {SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.emoji}{' '}
+              {SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.label}
+            </Text>
             <ProfileFormFields form={profileForm} onChange={setProfileForm} />
             {setupMessage ? <Text style={styles.errorText}>{setupMessage}</Text> : null}
-            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text={isFirstSetup ? 'Create NestLedger space' : 'Create space'} />
+            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text={isFirstSetup ? 'Create space' : 'Create space'} />
             {!isFirstSetup ? (
               <ModernButton onPress={() => setShowCreateProfile(false)} secondary testID="create-profile-cancel" text="Cancel" />
             ) : null}
@@ -1661,11 +1756,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   if (!activeProfile || showProfileSwitcher) {
     return (
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={styles.switcherWrap}>
+        <ScrollView contentContainerStyle={styles.switcherWrap} showsVerticalScrollIndicator={false}>
           <View style={styles.switcherHeader}>
             <Text style={styles.kicker}>Choose profile</Text>
-            <Text style={styles.sectionTitle}>Pick your family space</Text>
-            <Text style={styles.bodyMuted}>All homes you’re part of appear here. You can also create a new one.</Text>
+            <Text style={styles.sectionTitle}>Your spaces</Text>
+            <Text style={styles.bodyMuted}>All budget spaces you’re part of appear here.</Text>
           </View>
 
           {profiles.map((profile) => (
@@ -1682,13 +1777,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               <Text style={styles.switcherEmoji}>{profile.emoji_avatar ?? '🏡'}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{profile.name}</Text>
-                <Text style={styles.bodyMuted}>Created {formatShortDate(profile.created_at)} • Hold to delete</Text>
+                <Text style={styles.bodyMuted}>{spaceTypeName(profile.space_type)} • {formatShortDate(profile.created_at)} • Hold to delete</Text>
               </View>
               <Ionicons color={theme.primary} name="chevron-forward" size={20} />
             </Pressable>
           ))}
 
-            <ModernButton onPress={() => setShowCreateProfile(true)} secondary testID="profile-switcher-create" text="Create another space" />
+            <ModernButton onPress={() => { setProfileSetupStep('type'); setShowCreateProfile(true); }} secondary testID="profile-switcher-create" text="Create another space" />
           <ModernButton onPress={() => authApi.signOut()} secondary testID="profile-switcher-signout" text="Sign out" />
         </ScrollView>
       </SafeAreaView>
@@ -1705,7 +1800,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               <Text style={styles.switcherEmoji}>{activeProfile.emoji_avatar ?? '🏡'}</Text>
               <View>
                 <Text style={styles.topBarTitle}>{activeProfile.name}</Text>
-                <Text style={styles.topBarSubtitle}>{userProfile.name}</Text>
+                <Text style={styles.topBarSubtitle}>{userProfile.name} · {spaceTypeName(activeProfile.space_type)}</Text>
               </View>
               <Ionicons color={theme.textMuted} name="chevron-down" size={16} />
             </Pressable>
@@ -1737,18 +1832,88 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 <View style={styles.sectionGap}>
                   <BentoCard tone="highlight">
                     <Text style={styles.kicker}>Dashboard</Text>
-                    <Text style={styles.heroTitle}>{c(monthlySpend)} spent this month</Text>
-                    <Text style={styles.bodyMuted}>Keep your family budget clear, shared, and calm.</Text>
+                    <Text style={styles.heroTitle}>{activeBudget?.name ?? 'No budget yet'}</Text>
+                    <View style={styles.breakdownSummaryRow}>
+                      <View style={styles.breakdownStat}>
+                        <Text style={styles.breakdownStatValue}>{c(activeBudget?.total_amount ?? 0)}</Text>
+                        <Text style={styles.breakdownStatLabel}>Budget</Text>
+                      </View>
+                      <View style={styles.breakdownStat}>
+                        <Text style={styles.breakdownStatValue}>{c(currentMonthPlanStatsDashboard.spent)}</Text>
+                        <Text style={styles.breakdownStatLabel}>Spent</Text>
+                      </View>
+                      <View style={styles.breakdownStat}>
+                        <Text style={[styles.breakdownStatValue, {
+                          color: (activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent > 0
+                            ? theme.success
+                            : theme.danger,
+                        }]}>
+                          {c(Math.max((activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent, 0))}
+                        </Text>
+                        <Text style={styles.breakdownStatLabel}>Remaining</Text>
+                      </View>
+                    </View>
+                    <View style={styles.spacer12} />
+                    <ProgressBar
+                      progress={activeBudget
+                        ? currentMonthPlanStatsDashboard.spent / Math.max(activeBudget.total_amount, 1)
+                        : 0}
+                    />
                   </BentoCard>
+
+                  {migrationCardVisible ? (
+                    <BentoCard>
+                      <Text style={styles.inputLabel}>What kind of space is this?</Text>
+                      <Text style={styles.bodyMuted}>We've added space types so NestLedger shows only what's relevant for you. Tap your type below.</Text>
+                      <View style={styles.spaceTypeGrid}>
+                        {SPACE_TYPES.map((st) => {
+                          const selected = migrationSpaceType === st.type;
+                          return (
+                            <Pressable
+                              key={st.type}
+                              onPress={() => setMigrationSpaceType(st.type)}
+                              style={[styles.spaceTypeCard, selected && styles.spaceTypeCardActive]}
+                            >
+                              <Text style={styles.spaceTypeEmoji}>{st.emoji}</Text>
+                              <Text style={[styles.spaceTypeLabel, selected && styles.spaceTypeLabelActive]}>{st.label}</Text>
+                              <Text style={[styles.spaceTypeDesc, selected && styles.spaceTypeDescActive]}>{st.desc}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.spacer12} />
+                      <ModernButton
+                        loading={actionBusy}
+                        onPress={async () => {
+                          if (!activeProfileId) return;
+                          await runAction(async () => {
+                            await profileApi.updateHousehold(activeProfileId, { space_type: migrationSpaceType });
+                            await AsyncStorage.setItem(`nestledger-space-type-set-${activeProfileId}`, 'true');
+                            setProfiles((prev) =>
+                              prev.map((p) =>
+                                p.id === activeProfileId ? { ...p, space_type: migrationSpaceType } : p,
+                              ),
+                            );
+                            setMigrationCardVisible(false);
+                          });
+                        }}
+                        testID="migration-card-save"
+                        text="Save space type"
+                      />
+                      <ModernButton
+                        onPress={() => setMigrationCardVisible(false)}
+                        secondary
+                        testID="migration-card-dismiss"
+                        text="Remind me later"
+                      />
+                    </BentoCard>
+                  ) : null}
 
                   <View style={[styles.bentoRow, isTablet && { justifyContent: 'space-between' }]}> 
                     <BentoCard style={{ width: bentoWidth }}>
-                      <Text style={styles.cardEyebrow}>Active budget</Text>
-                      <Text style={styles.cardTitle}>{activeBudget?.name ?? 'No plan yet'}</Text>
+                      <Text style={styles.cardEyebrow}>Current cycle</Text>
                       <Text style={styles.metricText}>{c(currentMonthPlanStatsDashboard.spent)}</Text>
-                      <Text style={styles.bodyMuted}>of {c((activeBudget?.total_amount ?? 0) + currentMonthPlanStatsDashboard.contributions)} allocated</Text>
-                      <View style={styles.spacer12} />
-                      <ProgressBar progress={activeBudget ? currentMonthPlanStatsDashboard.spent / Math.max(activeBudget.total_amount + currentMonthPlanStatsDashboard.contributions, 1) : 0} />
+                      <Text style={styles.bodyMuted}>spent · {c(Math.max((activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent, 0))} left</Text>
                     </BentoCard>
 
                     <BentoCard style={{ width: bentoWidth }}>
@@ -1775,9 +1940,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
                     <BentoCard style={{ width: bentoWidth }}>
                       <Text style={styles.cardEyebrow}>Savings</Text>
-                      {savings.length > 0 ? (
+                      {savingsTrackers.length > 0 ? (
                         <>
-                          <Text style={styles.metricText}>{c(savings.reduce((s, e) => s + e.amount, 0))}</Text>
+                          <Text style={styles.metricText}>{c(Object.values(currentMonthSavingsStatsMap).reduce((sum, s) => sum + s.balance, 0))}</Text>
                           <Text style={styles.bodyMuted}>total saved across all plans</Text>
                         </>
                       ) : (
@@ -2191,34 +2356,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   </BentoCard>
                 </View>
               ) : (
-                <Suspense
-                  fallback={
-                    <View style={styles.centerWrap}>
-                      <BentoCard tone="highlight" style={styles.centerCard}>
-                        <ActivityIndicator color={theme.primary} size="large" />
-                        <Text style={styles.bodyMuted}>Opening bill tracker…</Text>
-                      </BentoCard>
-                    </View>
-                  }
-                >
-                  <BillTracker
-                    currencyCode={userCurrency}
-                    trackerId={selectedBillTrackerId}
-                    stats={currentMonthBillStatsMap[selectedBillTrackerId]}
-                    actionBusy={actionBusy}
-                    billPayments={billPayments}
-                    members={members}
-                    onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
-                    onDeleteBill={handleDeleteBillFromTracker}
-                    onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
-                    plans={plans}
-                    profileId={activeProfile?.id ?? ''}
-                    recurringBills={recurringBills}
-                    userId={session?.user?.id ?? ''}
-                    viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
-                    viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
-                  />
-                </Suspense>
+                <BillTrackerComponent
+                  currencyCode={userCurrency}
+                  trackerId={selectedBillTrackerId}
+                  stats={currentMonthBillStatsMap[selectedBillTrackerId]}
+                  actionBusy={actionBusy}
+                  billPayments={billPayments}
+                  members={members}
+                  onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
+                  onDeleteBill={handleDeleteBillFromTracker}
+                  onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
+                  plans={plans}
+                  profileId={activeProfile?.id ?? ''}
+                  recurringBills={recurringBills}
+                  userId={session?.user?.id ?? ''}
+                  viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
+                  viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
+                />
               )}
             </>
           ) : null}
@@ -2245,33 +2399,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   </BentoCard>
                 </View>
               ) : (
-                <Suspense
-                  fallback={
-                    <View style={styles.centerWrap}>
-                      <BentoCard tone="highlight" style={styles.centerCard}>
-                        <ActivityIndicator color={theme.primary} size="large" />
-                        <Text style={styles.bodyMuted}>Opening savings tracker…</Text>
-                      </BentoCard>
-                    </View>
-                  }
-                >
-                  <SavingsTracker
-                    currencyCode={userCurrency}
-                    trackerId={selectedSavingsTrackerId}
-                    stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
-                    actionBusy={actionBusy}
-                    members={members}
-                    onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
-                    onDeleteEntry={handleDeleteSavingEntry}
-                    onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
-                    plans={plans}
-                    profileId={activeProfile?.id ?? ''}
-                    savings={savings}
-                    userId={session?.user?.id ?? ''}
-                    viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
-                    viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
-                  />
-                </Suspense>
+                <SavingsTrackerComponent
+                  currencyCode={userCurrency}
+                  trackerId={selectedSavingsTrackerId}
+                  stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
+                  actionBusy={actionBusy}
+                  members={members}
+                  onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
+                  onDeleteEntry={handleDeleteSavingEntry}
+                  onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+                  plans={plans}
+                  profileId={activeProfile?.id ?? ''}
+                  savings={savings}
+                  userId={session?.user?.id ?? ''}
+                  viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
+                  viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
+                />
               )}
             </>
           ) : null}
@@ -2332,44 +2475,68 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     return (
                       <>
                         <BentoCard tone="highlight">
-                          <Text style={styles.metricText}>{c(mTotalSpent)}</Text>
-                          <Text style={styles.bodyMuted}>total spent out of {c(mAllocated)} allocated</Text>
-                          <View style={styles.spacer12} />
-                          <ProgressBar progress={mTotalSpent / Math.max(mAllocated, 1)} />
+                          <Text style={styles.kicker}>{selectedPlan.name}</Text>
+                          <Text style={styles.metricText}>{c(selectedPlan.total_amount)}</Text>
+                          <Text style={styles.bodyMuted}>{formatShortDate(selectedPlan.start_date)} → {formatShortDate(selectedPlan.end_date)}</Text>
                         </BentoCard>
 
-                        <View style={styles.sectionGap}>
-                          <Text style={styles.inputLabel}>Spending Breakdown</Text>
-                          <View style={styles.statRow}>
-                            <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
-                            {mContributions > 0 ? (
-                              <InfoPill label="+ Contributions" value={c(mContributions)} />
-                            ) : null}
-                            <InfoPill label="= Allocated" value={c(mAllocated)} />
-                            <InfoPill label="- Family expenses" value={c(mSpent)} />
-                            {mContributions > 0 ? (
-                              <InfoPill label="- Own-pocket spent" value={c(mContributions)} />
-                            ) : null}
-                            {mBorrowed > 0 ? (
-                              <InfoPill label="- Borrowed" value={c(mBorrowed)} />
-                            ) : null}
-                            {mRepaid > 0 ? (
-                              <InfoPill label="+ Repaid" value={c(mRepaid)} />
-                            ) : null}
-                            <InfoPill label="= Remaining" value={c(mRemaining)} />
-                          </View>
-                          {Object.keys(mMemberBalances).length > 0 ? (
-                            <View style={styles.statRow}>
-                              {Object.values(mMemberBalances).map((bal) => (
-                                <InfoPill
-                                  key={bal.name}
-                                  label={`${bal.avatar} ${bal.name}`}
-                                  value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
-                                />
-                              ))}
+                        <BentoCard>
+                          <Text style={styles.kicker}>This period</Text>
+                          <View style={styles.spacer12} />
+                          <ProgressBar progress={mTotalSpent / Math.max(mAllocated, 1)} />
+                          <View style={styles.spacer12} />
+                          <View style={styles.cycleStatsRow}>
+                            <View style={styles.cycleStat}>
+                              <Text style={styles.cycleStatValue}>{c(mTotalSpent)}</Text>
+                              <Text style={styles.cycleStatLabel}>Spent</Text>
                             </View>
+                            <View style={styles.cycleStatDivider} />
+                            <View style={[styles.cycleStat, { alignItems: 'flex-end' }]}>
+                              <Text style={[styles.cycleStatValue, { color: mRemaining > 0 ? theme.success : theme.danger }]}>{c(mRemaining)}</Text>
+                              <Text style={styles.cycleStatLabel}>Remaining</Text>
+                            </View>
+                          </View>
+                          {showSplitFields ? (
+                            <Pressable onPress={() => setShowBreakdownDetails((v) => !v)} style={styles.detailsToggle}>
+                              <Text style={styles.detailsToggleText}>{showBreakdownDetails ? 'Hide details ▴' : 'Details ▾'}</Text>
+                            </Pressable>
                           ) : null}
-                        </View>
+                        </BentoCard>
+
+                        {showSplitFields && showBreakdownDetails ? (
+                          <View style={styles.sectionGap}>
+                            <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                            <View style={styles.statRow}>
+                              <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
+                              {mContributions > 0 ? (
+                                <InfoPill label="+ Contributions" value={c(mContributions)} />
+                              ) : null}
+                              <InfoPill label="= Allocated" value={c(mAllocated)} />
+                              <InfoPill label="- Expenses" value={c(mSpent)} />
+                              {mContributions > 0 ? (
+                                <InfoPill label="- Own-pocket spent" value={c(mContributions)} />
+                              ) : null}
+                              {mBorrowed > 0 ? (
+                                <InfoPill label="- Borrowed" value={c(mBorrowed)} />
+                              ) : null}
+                              {mRepaid > 0 ? (
+                                <InfoPill label="+ Repaid" value={c(mRepaid)} />
+                              ) : null}
+                              <InfoPill label="= Remaining" value={c(mRemaining)} />
+                            </View>
+                            {Object.keys(mMemberBalances).length > 0 ? (
+                              <View style={styles.statRow}>
+                                {Object.values(mMemberBalances).map((bal) => (
+                                  <InfoPill
+                                    key={bal.name}
+                                    label={`${bal.avatar} ${bal.name}`}
+                                    value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
+                                  />
+                                ))}
+                              </View>
+                            ) : null}
+                          </View>
+                        ) : null}
 
                         {mExpenses.length > 0 ? (
                           <View style={styles.sectionGap}>
@@ -2428,26 +2595,48 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                             else borrowsByMember[userId].repaid += Math.abs(e.price);
                             borrowsByMember[userId].records.push(e);
                           });
+                          const unpaidEntries = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid - data.contributed, 0) > 0);
+                          if (unpaidEntries.length === 0) return null;
                           return (
                             <View style={styles.sectionGap}>
                               <Text style={styles.inputLabel}>Borrowed from Budget</Text>
-                              {Object.entries(borrowsByMember).map(([userId, data]) => (
-                                <BentoCard key={userId}>
-                                  <View style={styles.borrowHeaderRow}>
-                                    <View style={{ flex: 1, marginRight: 12 }}>
-                                      <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                                      <Text style={styles.listSubtitle}>{`Borrowed ${c(data.borrowed)} · Repaid ${c(data.repaid)} · Owes ${c(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
-                                    </View>
-                                  </View>
-                                  {data.records.map((record) => (
-                                    <View key={record.id} style={styles.borrowRecordRow}>
-                                      <View style={{ flex: 1 }}>
-                                        <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+                              {unpaidEntries.map(([userId, data]) => {
+                                const owes = Math.max(data.borrowed - data.repaid - data.contributed, 0);
+                                const isExpanded = expandedBorrowUser === userId;
+                                return (
+                                  <BentoCard key={userId}>
+                                    <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
+                                    <View style={styles.borrowStatsRow}>
+                                      <View style={styles.borrowStatItem}>
+                                        <Text style={styles.borrowStatValue}>{c(data.borrowed)}</Text>
+                                        <Text style={styles.borrowStatLabel}>Borrowed</Text>
+                                      </View>
+                                      <View style={styles.cycleStatDivider} />
+                                      <View style={styles.borrowStatItem}>
+                                        <Text style={styles.borrowStatValue}>{c(data.repaid)}</Text>
+                                        <Text style={styles.borrowStatLabel}>Repaid</Text>
+                                      </View>
+                                      <View style={styles.cycleStatDivider} />
+                                      <View style={styles.borrowStatItem}>
+                                        <Text style={[styles.borrowStatValue, { color: theme.danger }]}>{c(owes)}</Text>
+                                        <Text style={styles.borrowStatLabel}>Owes</Text>
                                       </View>
                                     </View>
-                                  ))}
-                                </BentoCard>
-                              ))}
+                                    <Pressable onPress={() => setExpandedBorrowUser(isExpanded ? null : userId)} style={styles.detailsToggle}>
+                                      <Text style={styles.detailsToggleText}>
+                                        {isExpanded ? 'Hide history ▴' : `${data.records.length} transaction${data.records.length !== 1 ? 's' : ''} ▾`}
+                                      </Text>
+                                    </Pressable>
+                                    {isExpanded ? data.records.map((record) => (
+                                      <View key={record.id} style={styles.borrowRecordRow}>
+                                        <Text style={styles.listSubtitle}>
+                                          {`${record.price > 0 ? '↑ Borrowed' : '↓ Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}
+                                        </Text>
+                                      </View>
+                                    )) : null}
+                                  </BentoCard>
+                                );
+                              })}
                             </View>
                           );
                         })()}
@@ -2458,44 +2647,68 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               ) : (
                 <>
                   <BentoCard tone="highlight">
-                    <Text style={styles.metricText}>{c(currentPlanMonthStats.totalSpent)}</Text>
-                    <Text style={styles.bodyMuted}>spent this month out of {c(currentPlanMonthStats.allocated)} allocated</Text>
-                    <View style={styles.spacer12} />
-                    <ProgressBar progress={currentPlanMonthStats.totalSpent / Math.max(currentPlanMonthStats.allocated, 1)} />
+                    <Text style={styles.kicker}>{selectedPlan.name}</Text>
+                    <Text style={styles.metricText}>{c(selectedPlan.total_amount)}</Text>
+                    <Text style={styles.bodyMuted}>{formatShortDate(selectedPlan.start_date)} → {selectedPlan.end_date ? formatShortDate(selectedPlan.end_date) : 'ongoing'}</Text>
                   </BentoCard>
 
-                  <View style={styles.sectionGap}>
-                    <Text style={styles.inputLabel}>Spending Breakdown</Text>
-                    <View style={styles.statRow}>
-                      <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
-                      {currentPlanMonthStats.contributions > 0 ? (
-                        <InfoPill label="+ Contributions" value={c(currentPlanMonthStats.contributions)} />
-                      ) : null}
-                      <InfoPill label="= Allocated" value={c(currentPlanMonthStats.allocated)} />
-                      <InfoPill label="- Family expenses" value={c(currentPlanMonthStats.spent)} />
-                      {currentPlanMonthStats.contributions > 0 ? (
-                        <InfoPill label="- Own-pocket spent" value={c(currentPlanMonthStats.contributions)} />
-                      ) : null}
-                      {currentPlanMonthStats.borrowed > 0 ? (
-                        <InfoPill label="- Borrowed" value={c(currentPlanMonthStats.borrowed)} />
-                      ) : null}
-                      {currentPlanMonthStats.repaid > 0 ? (
-                        <InfoPill label="+ Repaid" value={c(currentPlanMonthStats.repaid)} />
-                      ) : null}
-                      <InfoPill label="= Remaining" value={c(currentPlanMonthStats.remaining)} />
-                    </View>
-                    {Object.keys(currentPlanMonthStats.memberBalances).length > 0 ? (
-                      <View style={styles.statRow}>
-                        {Object.values(currentPlanMonthStats.memberBalances).map((bal) => (
-                          <InfoPill
-                            key={bal.name}
-                            label={`${bal.avatar} ${bal.name}`}
-                            value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
-                          />
-                        ))}
+                  <BentoCard>
+                    <Text style={styles.kicker}>This cycle</Text>
+                    <View style={styles.spacer12} />
+                    <ProgressBar progress={currentPlanMonthStats.totalSpent / Math.max(currentPlanMonthStats.allocated, 1)} />
+                    <View style={styles.spacer12} />
+                    <View style={styles.cycleStatsRow}>
+                      <View style={styles.cycleStat}>
+                        <Text style={styles.cycleStatValue}>{c(currentPlanMonthStats.totalSpent)}</Text>
+                        <Text style={styles.cycleStatLabel}>Spent</Text>
                       </View>
+                      <View style={styles.cycleStatDivider} />
+                      <View style={[styles.cycleStat, { alignItems: 'flex-end' }]}>
+                        <Text style={[styles.cycleStatValue, { color: currentPlanMonthStats.remaining > 0 ? theme.success : theme.danger }]}>{c(currentPlanMonthStats.remaining)}</Text>
+                        <Text style={styles.cycleStatLabel}>Remaining</Text>
+                      </View>
+                    </View>
+                    {showSplitFields ? (
+                      <Pressable onPress={() => setShowBreakdownDetails((v) => !v)} style={styles.detailsToggle}>
+                        <Text style={styles.detailsToggleText}>{showBreakdownDetails ? 'Hide details ▴' : 'Details ▾'}</Text>
+                      </Pressable>
                     ) : null}
-                  </View>
+                  </BentoCard>
+
+                  {showSplitFields && showBreakdownDetails ? (
+                    <View style={styles.sectionGap}>
+                      <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                      <View style={styles.statRow}>
+                        <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
+                        {currentPlanMonthStats.contributions > 0 ? (
+                          <InfoPill label="+ Contributions" value={c(currentPlanMonthStats.contributions)} />
+                        ) : null}
+                        <InfoPill label="= Allocated" value={c(currentPlanMonthStats.allocated)} />
+                        <InfoPill label="- Expenses" value={c(currentPlanMonthStats.spent)} />
+                        {currentPlanMonthStats.contributions > 0 ? (
+                          <InfoPill label="- Own-pocket spent" value={c(currentPlanMonthStats.contributions)} />
+                        ) : null}
+                        {currentPlanMonthStats.borrowed > 0 ? (
+                          <InfoPill label="- Borrowed" value={c(currentPlanMonthStats.borrowed)} />
+                        ) : null}
+                        {currentPlanMonthStats.repaid > 0 ? (
+                          <InfoPill label="+ Repaid" value={c(currentPlanMonthStats.repaid)} />
+                        ) : null}
+                        <InfoPill label="= Remaining" value={c(currentPlanMonthStats.remaining)} />
+                      </View>
+                      {Object.keys(currentPlanMonthStats.memberBalances).length > 0 ? (
+                        <View style={styles.statRow}>
+                          {Object.values(currentPlanMonthStats.memberBalances).map((bal) => (
+                            <InfoPill
+                              key={bal.name}
+                              label={`${bal.avatar} ${bal.name}`}
+                              value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
+                            />
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
 
                   <View style={styles.rowBetween}>
                     <View style={styles.segmentRow}>
@@ -2597,41 +2810,76 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                         borrowsByMember[userId].contributed = data.total;
                       }
                     });
+                    const unpaidBorrows = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid - data.contributed, 0) > 0);
+                    if (unpaidBorrows.length === 0) return null;
                     return (
                       <View style={styles.sectionGap}>
                         <Text style={styles.inputLabel}>Borrowed from Budget</Text>
-                        {Object.entries(borrowsByMember).map(([userId, data]) => (
-                          <BentoCard key={userId}>
-                            <View style={styles.borrowHeaderRow}>
-                              <View style={{ flex: 1, marginRight: 12 }}>
+                        {unpaidBorrows.map(([userId, data]) => {
+                          const owes = Math.max(data.borrowed - data.repaid - data.contributed, 0);
+                          const isExpanded = expandedBorrowUser === userId;
+                          return (
+                            <BentoCard key={userId}>
+                              {/* Summary row */}
+                              <View style={styles.borrowHeaderRow}>
                                 <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                                <Text style={styles.listSubtitle}>{`Borrowed ${c(data.borrowed)} · Repaid ${c(data.repaid)} · Owes ${c(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
+                                <ModernButton
+                                  onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
+                                  secondary
+                                  style={{ flexShrink: 0 }}
+                                  text="Repay"
+                                  testID={`repay-${userId}`}
+                                />
                               </View>
-                              <ModernButton
-                                onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
-                                secondary
-                                style={{ flexShrink: 0 }}
-                                text="Repay"
-                                testID={`repay-${userId}`}
-                              />
-                            </View>
-                            {data.records.map((record) => (
-                              <View key={record.id} style={styles.borrowRecordRow}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+
+                              {/* Compact 3-stat row */}
+                              <View style={styles.borrowStatsRow}>
+                                <View style={styles.borrowStatItem}>
+                                  <Text style={styles.borrowStatValue}>{c(data.borrowed)}</Text>
+                                  <Text style={styles.borrowStatLabel}>Borrowed</Text>
                                 </View>
-                                <View style={styles.actionButtons}>
-                                  <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
-                                    <Ionicons color={theme.primary} name="pencil" size={18} />
-                                  </Pressable>
-                                  <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
-                                    <Ionicons color={theme.danger} name="trash" size={18} />
-                                  </Pressable>
+                                <View style={styles.cycleStatDivider} />
+                                <View style={styles.borrowStatItem}>
+                                  <Text style={styles.borrowStatValue}>{c(data.repaid)}</Text>
+                                  <Text style={styles.borrowStatLabel}>Repaid</Text>
+                                </View>
+                                <View style={styles.cycleStatDivider} />
+                                <View style={styles.borrowStatItem}>
+                                  <Text style={[styles.borrowStatValue, { color: owes > 0 ? theme.danger : theme.success }]}>{c(owes)}</Text>
+                                  <Text style={styles.borrowStatLabel}>Owes</Text>
                                 </View>
                               </View>
-                            ))}
-                          </BentoCard>
-                        ))}
+
+                              {/* Collapsible history */}
+                              <Pressable
+                                onPress={() => setExpandedBorrowUser(isExpanded ? null : userId)}
+                                style={styles.detailsToggle}
+                              >
+                                <Text style={styles.detailsToggleText}>
+                                  {isExpanded ? 'Hide history ▴' : `${data.records.length} transaction${data.records.length !== 1 ? 's' : ''} ▾`}
+                                </Text>
+                              </Pressable>
+
+                              {isExpanded ? data.records.map((record) => (
+                                <View key={record.id} style={styles.borrowRecordRow}>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={styles.listSubtitle}>
+                                      {`${record.price > 0 ? '↑ Borrowed' : '↓ Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.actionButtons}>
+                                    <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
+                                      <Ionicons color={theme.primary} name="pencil" size={18} />
+                                    </Pressable>
+                                    <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
+                                      <Ionicons color={theme.danger} name="trash" size={18} />
+                                    </Pressable>
+                                  </View>
+                                </View>
+                              )) : null}
+                            </BentoCard>
+                          );
+                        })}
                       </View>
                     );
                   })()}
@@ -2707,43 +2955,47 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           {expenseForm.category === 'Other' ? (
             <LabeledInput label="Custom category" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
           ) : null}
-          <View style={styles.fieldSection}>
-            <Text style={styles.inputLabel}>Who paid?</Text>
-            <View style={styles.segmentRow}>
-              <CategoryChip
-                active={expenseForm.paidBy === null}
-                label="Family Budget"
-                onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null, usedBy: current.usedBy ?? session?.user?.id ?? null }))}
-              />
-              {members.map((member) => (
-                <CategoryChip
-                  key={member.user_id}
-                  active={expenseForm.paidBy === member.user_id}
-                  label={member.user_profile?.name ?? 'Member'}
-                  onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id, usedBy: null }))}
-                />
-              ))}
-            </View>
-          </View>
-          {expenseForm.paidBy === null ? (
-            <View style={styles.fieldSection}>
-              <Text style={styles.inputLabel}>Who used it?</Text>
-              <View style={styles.segmentRow}>
-                <CategoryChip
-                  active={expenseForm.usedBy === null}
-                  label="Shared/Family"
-                  onPress={() => setExpenseForm((current) => ({ ...current, usedBy: null }))}
-                />
-                {members.map((member) => (
+          {showSplitFields ? (
+            <>
+              <View style={styles.fieldSection}>
+                <Text style={styles.inputLabel}>Who paid?</Text>
+                <View style={styles.segmentRow}>
                   <CategoryChip
-                    key={member.user_id}
-                    active={expenseForm.usedBy === member.user_id}
-                    label={member.user_profile?.name ?? 'Member'}
-                    onPress={() => setExpenseForm((current) => ({ ...current, usedBy: member.user_id }))}
+                    active={expenseForm.paidBy === null}
+                    label="Shared"
+                    onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null, usedBy: current.usedBy ?? session?.user?.id ?? null }))}
                   />
-                ))}
+                  {members.map((member) => (
+                    <CategoryChip
+                      key={member.user_id}
+                      active={expenseForm.paidBy === member.user_id}
+                      label={member.user_profile?.name ?? 'Member'}
+                      onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id, usedBy: null }))}
+                    />
+                  ))}
+                </View>
               </View>
-            </View>
+              {expenseForm.paidBy === null ? (
+                <View style={styles.fieldSection}>
+                  <Text style={styles.inputLabel}>Who used it?</Text>
+                  <View style={styles.segmentRow}>
+                    <CategoryChip
+                      active={expenseForm.usedBy === null}
+                      label="Everyone"
+                      onPress={() => setExpenseForm((current) => ({ ...current, usedBy: null }))}
+                    />
+                    {members.map((member) => (
+                      <CategoryChip
+                        key={member.user_id}
+                        active={expenseForm.usedBy === member.user_id}
+                        label={member.user_profile?.name ?? 'Member'}
+                        onPress={() => setExpenseForm((current) => ({ ...current, usedBy: member.user_id }))}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+            </>
           ) : null}
           <DatePickerField date={expenseForm.date} label="Date" onDateChange={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" />
           
@@ -2787,13 +3039,17 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               </Text>
               <View style={styles.spacer12} />
               <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
-              <Text style={styles.inputLabel}>Who paid?</Text>
-              <View style={styles.segmentRow}>
-                <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
-                {members.map((member) => (
-                  <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
-                ))}
-              </View>
+              {showSplitFields ? (
+                <>
+                  <Text style={styles.inputLabel}>Who paid?</Text>
+                  <View style={styles.segmentRow}>
+                    <CategoryChip active={boughtForm.paidBy === null} label="Shared" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
+                    {members.map((member) => (
+                      <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
+                    ))}
+                  </View>
+                </>
+              ) : null}
               <Text style={styles.inputLabel}>Budget plan</Text>
               <View style={styles.segmentRow}>
                 {plans.map((plan) => (
@@ -3126,6 +3382,126 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
+  },
+  backRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 2,
+  },
+  backRowText: {
+    color: theme.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  spaceTypeGrid: {
+    gap: 10,
+  },
+  spaceTypeCard: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  spaceTypeCardActive: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary,
+  },
+  spaceTypeEmoji: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  spaceTypeLabel: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  spaceTypeLabelActive: {
+    color: theme.primary,
+  },
+  spaceTypeDesc: {
+    color: theme.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  spaceTypeDescActive: {
+    color: theme.primary,
+  },
+  breakdownSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  breakdownStat: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 2,
+  },
+  breakdownStatValue: {
+    color: theme.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  breakdownStatLabel: {
+    color: theme.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  detailsToggle: {
+    alignItems: 'center',
+    marginTop: 10,
+    paddingVertical: 4,
+  },
+  detailsToggleText: {
+    color: theme.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  cycleStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cycleStat: {
+    flex: 1,
+    gap: 2,
+  },
+  cycleStatValue: {
+    color: theme.text,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  cycleStatLabel: {
+    color: theme.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  cycleStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: theme.border,
+    marginHorizontal: 16,
+  },
+  borrowStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  borrowStatItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  borrowStatValue: {
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  borrowStatLabel: {
+    color: theme.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
   },
   avatarChoice: {
     alignItems: 'center',

@@ -20,5 +20,13 @@
         "buildType": "app-bundle"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "alpha",
+        "releaseStatus": "completed"
+      }
+    }
   }
 }

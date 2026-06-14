@@ -31,7 +31,7 @@ export function ModalScaffold({
         <Text style={styles.modalTitle}>{title}</Text>
         <View style={styles.rightActionWrap}>{rightAction}</View>
       </View>
-      <ScrollView contentContainerStyle={styles.modalContent}>{children}</ScrollView>
+      <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>{children}</ScrollView>
     </SafeAreaView>
   );
 }
