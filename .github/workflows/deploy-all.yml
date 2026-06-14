@@ -148,7 +148,7 @@ jobs:
         
       - name: Build Android App (.aab)
         working-directory: ./frontend
-        run: eas build --platform android --profile production --non-interactive
+        run: eas build --platform android --profile production --auto-submit --non-interactive
         
       - name: Build Complete
         run: echo "✅ Android .aab build submitted to EAS"

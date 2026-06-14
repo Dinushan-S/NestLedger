@@ -67,7 +67,7 @@ function getCategoryIcon(category: string): keyof typeof Ionicons.glyphMap {
   return (found?.icon ?? 'receipt-outline') as keyof typeof Ionicons.glyphMap;
 }
 
-export default function BillTracker({
+export function BillTracker({
   trackerId,
   recurringBills,
   billPayments,
@@ -310,7 +310,7 @@ export default function BillTracker({
             <ScrollView
               contentContainerStyle={s.sheetContent}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator
+              showsVerticalScrollIndicator={false}
             >
               <Pressable onPress={(e) => e.stopPropagation()}>
                 <Text style={s.sectionTitle}>New Bill</Text>
@@ -449,7 +449,7 @@ export default function BillTracker({
             <ScrollView
               contentContainerStyle={s.sheetContent}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator
+              showsVerticalScrollIndicator={false}
             >
               <Pressable onPress={(e) => e.stopPropagation()}>
                 <Text style={s.sectionTitle}>
@@ -658,7 +658,7 @@ function SafeWrap({ children, onClose, title }: { children: React.ReactNode; onC
         <Text style={s.modalTitle}>{title}</Text>
         <View />
       </View>
-      <ScrollView contentContainerStyle={s.modalContent}>{children}</ScrollView>
+      <ScrollView contentContainerStyle={s.modalContent} showsVerticalScrollIndicator={false}>{children}</ScrollView>
     </View>
   );
 }
@@ -914,3 +914,5 @@ const s = StyleSheet.create({
     paddingBottom: 40,
   },
 });
+
+export default BillTracker;

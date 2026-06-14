@@ -263,6 +263,36 @@ export const startOfMonth = () => {
   return date;
 };
 
+/**
+ * Returns the start of the current budget cycle for a plan.
+ *
+ * The cycle is anchored to the day-of-month of the plan's start_date.
+ * Example: plan starts on June 10 → cycles run 10th→10th.
+ *   - Today is June 14: cycle start = June 10
+ *   - Today is June 5:  cycle start = May 10
+ * Never returns a date earlier than the plan's actual start_date.
+ */
+export const getCycleStart = (planStartDate: string): Date => {
+  const planStart = new Date(planStartDate);
+  planStart.setHours(0, 0, 0, 0);
+  const cycleDay = planStart.getDate(); // e.g. 10
+
+  const now = new Date();
+  const todayDay = now.getDate();
+
+  let cycleStart: Date;
+  if (todayDay >= cycleDay) {
+    // Cycle started this calendar month
+    cycleStart = new Date(now.getFullYear(), now.getMonth(), cycleDay, 0, 0, 0, 0);
+  } else {
+    // Cycle started last calendar month
+    cycleStart = new Date(now.getFullYear(), now.getMonth() - 1, cycleDay, 0, 0, 0, 0);
+  }
+
+  // Never go before the plan's own start date
+  return cycleStart < planStart ? planStart : cycleStart;
+};
+
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export const getCurrentMonth = () => {
