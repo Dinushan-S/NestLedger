@@ -1080,7 +1080,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     });
   };
 
-  const handleMarkBillPaid = async (trackerId: string, payment: Omit<BillPayment, 'created_at' | 'id'>) => {
+  const handleMarkBillPaid = async (trackerId: string, payment: Omit<BillPayment, 'created_at' | 'id' | 'name'>, paymentName: string | null) => {
     if (!activeProfile || !session?.user) return;
     await runAction(async () => {
       await billApi.addPayment({ ...payment, tracker_id: trackerId });
@@ -1088,7 +1088,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         await expenseApi.addExpenseWithId({
           plan_id: payment.plan_id,
           profile_id: payment.profile_id,
-          description: payment.name ?? 'Bill payment',
+          description: paymentName ?? 'Bill payment',
           category: 'Utilities',
           date: payment.date ?? new Date().toISOString(),
           added_by: payment.added_by,
@@ -1313,7 +1313,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       paidBy: expense.paid_by,
       usedBy: expense.used_by,
     });
-    setShowExpenseComposer(true);
+    requestAnimationFrame(() => {
+      setShowExpenseComposer(true);
+    });
   };
 
   const handleDeleteExpense = async (expenseId: string, expenseTitle: string) => {
@@ -2776,10 +2778,26 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                 <Text style={styles.totalAmount}>{c(expense.price)}</Text>
                               ) : null}
                               <View style={styles.actionButtons}>
-                                <Pressable hitSlop={10} onPress={() => startEditExpense(expense)} style={styles.editButton}>
+                                <Pressable
+                                  hitSlop={12}
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    startEditExpense(expense);
+                                  }}
+                                  style={styles.editButton}
+                                  testID={`expense-edit-${expense.id}`}
+                                >
                                   <Ionicons color={theme.primary} name="pencil" size={18} />
                                 </Pressable>
-                                <Pressable hitSlop={10} onPress={() => handleDeleteExpense(expense.id, expenseTitle)} style={styles.editButton}>
+                                <Pressable
+                                  hitSlop={12}
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    handleDeleteExpense(expense.id, expenseTitle);
+                                  }}
+                                  style={styles.editButton}
+                                  testID={`expense-delete-${expense.id}`}
+                                >
                                   <Ionicons color={theme.danger} name="trash" size={18} />
                                 </Pressable>
                               </View>
@@ -4108,6 +4126,10 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   editButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 36,
     padding: 4,
   },
   screen: {

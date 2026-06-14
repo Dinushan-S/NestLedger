@@ -58,6 +58,7 @@ const styles = StyleSheet.create({
     maxHeight: '88%',
     paddingHorizontal: 20,
     paddingTop: 10,
+    width: '100%',
   },
   sheetContent: {
     gap: 14,

@@ -129,6 +129,10 @@ export type BillPayment = {
   created_at: string;
 };
 
+type BillPaymentInsert = Omit<BillPayment, 'created_at' | 'id' | 'name'>;
+
+const billPaymentColumns = 'id, profile_id, tracker_id, bill_id, plan_id, amount, units, status, date, month, year, added_by, created_at';
+
 export type SavingsEntry = {
   id: string;
   profile_id: string;
@@ -714,20 +718,42 @@ export const billApi = {
     if (error) throw error;
   },
   async fetchPayments(profileId: string) {
-    const { data, error } = await supabase.from('bill_payments').select('*').eq('profile_id', profileId).order('year', { ascending: false }).order('month', { ascending: false });
+    const { data, error } = await supabase
+      .from('bill_payments')
+      .select(billPaymentColumns)
+      .eq('profile_id', profileId)
+      .order('year', { ascending: false })
+      .order('month', { ascending: false });
     if (error) throw error;
-    return (data ?? []) as BillPayment[];
+    return ((data ?? []).map((payment) => ({ ...payment, name: null })) as BillPayment[]);
   },
-  async addPayment(input: Omit<BillPayment, 'created_at' | 'id'>) {
-    const payload = { ...input, created_at: new Date().toISOString() };
-    const { data, error } = await supabase.from('bill_payments').insert(payload).select('*').single();
+  async addPayment(input: BillPaymentInsert) {
+    const payload = {
+      added_by: input.added_by,
+      amount: input.amount,
+      bill_id: input.bill_id,
+      created_at: new Date().toISOString(),
+      date: input.date,
+      month: input.month,
+      plan_id: input.plan_id,
+      profile_id: input.profile_id,
+      status: input.status,
+      tracker_id: input.tracker_id,
+      units: input.units,
+      year: input.year,
+    };
+    const { data, error } = await supabase
+      .from('bill_payments')
+      .insert(payload)
+      .select(billPaymentColumns)
+      .single();
     if (error) throw error;
-    return data as BillPayment;
+    return { ...data, name: null } as BillPayment;
   },
   async updatePayment(paymentId: string, updates: Partial<Pick<BillPayment, 'amount' | 'plan_id' | 'status' | 'units'>>) {
-    const { data, error } = await supabase.from('bill_payments').update(updates).eq('id', paymentId).select('*').single();
+    const { data, error } = await supabase.from('bill_payments').update(updates).eq('id', paymentId).select(billPaymentColumns).single();
     if (error) throw error;
-    return data as BillPayment;
+    return { ...data, name: null } as BillPayment;
   },
   async deletePayment(paymentId: string) {
     const { error } = await supabase.from('bill_payments').delete().eq('id', paymentId);
