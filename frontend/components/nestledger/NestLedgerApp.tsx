@@ -98,6 +98,7 @@ import {
 
 import { BillTracker as BillTrackerComponent } from './BillTracker';
 import { SavingsTracker as SavingsTrackerComponent } from './SavingsTracker';
+import AnalyseScreen from './AnalyseScreen';
 const ProfileSettingsModal = lazy(() =>
   import('./settings/ProfileSettingsModal').then((module) => ({
     default: module.ProfileSettingsModal,
@@ -320,6 +321,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
   const [profileSetupStep, setProfileSetupStep] = useState<'type' | 'details'>('type');
   const [showBreakdownDetails, setShowBreakdownDetails] = useState(false);
+  const [showAnalyse, setShowAnalyse] = useState(false);
   const [migrationSpaceType, setMigrationSpaceType] = useState<SpaceType>('family');
   const [migrationCardVisible, setMigrationCardVisible] = useState(false);
   const onboardingStorageKey = sessionUserId ? `nestledger-onboarding-seen-${sessionUserId}` : null;
@@ -429,6 +431,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   // Derived space helpers
   const showSplitFields = isSplitSpace(activeProfile?.space_type);
+  const [contributionEnabled, setContributionEnabled] = useState(false);
+  const showContribution = showSplitFields || contributionEnabled;
 
   const availableViewYears = useMemo(
     () => buildAvailableViewYears(profileExpenses, selectedPlan),
@@ -597,6 +601,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     refreshProfileData(activeProfileId);
   }, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
+
+  // Load contribution-enabled preference per profile
+  useEffect(() => {
+    if (!activeProfileId) { setContributionEnabled(false); return; }
+    AsyncStorage.getItem(`nestledger-contribution-enabled-${activeProfileId}`)
+      .then((val) => setContributionEnabled(val === 'true'))
+      .catch(() => setContributionEnabled(false));
+  }, [activeProfileId]);
+
+  const handleToggleContribution = useCallback(async () => {
+    if (!activeProfileId) return;
+    const next = !contributionEnabled;
+    setContributionEnabled(next);
+    await AsyncStorage.setItem(`nestledger-contribution-enabled-${activeProfileId}`, next ? 'true' : 'false');
+  }, [activeProfileId, contributionEnabled]);
 
   // Show migration card for existing users who haven't set their space type yet
   useEffect(() => {
@@ -1160,8 +1179,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               category,
               date: new Date(expenseForm.date).toISOString(),
               description: expenseForm.description.trim() || null,
-              paid_by: showSplitFields ? expenseForm.paidBy : null,
-              used_by: showSplitFields && expenseForm.paidBy === null ? expenseForm.usedBy : null,
+              paid_by: showContribution ? expenseForm.paidBy : null,
+              used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
             } as any,
             items
           );
@@ -1173,10 +1192,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             description: expenseForm.description.trim() || null,
             is_borrow: expenseForm.is_borrow,
             items,
-            paid_by: showSplitFields ? expenseForm.paidBy : null,
+            paid_by: showContribution ? expenseForm.paidBy : null,
             plan_id: selectedPlan.id,
             profile_id: selectedPlan.profile_id,
-            used_by: showSplitFields && expenseForm.paidBy === null ? expenseForm.usedBy : null,
+            used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
           });
           const itemNames = items.map(i => i.name).join(', ');
           await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
@@ -1863,6 +1882,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     />
                   </BentoCard>
 
+                  <Pressable onPress={() => setShowAnalyse(true)} testID="open-analyse">
+                    <BentoCard>
+                      <View style={styles.analyseCardRow}>
+                        <View style={styles.analyseCardIcon}>
+                          <Ionicons name="pie-chart-outline" size={22} color={theme.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.analyseCardTitle}>View full report</Text>
+                          <Text style={styles.bodyMuted}>See where your money went and how to spend less next month</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                      </View>
+                    </BentoCard>
+                  </Pressable>
+
                   {migrationCardVisible ? (
                     <BentoCard>
                       <Text style={styles.inputLabel}>What kind of space is this?</Text>
@@ -2279,6 +2313,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         visible={confirmModal?.visible ?? false}
       />
 
+      <AnalyseScreen
+        visible={showAnalyse}
+        profile={activeProfile}
+        expenses={profileExpenses}
+        plans={plans}
+        members={members}
+        currency={userCurrency}
+        onClose={() => setShowAnalyse(false)}
+      />
+
       <Modal animationType="slide" presentationStyle="pageSheet" visible={showBudgetComposer}>
         <ModalScaffold
           closeTestID="close-budget-modal"
@@ -2498,14 +2542,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                               <Text style={styles.cycleStatLabel}>Remaining</Text>
                             </View>
                           </View>
-                          {showSplitFields ? (
+                          {showContribution ? (
                             <Pressable onPress={() => setShowBreakdownDetails((v) => !v)} style={styles.detailsToggle}>
                               <Text style={styles.detailsToggleText}>{showBreakdownDetails ? 'Hide details ▴' : 'Details ▾'}</Text>
                             </Pressable>
                           ) : null}
                         </BentoCard>
 
-                        {showSplitFields && showBreakdownDetails ? (
+                        {showContribution && showBreakdownDetails ? (
                           <View style={styles.sectionGap}>
                             <Text style={styles.inputLabel}>Spending Breakdown</Text>
                             <View style={styles.statRow}>
@@ -2670,14 +2714,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                         <Text style={styles.cycleStatLabel}>Remaining</Text>
                       </View>
                     </View>
-                    {showSplitFields ? (
+                    {showContribution ? (
                       <Pressable onPress={() => setShowBreakdownDetails((v) => !v)} style={styles.detailsToggle}>
                         <Text style={styles.detailsToggleText}>{showBreakdownDetails ? 'Hide details ▴' : 'Details ▾'}</Text>
                       </Pressable>
                     ) : null}
                   </BentoCard>
 
-                  {showSplitFields && showBreakdownDetails ? (
+                  {showContribution && showBreakdownDetails ? (
                     <View style={styles.sectionGap}>
                       <Text style={styles.inputLabel}>Spending Breakdown</Text>
                       <View style={styles.statRow}>
@@ -2973,7 +3017,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           {expenseForm.category === 'Other' ? (
             <LabeledInput label="Custom category" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
           ) : null}
-          {showSplitFields ? (
+          {showContribution ? (
             <>
               <View style={styles.fieldSection}>
                 <Text style={styles.inputLabel}>Who paid?</Text>
@@ -3057,7 +3101,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               </Text>
               <View style={styles.spacer12} />
               <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
-              {showSplitFields ? (
+              {showContribution ? (
                 <>
                   <Text style={styles.inputLabel}>Who paid?</Text>
                   <View style={styles.segmentRow}>
@@ -3173,12 +3217,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       <Suspense fallback={null}>
         <ProfileSettingsModal
           actionBusy={actionBusy}
+          contributionEnabled={contributionEnabled}
           deletingProfile={activeProfile ? deletingProfileIds.has(activeProfile.id) : false}
           onChange={setProfileForm}
           onClose={() => setShowProfileSettings(false)}
           onDeleteSpace={() => activeProfile && handleDeleteSpace(activeProfile.id)}
           onSave={handleSaveSettings}
           onSignOut={() => authApi.signOut()}
+          onToggleContribution={handleToggleContribution}
           profileForm={profileForm}
           visible={showProfileSettings}
         />
@@ -3387,6 +3433,25 @@ const styles = StyleSheet.create({
     color: theme.text,
     fontSize: 18,
     fontWeight: '700',
+  },
+  analyseCardRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  analyseCardIcon: {
+    alignItems: 'center',
+    backgroundColor: theme.primarySoft,
+    borderRadius: 12,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  analyseCardTitle: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
   },
   appShell: {
     backgroundColor: theme.background,

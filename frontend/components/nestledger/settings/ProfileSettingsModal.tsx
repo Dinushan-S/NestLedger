@@ -1,5 +1,5 @@
 import { ReactNode, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { CURRENCY_INFO, theme } from '@/constants/nestledger';
 
@@ -23,12 +23,14 @@ export type SettingsSectionItem = {
 
 type ProfileSettingsModalProps = {
   actionBusy: boolean;
+  contributionEnabled: boolean;
   deletingProfile: boolean;
   onChange: (value: CreateProfileForm) => void;
   onClose: () => void;
   onDeleteSpace: () => void;
   onSave: () => void;
   onSignOut: () => void;
+  onToggleContribution: () => void;
   profileForm: CreateProfileForm;
   visible: boolean;
 };
@@ -50,12 +52,14 @@ const settingsSections: SettingsSectionItem[] = [
 
 export function ProfileSettingsModal({
   actionBusy,
+  contributionEnabled,
   deletingProfile,
   onChange,
   onClose,
   onDeleteSpace,
   onSave,
   onSignOut,
+  onToggleContribution,
   profileForm,
   visible,
 }: ProfileSettingsModalProps) {
@@ -124,6 +128,20 @@ export function ProfileSettingsModal({
             <Text style={styles.preferenceHint}>
               Amount formatting updates everywhere after you save, while keeping all existing budget and tracker logic the same.
             </Text>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleTextWrap}>
+                <Text style={styles.toggleLabel}>Contributions</Text>
+                <Text style={styles.toggleDesc}>
+                  Track who paid in expenses, add contributions to budgets, and offset borrows automatically.
+                </Text>
+              </View>
+              <Switch
+                onValueChange={onToggleContribution}
+                thumbColor={contributionEnabled ? theme.primary : theme.border}
+                trackColor={{ false: theme.surfaceMuted, true: theme.primarySoft }}
+                value={contributionEnabled}
+              />
+            </View>
           </SettingsSection>
 
           <SettingsSection item={settingsSections[3]}>
@@ -196,6 +214,26 @@ const styles = StyleSheet.create({
     color: theme.text,
     fontSize: 16,
     fontWeight: '800',
+  },
+  toggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  toggleTextWrap: {
+    flex: 1,
+    gap: 3,
+  },
+  toggleLabel: {
+    color: theme.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toggleDesc: {
+    color: theme.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
   },
   spaceTypeGrid: {
     flexDirection: 'row',
