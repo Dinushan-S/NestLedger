@@ -112,15 +112,65 @@ export default function AnalyseScreen({
 
   const [cursor, setCursor] = useState<{ year: number; month: number } | null>(null);
 
+  const cursorBounds = useMemo(() => {
+    if (!selectedPlan) return null;
+    const planExpenses = expenses.filter((e) => e.plan_id === selectedPlan.id);
+    if (planExpenses.length === 0) {
+      const start = new Date(selectedPlan.start_date);
+      const now = new Date();
+      const end = selectedPlan.end_date ? new Date(selectedPlan.end_date) : now;
+      return {
+        minCursor: { year: start.getFullYear(), month: start.getMonth() },
+        maxCursor: { year: end.getFullYear(), month: end.getMonth() },
+      };
+    }
+    let minYear = Infinity;
+    let minMonth = Infinity;
+    let maxYear = -Infinity;
+    let maxMonth = -Infinity;
+    for (const e of planExpenses) {
+      const d = new Date(e.date);
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      if (y < minYear || (y === minYear && m < minMonth)) {
+        minYear = y;
+        minMonth = m;
+      }
+      if (y > maxYear || (y === maxYear && m > maxMonth)) {
+        maxYear = y;
+        maxMonth = m;
+      }
+    }
+    return {
+      minCursor: { year: minYear, month: minMonth },
+      maxCursor: { year: maxYear, month: maxMonth },
+    };
+  }, [selectedPlan, expenses]);
+
   useEffect(() => {
     if (!selectedPlan) {
       setCursor(null);
       return;
     }
     const cs = getCycleStart(selectedPlan.start_date);
-    setCursor({ year: cs.getFullYear(), month: cs.getMonth() });
+    const initialCursor = { year: cs.getFullYear(), month: cs.getMonth() };
+    if (cursorBounds) {
+      const { minCursor, maxCursor } = cursorBounds;
+      const clamped = {
+        year: Math.max(minCursor.year, Math.min(maxCursor.year, initialCursor.year)),
+        month:
+          initialCursor.year === maxCursor.year
+            ? Math.min(initialCursor.month, maxCursor.month)
+            : initialCursor.year === minCursor.year
+            ? Math.max(initialCursor.month, minCursor.month)
+            : initialCursor.month,
+      };
+      setCursor(clamped);
+    } else {
+      setCursor(initialCursor);
+    }
     setActiveKey(null);
-  }, [selectedPlan]);
+  }, [selectedPlan, cursorBounds]);
 
   const cycle = useMemo(() => {
     if (!cursor) return null;
@@ -201,9 +251,17 @@ export default function AnalyseScreen({
 
   const stepCycle = (delta: number) => {
     setCursor((cur) => {
-      if (!cur) return cur;
+      if (!cur || !cursorBounds) return cur;
       const d = new Date(cur.year, cur.month + delta, 1);
-      return { year: d.getFullYear(), month: d.getMonth() };
+      const next = { year: d.getFullYear(), month: d.getMonth() };
+      const { minCursor, maxCursor } = cursorBounds;
+      if (next.year < minCursor.year || (next.year === minCursor.year && next.month < minCursor.month)) {
+        return minCursor;
+      }
+      if (next.year > maxCursor.year || (next.year === maxCursor.year && next.month > maxCursor.month)) {
+        return maxCursor;
+      }
+      return next;
     });
     setActiveKey(null);
   };
@@ -258,13 +316,65 @@ export default function AnalyseScreen({
 
             {/* Cycle stepper */}
             <View style={styles.cycleRow}>
-              <Pressable hitSlop={12} onPress={() => stepCycle(-1)} testID="cycle-prev">
-                <Ionicons name="chevron-back" size={22} color={theme.text} />
-              </Pressable>
-              <Text style={styles.cycleLabel}>{cycleLabel}</Text>
-              <Pressable hitSlop={12} onPress={() => stepCycle(1)} testID="cycle-next">
-                <Ionicons name="chevron-forward" size={22} color={theme.text} />
-              </Pressable>
+              {cursorBounds && cursor ? (
+                <>
+                  <Pressable
+                    hitSlop={12}
+                    onPress={() => stepCycle(-1)}
+                    testID="cycle-prev"
+                    disabled={
+                      cursor.year === cursorBounds.minCursor.year &&
+                      cursor.month === cursorBounds.minCursor.month
+                    }
+                    style={
+                      cursor.year === cursorBounds.minCursor.year &&
+                      cursor.month === cursorBounds.minCursor.month
+                        ? styles.navButtonDisabled
+                        : undefined
+                    }
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={22}
+                      color={
+                        cursor.year === cursorBounds.minCursor.year &&
+                        cursor.month === cursorBounds.minCursor.month
+                          ? theme.textMuted
+                          : theme.text
+                      }
+                    />
+                  </Pressable>
+                  <Text style={styles.cycleLabel}>{cycleLabel}</Text>
+                  <Pressable
+                    hitSlop={12}
+                    onPress={() => stepCycle(1)}
+                    testID="cycle-next"
+                    disabled={
+                      cursor.year === cursorBounds.maxCursor.year &&
+                      cursor.month === cursorBounds.maxCursor.month
+                    }
+                    style={
+                      cursor.year === cursorBounds.maxCursor.year &&
+                      cursor.month === cursorBounds.maxCursor.month
+                        ? styles.navButtonDisabled
+                        : undefined
+                    }
+                  >
+                    <Ionicons
+                      name="chevron-forward"
+                      size={22}
+                      color={
+                        cursor.year === cursorBounds.maxCursor.year &&
+                        cursor.month === cursorBounds.maxCursor.month
+                          ? theme.textMuted
+                          : theme.text
+                      }
+                    />
+                  </Pressable>
+                </>
+              ) : (
+                <Text style={styles.cycleLabel}>{cycleLabel}</Text>
+              )}
             </View>
 
             {/* Headline */}
@@ -531,6 +641,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   cycleLabel: { fontSize: 15, fontWeight: '700', color: theme.text, minWidth: 150, textAlign: 'center' },
+  navButtonDisabled: { opacity: 0.3 },
   headline: { alignItems: 'center', marginBottom: 4, marginTop: 6 },
   planName: { fontSize: 14, fontWeight: '600', color: theme.textMuted, marginBottom: 6 },
   headlineSpent: { fontSize: 30, fontWeight: '800', color: theme.text },
