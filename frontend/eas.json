@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 13.2.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote" 
   },
   "build": {
     "development": {
@@ -18,6 +18,14 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "alpha",
+        "releaseStatus": "completed"
       }
     }
   }

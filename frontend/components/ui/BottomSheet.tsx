@@ -21,30 +21,26 @@ export function BottomSheet({
   onClose,
   scrollable = true,
 }: BottomSheetProps) {
-  const content = scrollable ? (
-    <ScrollView
-      contentContainerStyle={styles.sheetContent}
-      keyboardShouldPersistTaps="handled"
-      style={styles.sheetScroll}
-      showsVerticalScrollIndicator
-    >
-      {children}
-    </ScrollView>
-  ) : (
-    <View style={styles.sheetContentStatic}>{children}</View>
-  );
-
   return (
     <Pressable onPress={onClose} style={styles.sheetBackdrop}>
-      <KeyboardAvoidingView
-        behavior={Platform.select({ ios: 'padding', default: undefined })}
-        style={styles.sheetCard}
-      >
-        <View style={styles.sheetGrabber} />
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.sheetBody}>
-          {content}
-        </Pressable>
-      </KeyboardAvoidingView>
+      <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheetCard}>
+        <KeyboardAvoidingView
+          behavior={Platform.select({ ios: 'padding', default: undefined })}
+        >
+          <View style={styles.sheetGrabber} />
+          {scrollable ? (
+            <ScrollView
+              contentContainerStyle={styles.sheetContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
+          ) : (
+            <View>{children}</View>
+          )}
+        </KeyboardAvoidingView>
+      </Pressable>
     </Pressable>
   );
 }
@@ -64,17 +60,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     width: '100%',
   },
-  sheetBody: {
-    maxHeight: '100%',
-  },
-  sheetScroll: {
-    flexGrow: 0,
-  },
   sheetContent: {
-    gap: 14,
-    paddingBottom: 32,
-  },
-  sheetContentStatic: {
     gap: 14,
     paddingBottom: 32,
   },

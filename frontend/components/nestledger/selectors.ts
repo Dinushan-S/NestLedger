@@ -9,7 +9,7 @@ import {
   SavingsTrackerMeta,
   ShoppingItem,
 } from '@/lib/nestledger';
-import { expenseFilters, startOfMonth, startOfToday, startOfWeek } from '@/constants/nestledger';
+import { expenseFilters, getCycleStart, startOfMonth, startOfToday, startOfWeek } from '@/constants/nestledger';
 
 type ExpenseWindow = (typeof expenseFilters)[number];
 
@@ -206,12 +206,12 @@ export function buildCurrentMonthStatsMap(
   plans: BudgetPlan[],
   profileExpenses: ExpenseWithItems[],
 ) {
-  const monthStart = startOfMonth();
   const map: Record<string, BudgetMonthStats> = {};
 
   plans.forEach((plan) => {
+    const cycleStart = getCycleStart(plan.start_date);
     const monthExpenses = profileExpenses.filter(
-      (expense) => new Date(expense.date) >= monthStart && expense.plan_id === plan.id,
+      (expense) => new Date(expense.date) >= cycleStart && expense.plan_id === plan.id,
     );
     const family = monthExpenses
       .filter((expense) => !expense.paid_by && !expense.is_borrow)
@@ -336,10 +336,10 @@ export function buildCurrentPlanMonthStats(
     return defaultPlanMonthSummary;
   }
 
-  const monthStart = startOfMonth();
+  const cycleStart = getCycleStart(selectedPlan.start_date);
   const planExpenses = currentPlanExpenses.filter((expense) => expense.plan_id === selectedPlan.id);
   const monthNonBorrow = planExpenses.filter(
-    (expense) => !expense.is_borrow && new Date(expense.date) >= monthStart,
+    (expense) => !expense.is_borrow && new Date(expense.date) >= cycleStart,
   );
   const spent = monthNonBorrow
     .filter((expense) => !expense.paid_by)
@@ -350,13 +350,13 @@ export function buildCurrentPlanMonthStats(
   const borrowed = planExpenses
     .filter(
       (expense) =>
-        expense.is_borrow && expense.price > 0 && new Date(expense.date) >= monthStart,
+        expense.is_borrow && expense.price > 0 && new Date(expense.date) >= cycleStart,
     )
     .reduce((sum, expense) => sum + Number(expense.price ?? 0), 0);
   const repaid = planExpenses
     .filter(
       (expense) =>
-        expense.is_borrow && expense.price < 0 && new Date(expense.date) >= monthStart,
+        expense.is_borrow && expense.price < 0 && new Date(expense.date) >= cycleStart,
     )
     .reduce((sum, expense) => sum + Math.abs(Number(expense.price ?? 0)), 0);
   const totalSpent = spent + contributions + borrowed - repaid;
@@ -364,7 +364,7 @@ export function buildCurrentPlanMonthStats(
   const memberBalances: Record<string, PlanMemberBalance> = {};
 
   planExpenses
-    .filter((expense) => new Date(expense.date) >= monthStart)
+    .filter((expense) => new Date(expense.date) >= cycleStart)
     .forEach((expense) => {
       if (!expense.is_borrow) {
         return;
@@ -447,7 +447,7 @@ export function filterExpensesForView({
   );
   const today = startOfToday();
   const weekStart = startOfWeek();
-  const monthStart = startOfMonth();
+  const cycleStart = getCycleStart(selectedPlan.start_date);
 
   return base.filter((expense) => {
     const expenseDate = new Date(expense.date);
@@ -456,7 +456,7 @@ export function filterExpensesForView({
         ? expenseDate >= today
         : expenseView === 'Week'
           ? expenseDate >= weekStart
-          : expenseDate >= monthStart;
+          : expenseDate >= cycleStart;
     const matchesCategory =
       expenseCategoryFilter === 'All' || expense.category === expenseCategoryFilter;
 

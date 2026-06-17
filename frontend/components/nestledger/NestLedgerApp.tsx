@@ -35,6 +35,7 @@ import {
   monthNames,
   shoppingCategories,
   shoppingFilters,
+  getCycleStart,
   startOfMonth,
   theme,
 } from '../../constants/nestledger';
@@ -50,6 +51,7 @@ import {
   SavingsEntry,
   SavingsTrackerMeta,
   ShoppingItem,
+  SpaceType,
   UserProfile,
   authApi,
   billApi,
@@ -95,8 +97,9 @@ import {
   filterShoppingItems,
 } from './selectors';
 
-const BillTracker = lazy(() => import('./BillTracker'));
-const SavingsTracker = lazy(() => import('./SavingsTracker'));
+import { BillTracker as BillTrackerComponent } from './BillTracker';
+import { SavingsTracker as SavingsTrackerComponent } from './SavingsTracker';
+import AnalyseScreen from './AnalyseScreen';
 const ProfileSettingsModal = lazy(() =>
   import('./settings/ProfileSettingsModal').then((module) => ({
     default: module.ProfileSettingsModal,
@@ -165,6 +168,7 @@ const defaultCreateProfileForm: CreateProfileForm = {
   familyEmoji: avatarChoices[1],
   familyName: '',
   name: '',
+  spaceType: 'personal',
 };
 
 const defaultBudgetForm = (): BudgetForm => {
@@ -237,6 +241,28 @@ const notificationTypes = {
   shoppingBought: 'shopping_item_bought',
 };
 
+const SPACE_TYPES: { type: SpaceType; emoji: string; label: string; desc: string }[] = [
+  { type: 'personal', emoji: '🙋', label: 'Personal', desc: 'Track your own spending. Add a partner anytime.' },
+  { type: 'family', emoji: '🏠', label: 'Family / Home', desc: 'Household budget shared with your family.' },
+  { type: 'trip_family', emoji: '✈️', label: 'Family Trip', desc: 'Travel budget for the whole family.' },
+  { type: 'trip_friends', emoji: '🧳', label: 'Friend Trip', desc: 'Trip with friends — track who paid what.' },
+  { type: 'shared_living', emoji: '🏡', label: 'Shared Living', desc: 'Friends sharing a house or flat.' },
+];
+
+const spaceTypeName = (type?: string | null): string => {
+  switch (type) {
+    case 'personal': return 'Personal';
+    case 'family': return 'Home';
+    case 'trip_family': return 'Trip';
+    case 'trip_friends': return 'Trip';
+    case 'shared_living': return 'Shared Living';
+    default: return 'Space';
+  }
+};
+
+const isSplitSpace = (type?: string | null) =>
+  type === 'trip_friends' || type === 'shared_living';
+
 export default function NestLedgerApp({ initialInviteToken }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -281,6 +307,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [showBorrowComposer, setShowBorrowComposer] = useState(false);
   const [showRepayComposer, setShowRepayComposer] = useState(false);
   const [editingBorrowId, setEditingBorrowId] = useState<string | null>(null);
+  const [expandedBorrowUser, setExpandedBorrowUser] = useState<string | null>(null);
   const [borrowForm, setBorrowForm] = useState<BorrowForm>({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' });
   const [repayForm, setRepayForm] = useState<RepayForm>({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) });
   const [showShoppingComposer, setShowShoppingComposer] = useState(false);
@@ -294,6 +321,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const [onboardingLoaded, setOnboardingLoaded] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const [profileSetupStep, setProfileSetupStep] = useState<'type' | 'details'>('type');
+  const [showBreakdownDetails, setShowBreakdownDetails] = useState(false);
+  const [showAnalyse, setShowAnalyse] = useState(false);
+  const [migrationSpaceType, setMigrationSpaceType] = useState<SpaceType>('family');
+  const [migrationCardVisible, setMigrationCardVisible] = useState(false);
   const onboardingStorageKey = sessionUserId ? `nestledger-onboarding-seen-${sessionUserId}` : null;
   const onboardingPrimaryActionText = userProfile && profiles.length > 0 ? 'Open your space' : 'Continue to setup';
   const userCurrency = userProfile?.currency ?? 'USD';
@@ -398,6 +430,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     () => plans.find((plan) => plan.id === selectedPlanId) ?? null,
     [plans, selectedPlanId],
   );
+
+  // Derived space helpers
+  const showSplitFields = isSplitSpace(activeProfile?.space_type);
+  const [contributionEnabled, setContributionEnabled] = useState(false);
+  const showContribution = showSplitFields || contributionEnabled;
 
   const availableViewYears = useMemo(
     () => buildAvailableViewYears(profileExpenses, selectedPlan),
@@ -542,7 +579,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const toggleReminder = async (enabled: boolean) => {
     setReminderEnabled(enabled);
     await AsyncStorage.setItem('nestledger-reminder-enabled', String(enabled));
-    
+
     if (enabled) {
       await scheduleReminder(reminderTime);
     } else {
@@ -553,7 +590,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const updateReminderTime = async (time: string) => {
     setReminderTime(time);
     await AsyncStorage.setItem('nestledger-reminder-time', time);
-    
+
     if (reminderEnabled) {
       await scheduleReminder(time);
     }
@@ -566,6 +603,33 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     refreshProfileData(activeProfileId);
   }, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
+
+  // Load contribution-enabled preference per profile
+  useEffect(() => {
+    if (!activeProfileId) { setContributionEnabled(false); return; }
+    AsyncStorage.getItem(`nestledger-contribution-enabled-${activeProfileId}`)
+      .then((val) => setContributionEnabled(val === 'true'))
+      .catch(() => setContributionEnabled(false));
+  }, [activeProfileId]);
+
+  const handleToggleContribution = useCallback(async () => {
+    if (!activeProfileId) return;
+    const next = !contributionEnabled;
+    setContributionEnabled(next);
+    await AsyncStorage.setItem(`nestledger-contribution-enabled-${activeProfileId}`, next ? 'true' : 'false');
+  }, [activeProfileId, contributionEnabled]);
+
+  // Show migration card for existing users who haven't set their space type yet
+  useEffect(() => {
+    if (!activeProfileId || !activeProfile) return;
+    const key = `nestledger-space-type-set-${activeProfileId}`;
+    AsyncStorage.getItem(key).then((val) => {
+      if (!val) {
+        setMigrationSpaceType((activeProfile.space_type as SpaceType) ?? 'family');
+        setMigrationCardVisible(true);
+      }
+    }).catch(() => { });
+  }, [activeProfileId, activeProfile]);
 
   useEffect(() => {
     if (!sessionUserId || !activeProfileId) {
@@ -667,6 +731,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     if (!selectedPlanId) return;
     setActiveViewYear(new Date().getFullYear());
     setActiveViewMonth('current');
+    setShowBreakdownDetails(false);
   }, [selectedPlanId]);
 
   useEffect(() => {
@@ -823,7 +888,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     if (!profileForm.name.trim() || !profileForm.familyName.trim()) {
-      announce('Add your name and the family profile name first.');
+      announce('Add your name and the space name first.');
       return;
     }
 
@@ -834,6 +899,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         familyEmoji: profileForm.familyEmoji,
         familyName: profileForm.familyName,
         name: profileForm.name,
+        spaceType: (profileForm.spaceType as SpaceType) ?? 'personal',
         user: session.user,
       });
 
@@ -1110,7 +1176,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       name: item.name.trim(),
       price: Number(item.price),
     }));
-    
+
     await runAction(async () => {
       try {
         if (editingExpenseId) {
@@ -1120,8 +1186,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               category,
               date: new Date(expenseForm.date).toISOString(),
               description: expenseForm.description.trim() || null,
-              paid_by: expenseForm.paidBy,
-              used_by: expenseForm.paidBy === null ? expenseForm.usedBy : null,
+              paid_by: showContribution ? expenseForm.paidBy : null,
+              used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
             } as any,
             items
           );
@@ -1133,10 +1199,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             description: expenseForm.description.trim() || null,
             is_borrow: expenseForm.is_borrow,
             items,
-            paid_by: expenseForm.paidBy,
+            paid_by: showContribution ? expenseForm.paidBy : null,
             plan_id: selectedPlan.id,
             profile_id: selectedPlan.profile_id,
-            used_by: expenseForm.paidBy === null ? expenseForm.usedBy : null,
+            used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
           });
           const itemNames = items.map(i => i.name).join(', ');
           await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
@@ -1248,7 +1314,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const updateExpenseItem = (index: number, field: 'name' | 'price', value: string) => {
     setExpenseForm(current => ({
       ...current,
-      items: current.items.map((item, i) => 
+      items: current.items.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
       ),
     }));
@@ -1266,7 +1332,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       customCategory: expenseCategories.find((c) => c.key === expense.category) ? '' : expense.category,
       date: expense.date.slice(0, 10),
       description: expense.description || '',
-      items: expense.items?.length > 0 
+      items: expense.items?.length > 0
         ? expense.items.map(item => ({ name: item.name, price: String(item.price) }))
         : [{ name: '', price: '' }],
       is_borrow: expense.is_borrow,
@@ -1481,6 +1547,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       await profileApi.updateHousehold(activeProfile.id, {
         emoji_avatar: profileForm.familyEmoji,
         name: profileForm.familyName,
+        space_type: (profileForm.spaceType as SpaceType) ?? 'personal',
       });
 
       const [nextUserProfile, nextProfiles] = await Promise.all([
@@ -1500,6 +1567,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       familyEmoji: activeProfile?.emoji_avatar ?? avatarChoices[1],
       familyName: activeProfile?.name ?? '',
       name: userProfile?.name ?? '',
+      spaceType: activeProfile?.space_type ?? 'personal',
     });
     setShowProfileSettings(true);
   };
@@ -1555,20 +1623,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
   };
 
-  const monthlySpend = useMemo(() => {
-    const monthStart = startOfMonth();
-    return profileExpenses
-      .filter((item) => !item.is_borrow && new Date(item.date) >= monthStart)
-      .reduce((total, item) => total + Number(item.price), 0);
-  }, [profileExpenses]);
-
   const latestActivities = notifications.slice(0, 4);
   const activeBudget = plans[0];
+
+  const monthlySpend = useMemo(() => {
+    const cycleStart = activeBudget ? getCycleStart(activeBudget.start_date) : startOfMonth();
+    return profileExpenses
+      .filter((item) => !item.is_borrow && new Date(item.date) >= cycleStart)
+      .reduce((total, item) => total + Number(item.price), 0);
+  }, [activeBudget, profileExpenses]);
+
   const currentMonthPlanStatsDashboard = useMemo(() => {
     if (!activeBudget) return { spent: 0, contributions: 0 };
     const planId = activeBudget.id;
-    const monthStart = startOfMonth();
-    const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= monthStart && e.plan_id === planId);
+    const cycleStart = getCycleStart(activeBudget.start_date);
+    const monthExpenses = profileExpenses.filter((e) => new Date(e.date) >= cycleStart && e.plan_id === planId);
     const family = monthExpenses.filter((e) => !e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
     const contributions = monthExpenses.filter((e) => e.paid_by && !e.is_borrow).reduce((s, e) => s + Number(e.price ?? 0), 0);
     const borrowed = monthExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
@@ -1593,7 +1662,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   if (!session) {
     return (
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={styles.authWrap}>
+        <ScrollView contentContainerStyle={styles.authWrap} showsVerticalScrollIndicator={false}>
           <BentoCard tone="highlight" style={styles.authCard}>
             <Text style={styles.kicker}>NestLedger</Text>
             <Text style={styles.heroTitle}>Shared home budgeting without the chaos.</Text>
@@ -1655,16 +1724,61 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
   if (!userProfile || profiles.length === 0 || showCreateProfile) {
     const isFirstSetup = !userProfile || profiles.length === 0;
+
+    if (profileSetupStep === 'type') {
+      return (
+        <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
+          <ScrollView contentContainerStyle={styles.authWrap} showsVerticalScrollIndicator={false}>
+            <BentoCard tone="highlight" style={styles.authCard}>
+              <Text style={styles.kicker}>{isFirstSetup ? 'Welcome to NestLedger' : 'New space'}</Text>
+              <Text style={styles.heroTitle}>What would you like to track?</Text>
+              <Text style={styles.bodyMuted}>Choose a space type — you can always change it later in settings.</Text>
+              <View style={styles.spaceTypeGrid}>
+                {SPACE_TYPES.map((st) => {
+                  const selected = profileForm.spaceType === st.type;
+                  return (
+                    <Pressable
+                      key={st.type}
+                      onPress={() => setProfileForm({ ...profileForm, spaceType: st.type })}
+                      style={[styles.spaceTypeCard, selected && styles.spaceTypeCardActive]}
+                    >
+                      <Text style={styles.spaceTypeEmoji}>{st.emoji}</Text>
+                      <Text style={[styles.spaceTypeLabel, selected && styles.spaceTypeLabelActive]}>{st.label}</Text>
+                      <Text style={[styles.spaceTypeDesc, selected && styles.spaceTypeDescActive]}>{st.desc}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ModernButton
+                onPress={() => setProfileSetupStep('details')}
+                testID="space-type-next"
+                text="Continue →"
+              />
+              {!isFirstSetup ? (
+                <ModernButton onPress={() => setShowCreateProfile(false)} secondary testID="create-profile-cancel" text="Cancel" />
+              ) : null}
+            </BentoCard>
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
+
     return (
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={styles.authWrap}>
+        <ScrollView contentContainerStyle={styles.authWrap} showsVerticalScrollIndicator={false}>
           <BentoCard tone="highlight" style={styles.authCard}>
-            <Text style={styles.kicker}>{isFirstSetup ? 'Set up your shared home' : 'Create new space'}</Text>
-            <Text style={styles.heroTitle}>{isFirstSetup ? 'Create your first NestLedger profile.' : 'Add another family space.'}</Text>
-            <Text style={styles.bodyMuted}>{isFirstSetup ? 'This creates your member identity and the first family/home space.' : 'Create a separate budget space for another household or family.'}</Text>
+            <Pressable onPress={() => setProfileSetupStep('type')} style={styles.backRow}>
+              <Ionicons color={theme.primary} name="chevron-back" size={18} />
+              <Text style={styles.backRowText}>Change type</Text>
+            </Pressable>
+            <Text style={styles.kicker}>{isFirstSetup ? 'Set up your space' : 'Create new space'}</Text>
+            <Text style={styles.heroTitle}>
+              {SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.emoji}{' '}
+              {SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.label}
+            </Text>
             <ProfileFormFields form={profileForm} onChange={setProfileForm} />
             {setupMessage ? <Text style={styles.errorText}>{setupMessage}</Text> : null}
-            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text={isFirstSetup ? 'Create NestLedger space' : 'Create space'} />
+            <ModernButton loading={actionBusy} onPress={handleCreateProfile} testID="create-profile-submit" text={isFirstSetup ? 'Create space' : 'Create space'} />
             {!isFirstSetup ? (
               <ModernButton onPress={() => setShowCreateProfile(false)} secondary testID="create-profile-cancel" text="Cancel" />
             ) : null}
@@ -1677,11 +1791,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   if (!activeProfile || showProfileSwitcher) {
     return (
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={styles.switcherWrap}>
+        <ScrollView contentContainerStyle={styles.switcherWrap} showsVerticalScrollIndicator={false}>
           <View style={styles.switcherHeader}>
             <Text style={styles.kicker}>Choose profile</Text>
-            <Text style={styles.sectionTitle}>Pick your family space</Text>
-            <Text style={styles.bodyMuted}>All homes you’re part of appear here. You can also create a new one.</Text>
+            <Text style={styles.sectionTitle}>Your spaces</Text>
+            <Text style={styles.bodyMuted}>All budget spaces you’re part of appear here.</Text>
           </View>
 
           {profiles.map((profile) => (
@@ -1698,13 +1812,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
               <Text style={styles.switcherEmoji}>{profile.emoji_avatar ?? '🏡'}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{profile.name}</Text>
-                <Text style={styles.bodyMuted}>Created {formatShortDate(profile.created_at)} • Hold to delete</Text>
+                <Text style={styles.bodyMuted}>{spaceTypeName(profile.space_type)} • {formatShortDate(profile.created_at)} • Hold to delete</Text>
               </View>
               <Ionicons color={theme.primary} name="chevron-forward" size={20} />
             </Pressable>
           ))}
 
-            <ModernButton onPress={() => setShowCreateProfile(true)} secondary testID="profile-switcher-create" text="Create another space" />
+          <ModernButton onPress={() => { setProfileSetupStep('type'); setShowCreateProfile(true); }} secondary testID="profile-switcher-create" text="Create another space" />
           <ModernButton onPress={() => authApi.signOut()} secondary testID="profile-switcher-signout" text="Sign out" />
         </ScrollView>
       </SafeAreaView>
@@ -1715,509 +1829,594 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     <GestureHandlerRootView style={styles.screen}>
       <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
         <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.screen}>
-          <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}> 
-          <View style={styles.topBar}>
-            <Pressable hitSlop={10} onPress={() => setShowProfileSwitcher(true)} style={styles.profileSwitcherButton} testID="open-profile-switcher">
-              <Text style={styles.switcherEmoji}>{activeProfile.emoji_avatar ?? '🏡'}</Text>
-              <View>
-                <Text style={styles.topBarTitle}>{activeProfile.name}</Text>
-                <Text style={styles.topBarSubtitle}>{userProfile.name}</Text>
-              </View>
-              <Ionicons color={theme.textMuted} name="chevron-down" size={16} />
-            </Pressable>
-
-            <Pressable hitSlop={10} onPress={() => setShowNotifications(true)} style={styles.bellButton} testID="open-notifications">
-              <Ionicons color={theme.text} name="notifications-outline" size={22} />
-              {unreadCount > 0 ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{Math.min(unreadCount, 9)}</Text>
+          <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}>
+            <View style={styles.topBar}>
+              <Pressable hitSlop={10} onPress={() => setShowProfileSwitcher(true)} style={styles.profileSwitcherButton} testID="open-profile-switcher">
+                <Text style={styles.switcherEmoji}>{activeProfile.emoji_avatar ?? '🏡'}</Text>
+                <View>
+                  <Text style={styles.topBarTitle}>{activeProfile.name}</Text>
+                  <Text style={styles.topBarSubtitle}>{userProfile.name} · {spaceTypeName(activeProfile.space_type)}</Text>
                 </View>
-              ) : null}
-            </Pressable>
-          </View>
+                <Ionicons color={theme.textMuted} name="chevron-down" size={16} />
+              </Pressable>
 
-          {busy ? (
-            <View style={styles.loaderWrap}>
-              <ActivityIndicator color={theme.primary} size="large" />
+              <Pressable hitSlop={10} onPress={() => setShowNotifications(true)} style={styles.bellButton} testID="open-notifications">
+                <Ionicons color={theme.text} name="notifications-outline" size={22} />
+                {unreadCount > 0 ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{Math.min(unreadCount, 9)}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
             </View>
-          ) : (
-            <ScrollView contentContainerStyle={styles.contentWrap} showsVerticalScrollIndicator={false}>
-              {setupMessage ? (
-                <View style={styles.inlineBanner}>
-                  <Ionicons color={theme.secondary} name="warning-outline" size={18} />
-                  <Text style={styles.inlineBannerText}>{setupMessage}</Text>
-                </View>
-              ) : null}
 
-              {activeTab === 'dashboard' ? (
-                <View style={styles.sectionGap}>
-                  <BentoCard tone="highlight">
-                    <Text style={styles.kicker}>Dashboard</Text>
-                    <Text style={styles.heroTitle}>{c(monthlySpend)} spent this month</Text>
-                    <Text style={styles.bodyMuted}>Keep your family budget clear, shared, and calm.</Text>
-                  </BentoCard>
+            {busy ? (
+              <View style={styles.loaderWrap}>
+                <ActivityIndicator color={theme.primary} size="large" />
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={styles.contentWrap} showsVerticalScrollIndicator={false}>
+                {setupMessage ? (
+                  <View style={styles.inlineBanner}>
+                    <Ionicons color={theme.secondary} name="warning-outline" size={18} />
+                    <Text style={styles.inlineBannerText}>{setupMessage}</Text>
+                  </View>
+                ) : null}
 
-                  <View style={[styles.bentoRow, isTablet && { justifyContent: 'space-between' }]}> 
-                    <BentoCard style={{ width: bentoWidth }}>
-                      <Text style={styles.cardEyebrow}>Active budget</Text>
-                      <Text style={styles.cardTitle}>{activeBudget?.name ?? 'No plan yet'}</Text>
-                      <Text style={styles.metricText}>{c(currentMonthPlanStatsDashboard.spent)}</Text>
-                      <Text style={styles.bodyMuted}>of {c((activeBudget?.total_amount ?? 0) + currentMonthPlanStatsDashboard.contributions)} allocated</Text>
-                      <View style={styles.spacer12} />
-                      <ProgressBar progress={activeBudget ? currentMonthPlanStatsDashboard.spent / Math.max(activeBudget.total_amount + currentMonthPlanStatsDashboard.contributions, 1) : 0} />
-                    </BentoCard>
-
-                    <BentoCard style={{ width: bentoWidth }}>
-                      <Text style={styles.cardEyebrow}>Shopping</Text>
-                      <Text style={styles.metricText}>{pendingItemsCount}</Text>
-                      <Text style={styles.bodyMuted}>pending household items</Text>
-                      <View style={styles.statRow}>
-                        <InfoPill label="Bought" value={`${shoppingItems.filter((item) => item.is_bought).length}`} />
-                        <InfoPill label="Unread" value={`${shoppingBadgeCount}`} />
+                {activeTab === 'dashboard' ? (
+                  <View style={styles.sectionGap}>
+                    <BentoCard tone="highlight">
+                      <Text style={styles.kicker}>Dashboard</Text>
+                      <Text style={styles.heroTitle}>{activeBudget?.name ?? 'No budget yet'}</Text>
+                      <View style={styles.breakdownSummaryRow}>
+                        <View style={styles.breakdownStat}>
+                          <Text style={styles.breakdownStatValue}>{c(activeBudget?.total_amount ?? 0)}</Text>
+                          <Text style={styles.breakdownStatLabel}>Budget</Text>
+                        </View>
+                        <View style={styles.breakdownStat}>
+                          <Text style={styles.breakdownStatValue}>{c(currentMonthPlanStatsDashboard.spent)}</Text>
+                          <Text style={styles.breakdownStatLabel}>Spent</Text>
+                        </View>
+                        <View style={styles.breakdownStat}>
+                          <Text style={[styles.breakdownStatValue, {
+                            color: (activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent > 0
+                              ? theme.success
+                              : theme.danger,
+                          }]}>
+                            {c(Math.max((activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent, 0))}
+                          </Text>
+                          <Text style={styles.breakdownStatLabel}>Remaining</Text>
+                        </View>
                       </View>
+                      <View style={styles.spacer12} />
+                      <ProgressBar
+                        progress={activeBudget
+                          ? currentMonthPlanStatsDashboard.spent / Math.max(activeBudget.total_amount, 1)
+                          : 0}
+                      />
                     </BentoCard>
 
-                    <BentoCard style={{ width: bentoWidth }}>
-                      <Text style={styles.cardEyebrow}>Members</Text>
-                      <Text style={styles.metricText}>{members.length}</Text>
-                      <Text style={styles.bodyMuted}>everyone sees updates in real time</Text>
-                    </BentoCard>
+                    <Pressable onPress={() => setShowAnalyse(true)} testID="open-analyse">
+                      <BentoCard>
+                        <View style={styles.analyseCardRow}>
+                          <View style={styles.analyseCardIcon}>
+                            <Ionicons name="pie-chart-outline" size={22} color={theme.primary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.analyseCardTitle}>View full report</Text>
+                            <Text style={styles.bodyMuted}>See where your money went and how to spend less next month</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                        </View>
+                      </BentoCard>
+                    </Pressable>
 
-                    <BentoCard style={{ width: bentoWidth }}>
-                      <Text style={styles.cardEyebrow}>Notifications</Text>
-                      <Text style={styles.metricText}>{unreadCount}</Text>
-                      <Text style={styles.bodyMuted}>unread family updates</Text>
-                    </BentoCard>
+                    {migrationCardVisible ? (
+                      <BentoCard>
+                        <Text style={styles.inputLabel}>What kind of space is this?</Text>
+                        <Text style={styles.bodyMuted}>We've added space types so NestLedger shows only what's relevant for you. Tap your type below.</Text>
+                        <View style={styles.spaceTypeGrid}>
+                          {SPACE_TYPES.map((st) => {
+                            const selected = migrationSpaceType === st.type;
+                            return (
+                              <Pressable
+                                key={st.type}
+                                onPress={() => setMigrationSpaceType(st.type)}
+                                style={[styles.spaceTypeCard, selected && styles.spaceTypeCardActive]}
+                              >
+                                <Text style={styles.spaceTypeEmoji}>{st.emoji}</Text>
+                                <Text style={[styles.spaceTypeLabel, selected && styles.spaceTypeLabelActive]}>{st.label}</Text>
+                                <Text style={[styles.spaceTypeDesc, selected && styles.spaceTypeDescActive]}>{st.desc}</Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        <View style={styles.spacer12} />
+                        <ModernButton
+                          loading={actionBusy}
+                          onPress={async () => {
+                            if (!activeProfileId) return;
+                            await runAction(async () => {
+                              await profileApi.updateHousehold(activeProfileId, { space_type: migrationSpaceType });
+                              await AsyncStorage.setItem(`nestledger-space-type-set-${activeProfileId}`, 'true');
+                              setProfiles((prev) =>
+                                prev.map((p) =>
+                                  p.id === activeProfileId ? { ...p, space_type: migrationSpaceType } : p,
+                                ),
+                              );
+                              setMigrationCardVisible(false);
+                            });
+                          }}
+                          testID="migration-card-save"
+                          text="Save space type"
+                        />
+                        <ModernButton
+                          onPress={() => setMigrationCardVisible(false)}
+                          secondary
+                          testID="migration-card-dismiss"
+                          text="Remind me later"
+                        />
+                      </BentoCard>
+                    ) : null}
 
-                    <BentoCard style={{ width: bentoWidth }}>
-                      <Text style={styles.cardEyebrow}>Savings</Text>
-                      {savings.length > 0 ? (
-                        <>
-                          <Text style={styles.metricText}>{c(savings.reduce((s, e) => s + e.amount, 0))}</Text>
-                          <Text style={styles.bodyMuted}>total saved across all plans</Text>
-                        </>
+                    <View style={[styles.bentoRow, isTablet && { justifyContent: 'space-between' }]}>
+                      <BentoCard style={{ width: bentoWidth }}>
+                        <Text style={styles.cardEyebrow}>Current cycle</Text>
+                        <Text style={styles.metricText}>{c(currentMonthPlanStatsDashboard.spent)}</Text>
+                        <Text style={styles.bodyMuted}>spent · {c(Math.max((activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent, 0))} left</Text>
+                      </BentoCard>
+
+                      <BentoCard style={{ width: bentoWidth }}>
+                        <Text style={styles.cardEyebrow}>Shopping</Text>
+                        <Text style={styles.metricText}>{pendingItemsCount}</Text>
+                        <Text style={styles.bodyMuted}>pending household items</Text>
+                        <View style={styles.statRow}>
+                          <InfoPill label="Bought" value={`${shoppingItems.filter((item) => item.is_bought).length}`} />
+                          <InfoPill label="Unread" value={`${shoppingBadgeCount}`} />
+                        </View>
+                      </BentoCard>
+
+                      <BentoCard style={{ width: bentoWidth }}>
+                        <Text style={styles.cardEyebrow}>Members</Text>
+                        <Text style={styles.metricText}>{members.length}</Text>
+                        <Text style={styles.bodyMuted}>everyone sees updates in real time</Text>
+                      </BentoCard>
+
+                      <BentoCard style={{ width: bentoWidth }}>
+                        <Text style={styles.cardEyebrow}>Notifications</Text>
+                        <Text style={styles.metricText}>{unreadCount}</Text>
+                        <Text style={styles.bodyMuted}>unread family updates</Text>
+                      </BentoCard>
+
+                      <BentoCard style={{ width: bentoWidth }}>
+                        <Text style={styles.cardEyebrow}>Savings</Text>
+                        {savingsTrackers.length > 0 ? (
+                          <>
+                            <Text style={styles.metricText}>{c(Object.values(currentMonthSavingsStatsMap).reduce((sum, s) => sum + s.balance, 0))}</Text>
+                            <Text style={styles.bodyMuted}>total saved across all plans</Text>
+                          </>
+                        ) : (
+                          <>
+                            <Text style={styles.metricText}>—</Text>
+                            <Text style={styles.bodyMuted}>No savings entries yet</Text>
+                          </>
+                        )}
+                      </BentoCard>
+                    </View>
+
+                    <BentoCard>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.sectionTitle}>Recent activity</Text>
+                        <Pressable onPress={() => setShowNotifications(true)}>
+                          <Text style={styles.linkText}>Open all</Text>
+                        </Pressable>
+                      </View>
+                      {latestActivities.length > 0 ? (
+                        latestActivities.map((item) => (
+                          <View key={item.id} style={styles.listRow}>
+                            <Ionicons color={theme.primary} name="ellipse" size={10} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.listTitle}>{item.message}</Text>
+                              <Text style={styles.listSubtitle}>{formatShortDate(item.created_at)}</Text>
+                            </View>
+                          </View>
+                        ))
                       ) : (
-                        <>
-                          <Text style={styles.metricText}>—</Text>
-                          <Text style={styles.bodyMuted}>No savings entries yet</Text>
-                        </>
+                        <EmptyState body="Notifications and shared actions will show here." title="No activity yet" />
                       )}
                     </BentoCard>
                   </View>
+                ) : null}
 
-                  <BentoCard>
-                    <View style={styles.rowBetween}>
-                      <Text style={styles.sectionTitle}>Recent activity</Text>
-                      <Pressable onPress={() => setShowNotifications(true)}>
-                        <Text style={styles.linkText}>Open all</Text>
-                      </Pressable>
+                {activeTab === 'budget' ? (
+                  <View style={styles.sectionGap}>
+                    <View style={styles.headerBlock}>
+                      <View style={styles.headerContent}>
+                        <Text style={styles.sectionTitle}>Budget plans</Text>
+                        <Text style={styles.bodyMuted}>Track spend, remaining balance, and shared expenses.</Text>
+                      </View>
+                      <View style={styles.iconRow}>
+                        <Pressable hitSlop={8} onPress={() => setBudgetEditMode(!budgetEditMode)} testID="budget-edit-mode-toggle">
+                          <Ionicons color={budgetEditMode ? theme.primary : theme.textMuted} name={budgetEditMode ? 'checkmark-circle' : 'settings-outline'} size={24} />
+                        </Pressable>
+                        <ModernButton onPress={() => { setNewPlanType('budget'); setShowNewPlanComposer(true); }} secondary testID="budget-new-plan" text="New plan" />
+                      </View>
                     </View>
-                    {latestActivities.length > 0 ? (
-                      latestActivities.map((item) => (
-                        <View key={item.id} style={styles.listRow}>
-                          <Ionicons color={theme.primary} name="ellipse" size={10} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.listTitle}>{item.message}</Text>
-                            <Text style={styles.listSubtitle}>{formatShortDate(item.created_at)}</Text>
-                          </View>
-                        </View>
-                      ))
-                    ) : (
-                      <EmptyState body="Notifications and shared actions will show here." title="No activity yet" />
-                    )}
-                  </BentoCard>
-                </View>
-              ) : null}
 
-              {activeTab === 'budget' ? (
-                <View style={styles.sectionGap}>
-                  <View style={styles.headerBlock}>
-                    <View style={styles.headerContent}>
-                      <Text style={styles.sectionTitle}>Budget plans</Text>
-                      <Text style={styles.bodyMuted}>Track spend, remaining balance, and shared expenses.</Text>
-                    </View>
-                    <View style={styles.iconRow}>
-                      <Pressable hitSlop={8} onPress={() => setBudgetEditMode(!budgetEditMode)} testID="budget-edit-mode-toggle">
-                        <Ionicons color={budgetEditMode ? theme.primary : theme.textMuted} name={budgetEditMode ? 'checkmark-circle' : 'settings-outline'} size={24} />
-                      </Pressable>
-                      <ModernButton onPress={() => { setNewPlanType('budget'); setShowNewPlanComposer(true); }} secondary testID="budget-new-plan" text="New plan" />
-                    </View>
-                  </View>
-
-                  {plans.map((plan) => {
-                    const stats = currentMonthStatsMap[plan.id] ?? { spent: 0, allocated: plan.total_amount, remaining: plan.total_amount };
-                    return (
-                      <BentoCard key={plan.id} style={styles.planCard}>
-                        <View style={styles.rowBetween}>
-                          <Pressable 
-                            onPress={() => setSelectedPlanId(plan.id)} 
-                            style={{ flex: 1 }} 
-                            testID={`budget-plan-${plan.id}`}
-                          >
-                            <Text style={styles.cardTitle}>{plan.name}</Text>
-                            <Text style={styles.bodyMuted}>
-                              {formatShortDate(plan.start_date)} → {formatShortDate(plan.end_date)}
-                            </Text>
-                          </Pressable>
-                          <View style={styles.iconRow}>
-                            {budgetEditMode ? (
-                              <>
-                                <Pressable hitSlop={8} onPress={() => handleEditBudget(plan)} testID={`budget-edit-${plan.id}`}>
-                                  <Ionicons color={theme.primary} name="create-outline" size={22} />
-                                </Pressable>
-                                <Pressable hitSlop={8} onPress={() => handleDeleteBudget(plan.id, plan.name)} testID={`budget-delete-${plan.id}`}>
-                                  <Ionicons color={theme.danger} name="trash-outline" size={22} />
-                                </Pressable>
-                              </>
-                            ) : null}
-                            <Pressable hitSlop={8} onPress={() => setSelectedPlanId(plan.id)}>
-                              <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                    {plans.map((plan) => {
+                      const stats = currentMonthStatsMap[plan.id] ?? { spent: 0, allocated: plan.total_amount, remaining: plan.total_amount };
+                      return (
+                        <BentoCard key={plan.id} style={styles.planCard}>
+                          <View style={styles.rowBetween}>
+                            <Pressable
+                              onPress={() => setSelectedPlanId(plan.id)}
+                              style={{ flex: 1 }}
+                              testID={`budget-plan-${plan.id}`}
+                            >
+                              <Text style={styles.cardTitle}>{plan.name}</Text>
+                              <Text style={styles.bodyMuted}>
+                                {formatShortDate(plan.start_date)} → {formatShortDate(plan.end_date)}
+                              </Text>
                             </Pressable>
+                            <View style={styles.iconRow}>
+                              {budgetEditMode ? (
+                                <>
+                                  <Pressable hitSlop={8} onPress={() => handleEditBudget(plan)} testID={`budget-edit-${plan.id}`}>
+                                    <Ionicons color={theme.primary} name="create-outline" size={22} />
+                                  </Pressable>
+                                  <Pressable hitSlop={8} onPress={() => handleDeleteBudget(plan.id, plan.name)} testID={`budget-delete-${plan.id}`}>
+                                    <Ionicons color={theme.danger} name="trash-outline" size={22} />
+                                  </Pressable>
+                                </>
+                              ) : null}
+                              <Pressable hitSlop={8} onPress={() => setSelectedPlanId(plan.id)}>
+                                <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                              </Pressable>
+                            </View>
                           </View>
-                        </View>
-                        <View style={styles.statRow}>
-                          <InfoPill label="Allocated" value={c(stats.allocated)} />
-                          <InfoPill label="Spent" value={c(stats.spent)} />
-                          <InfoPill label="Left" value={c(stats.remaining)} />
-                        </View>
-                        <ProgressBar progress={stats.spent / Math.max(stats.allocated, 1)} />
-                      </BentoCard>
-                    );
-                  })}
+                          <View style={styles.statRow}>
+                            <InfoPill label="Allocated" value={c(stats.allocated)} />
+                            <InfoPill label="Spent" value={c(stats.spent)} />
+                            <InfoPill label="Left" value={c(stats.remaining)} />
+                          </View>
+                          <ProgressBar progress={stats.spent / Math.max(stats.allocated, 1)} />
+                        </BentoCard>
+                      );
+                    })}
 
-                  {plans.length === 0 ? (
-                    <EmptyState body="Create your first family budget plan to start tracking expenses." title="No plans yet" />
-                  ) : null}
+                    {plans.length === 0 ? (
+                      <EmptyState body="Create your first family budget plan to start tracking expenses." title="No plans yet" />
+                    ) : null}
 
-                  {billTrackers.map((tracker) => {
-                    const bStats = currentMonthBillStatsMap[tracker.id] ?? { paid: 0, paidCount: 0, pending: 0, pendingCount: 0, totalCount: 0 };
-                    const renderRightActions = () => (
-                      <View style={styles.deleteAction}>
-                        <Pressable hitSlop={10} onPress={() => handleDeleteTracker('bill', tracker.id, tracker.name)} style={styles.deleteButton}>
-                          <Ionicons color="#fff" name="trash-outline" size={24} />
-                        </Pressable>
-                      </View>
-                    );
-                    const renderLeftActions = () => (
-                      <View style={[styles.deleteAction, { backgroundColor: theme.primary }]}>
-                        <Pressable hitSlop={10} onPress={() => { setEditingBillTrackerId(tracker.id); setEditBillTrackerForm({ name: tracker.name }); }} style={styles.deleteButton}>
-                          <Ionicons color="#fff" name="create-outline" size={24} />
-                        </Pressable>
-                      </View>
-                    );
-                    return (
-                      <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
-                        <Pressable
-                          onPress={() => {
-                            setBillViewMonth('current');
-                            setBillTrackerDetailLoading(true);
-                            setSelectedBillTrackerId(tracker.id);
-                          }}
-                        >
-                          <BentoCard>
-                            <View style={styles.rowBetween}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.cardTitle}>{tracker.name}</Text>
-                                <Text style={styles.bodyMuted}>Bills this month: {bStats.totalCount}</Text>
-                              </View>
-                              <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
-                            </View>
-                            <View style={styles.statRow}>
-                              <InfoPill label="Paid" value={c(bStats.paid)} />
-                              <InfoPill label="Pending" value={c(bStats.pending)} />
-                              <InfoPill label="Total" value={`${bStats.totalCount} bills`} />
-                            </View>
-                          </BentoCard>
-                        </Pressable>
-                      </Swipeable>
-                    );
-                  })}
-
-                  {savingsTrackers.map((tracker) => {
-                    const sStats = currentMonthSavingsStatsMap[tracker.id] ?? { balance: 0, deposits: 0, withdrawals: 0, net: 0 };
-                    const renderRightActions = () => (
-                      <View style={styles.deleteAction}>
-                        <Pressable hitSlop={10} onPress={() => handleDeleteTracker('savings', tracker.id, tracker.name)} style={styles.deleteButton}>
-                          <Ionicons color="#fff" name="trash-outline" size={24} />
-                        </Pressable>
-                      </View>
-                    );
-                    const renderLeftActions = () => (
-                      <View style={[styles.deleteAction, { backgroundColor: theme.primary }]}>
-                        <Pressable hitSlop={10} onPress={() => { setEditingSavingsTrackerId(tracker.id); setEditSavingsTrackerForm({ name: tracker.name }); }} style={styles.deleteButton}>
-                          <Ionicons color="#fff" name="create-outline" size={24} />
-                        </Pressable>
-                      </View>
-                    );
-                    return (
-                      <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
-                        <Pressable
-                          onPress={() => {
-                            setSavingsViewMonth('current');
-                            setSavingsTrackerDetailLoading(true);
-                            setSelectedSavingsTrackerId(tracker.id);
-                          }}
-                        >
-                          <BentoCard>
-                            <View style={styles.rowBetween}>
-                              <Text style={styles.cardTitle}>{tracker.name}</Text>
-                              <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
-                            </View>
-                            <View style={styles.statRow}>
-                              <InfoPill label="Balance" value={c(sStats.balance)} />
-                              <InfoPill label="Deposits" value={c(sStats.deposits)} />
-                              <InfoPill label="Net" value={c(sStats.net)} />
-                            </View>
-                          </BentoCard>
-                        </Pressable>
-                      </Swipeable>
-                    );
-                  })}
-
-                  {billTrackers.length === 0 && savingsTrackers.length === 0 ? (
-                    <EmptyState body="Create your first bill or savings tracker to get started." title="No trackers yet" />
-                  ) : null}
-                </View>
-              ) : null}
-
-              {activeTab === 'shopping' ? (
-                <View style={styles.sectionGap}>
-                  <View style={styles.headerBlock}>
-                    <View style={styles.headerContent}>
-                      <Text style={styles.sectionTitle}>Shopping list</Text>
-                      <Text style={styles.bodyMuted}>Shared in real time with bought timestamps and member names.</Text>
-                    </View>
-                    <ModernButton onPress={() => setShowShoppingComposer(true)} secondary testID="shopping-open-add" text="Add item" />
-                  </View>
-
-                  <View style={styles.segmentRow}>
-                    {shoppingFilters.map((filter) => (
-                      <CategoryChip key={filter} active={shoppingFilter === filter} label={filter} onPress={() => setShoppingFilter(filter)} />
-                    ))}
-                  </View>
-
-                  <Pressable hitSlop={10} onPress={() => runAction(async () => activeProfile && shoppingApi.clearBought(activeProfile.id).then(() => refreshProfileData(activeProfile.id)))}>
-                    <Text style={styles.linkText}>Clear all bought items</Text>
-                  </Pressable>
-
-{filteredShoppingItems.length > 0 ? (
-                    filteredShoppingItems.map((item) => {
-                      const actor = memberMap.get(item.bought_by ?? item.added_by);
+                    {billTrackers.map((tracker) => {
+                      const bStats = currentMonthBillStatsMap[tracker.id] ?? { paid: 0, paidCount: 0, pending: 0, pendingCount: 0, totalCount: 0 };
                       const renderRightActions = () => (
                         <View style={styles.deleteAction}>
-                          <Pressable
-                            hitSlop={10}
-                            onPress={() => handleDeleteShoppingItem(item.id, item.name)}
-                            style={styles.deleteButton}
-                            testID={`shopping-delete-${item.id}`}
-                          >
+                          <Pressable hitSlop={10} onPress={() => handleDeleteTracker('bill', tracker.id, tracker.name)} style={styles.deleteButton}>
                             <Ionicons color="#fff" name="trash-outline" size={24} />
                           </Pressable>
                         </View>
                       );
+                      const renderLeftActions = () => (
+                        <View style={[styles.deleteAction, { backgroundColor: theme.primary }]}>
+                          <Pressable hitSlop={10} onPress={() => { setEditingBillTrackerId(tracker.id); setEditBillTrackerForm({ name: tracker.name }); }} style={styles.deleteButton}>
+                            <Ionicons color="#fff" name="create-outline" size={24} />
+                          </Pressable>
+                        </View>
+                      );
                       return (
-                        <Swipeable key={item.id} renderRightActions={renderRightActions} overshootRight={false}>
-                          <BentoCard style={styles.shoppingCard}>
-                            <View style={styles.rowBetween}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={[styles.listTitle, item.is_bought && styles.strikethrough]}>{item.name}</Text>
-                                <Text style={styles.listSubtitle}>
-                                  {item.quantity ? `${item.quantity} • ` : ''}
-                                  {item.category || 'General'}
-                                </Text>
-                                <Text style={styles.listSubtitle}>
-                                  Added by {memberMap.get(item.added_by)?.name ?? 'Member'}
-                                  {item.is_bought ? ` • Bought by ${actor?.name ?? 'Member'} on ${formatShortDate(item.bought_at)}` : ''}
-                                </Text>
+                        <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
+                          <Pressable
+                            onPress={() => {
+                              setBillViewMonth('current');
+                              setBillTrackerDetailLoading(true);
+                              setSelectedBillTrackerId(tracker.id);
+                            }}
+                          >
+                            <BentoCard>
+                              <View style={styles.rowBetween}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.cardTitle}>{tracker.name}</Text>
+                                  <Text style={styles.bodyMuted}>Bills this month: {bStats.totalCount}</Text>
+                                </View>
+                                <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
                               </View>
-                              <Pressable hitSlop={12} onPress={() => handleMarkBought(item)} testID={`shopping-mark-bought-${item.id}`}>
-                                <Ionicons
-                                  color={item.is_bought ? theme.success : theme.primary}
-                                  name={item.is_bought ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                                  size={28}
-                                />
-                              </Pressable>
-                            </View>
-                          </BentoCard>
+                              <View style={styles.statRow}>
+                                <InfoPill label="Paid" value={c(bStats.paid)} />
+                                <InfoPill label="Pending" value={c(bStats.pending)} />
+                                <InfoPill label="Total" value={`${bStats.totalCount} bills`} />
+                              </View>
+                            </BentoCard>
+                          </Pressable>
                         </Swipeable>
                       );
-                    })
-                  ) : (
-                    <EmptyState body="Add household items so everyone can see and update them together." title="List is empty" />
-                  )}
-                </View>
-              ) : null}
+                    })}
 
-              {activeTab === 'profile' ? (
-                <View style={styles.sectionGap}>
-                  <BentoCard tone="highlight">
-                    <Text style={styles.sectionTitle}>{userProfile.name}</Text>
-                    <Text style={styles.bodyMuted}>{userProfile.email}</Text>
-                    <View style={styles.statRow}>
-                      <InfoPill label="Avatar" value={userProfile.avatar_emoji ?? '🏡'} />
-                      <InfoPill label="Home" value={activeProfile.name} />
-                    </View>
-                  </BentoCard>
+                    {savingsTrackers.map((tracker) => {
+                      const sStats = currentMonthSavingsStatsMap[tracker.id] ?? { balance: 0, deposits: 0, withdrawals: 0, net: 0 };
+                      const renderRightActions = () => (
+                        <View style={styles.deleteAction}>
+                          <Pressable hitSlop={10} onPress={() => handleDeleteTracker('savings', tracker.id, tracker.name)} style={styles.deleteButton}>
+                            <Ionicons color="#fff" name="trash-outline" size={24} />
+                          </Pressable>
+                        </View>
+                      );
+                      const renderLeftActions = () => (
+                        <View style={[styles.deleteAction, { backgroundColor: theme.primary }]}>
+                          <Pressable hitSlop={10} onPress={() => { setEditingSavingsTrackerId(tracker.id); setEditSavingsTrackerForm({ name: tracker.name }); }} style={styles.deleteButton}>
+                            <Ionicons color="#fff" name="create-outline" size={24} />
+                          </Pressable>
+                        </View>
+                      );
+                      return (
+                        <Swipeable key={tracker.id} renderLeftActions={renderLeftActions} renderRightActions={renderRightActions} overshootRight={false} overshootLeft={false}>
+                          <Pressable
+                            onPress={() => {
+                              setSavingsViewMonth('current');
+                              setSavingsTrackerDetailLoading(true);
+                              setSelectedSavingsTrackerId(tracker.id);
+                            }}
+                          >
+                            <BentoCard>
+                              <View style={styles.rowBetween}>
+                                <Text style={styles.cardTitle}>{tracker.name}</Text>
+                                <Ionicons color={theme.primary} name="chevron-forward-circle-outline" size={26} />
+                              </View>
+                              <View style={styles.statRow}>
+                                <InfoPill label="Balance" value={c(sStats.balance)} />
+                                <InfoPill label="Deposits" value={c(sStats.deposits)} />
+                                <InfoPill label="Net" value={c(sStats.net)} />
+                              </View>
+                            </BentoCard>
+                          </Pressable>
+                        </Swipeable>
+                      );
+                    })}
 
-                  <View style={styles.quickActionGrid}>
-                    <QuickActionCard icon="people-outline" label="Members" onPress={() => setShowMembers(true)} testID="profile-open-members" />
-                    <QuickActionCard icon="person-add-outline" label="Invite" onPress={() => setShowInvite(true)} testID="profile-open-invite" />
-                    <QuickActionCard icon="settings-outline" label="Settings" onPress={primeSettingsForm} testID="profile-open-settings" />
-                    <QuickActionCard icon="swap-horizontal-outline" label="Switch" onPress={() => setShowProfileSwitcher(true)} testID="profile-open-switcher" />
+                    {billTrackers.length === 0 && savingsTrackers.length === 0 ? (
+                      <EmptyState body="Create your first bill or savings tracker to get started." title="No trackers yet" />
+                    ) : null}
                   </View>
+                ) : null}
 
-                  <BentoCard>
-                    <View style={styles.reminderSection}>
-                      <Text style={styles.inputLabel}>Daily Reminder</Text>
-                      <View style={styles.reminderRow}>
-                        <View style={styles.reminderInfo}>
-                          <Ionicons color={theme.primary} name="notifications-outline" size={24} />
-                          <View style={styles.reminderTextWrap}>
-                            <Text style={styles.reminderText}>Remind me to add expenses</Text>
-                            <Text style={styles.reminderSubtext}>Daily notification at {reminderTime}</Text>
-                          </View>
-                        </View>
-                        <Pressable 
-                          hitSlop={10} 
-                          onPress={() => toggleReminder(!reminderEnabled)}
-                          style={[styles.toggleButton, reminderEnabled && styles.toggleButtonActive]}
-                        >
-                          <View style={[styles.toggleCircle, reminderEnabled && styles.toggleCircleActive]} />
-                        </Pressable>
+                {activeTab === 'shopping' ? (
+                  <View style={styles.sectionGap}>
+                    <View style={styles.headerBlock}>
+                      <View style={styles.headerContent}>
+                        <Text style={styles.sectionTitle}>Shopping list</Text>
+                        <Text style={styles.bodyMuted}>Shared in real time with bought timestamps and member names.</Text>
                       </View>
-                      
-                      {reminderEnabled ? (
-                        <View style={styles.timePickerRow}>
-                          <Text style={styles.inputLabel}>Reminder time</Text>
-                          <TextInput
-                            keyboardType="numeric"
-                            onChangeText={(value) => updateReminderTime(value)}
-                            placeholder="20:00"
-                            style={styles.timeInput}
-                            value={reminderTime}
-                          />
-                          <Text style={styles.timeHint}>Format: HH:MM (24-hour)</Text>
+                      <ModernButton onPress={() => setShowShoppingComposer(true)} secondary testID="shopping-open-add" text="Add item" />
+                    </View>
+
+                    <View style={styles.segmentRow}>
+                      {shoppingFilters.map((filter) => (
+                        <CategoryChip key={filter} active={shoppingFilter === filter} label={filter} onPress={() => setShoppingFilter(filter)} />
+                      ))}
+                    </View>
+
+                    <Pressable hitSlop={10} onPress={() => runAction(async () => activeProfile && shoppingApi.clearBought(activeProfile.id).then(() => refreshProfileData(activeProfile.id)))}>
+                      <Text style={styles.linkText}>Clear all bought items</Text>
+                    </Pressable>
+
+                    {filteredShoppingItems.length > 0 ? (
+                      filteredShoppingItems.map((item) => {
+                        const actor = memberMap.get(item.bought_by ?? item.added_by);
+                        const renderRightActions = () => (
+                          <View style={styles.deleteAction}>
+                            <Pressable
+                              hitSlop={10}
+                              onPress={() => handleDeleteShoppingItem(item.id, item.name)}
+                              style={styles.deleteButton}
+                              testID={`shopping-delete-${item.id}`}
+                            >
+                              <Ionicons color="#fff" name="trash-outline" size={24} />
+                            </Pressable>
+                          </View>
+                        );
+                        return (
+                          <Swipeable key={item.id} renderRightActions={renderRightActions} overshootRight={false}>
+                            <BentoCard style={styles.shoppingCard}>
+                              <View style={styles.rowBetween}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.listTitle, item.is_bought && styles.strikethrough]}>{item.name}</Text>
+                                  <Text style={styles.listSubtitle}>
+                                    {item.quantity ? `${item.quantity} • ` : ''}
+                                    {item.category || 'General'}
+                                  </Text>
+                                  <Text style={styles.listSubtitle}>
+                                    Added by {memberMap.get(item.added_by)?.name ?? 'Member'}
+                                    {item.is_bought ? ` • Bought by ${actor?.name ?? 'Member'} on ${formatShortDate(item.bought_at)}` : ''}
+                                  </Text>
+                                </View>
+                                <Pressable hitSlop={12} onPress={() => handleMarkBought(item)} testID={`shopping-mark-bought-${item.id}`}>
+                                  <Ionicons
+                                    color={item.is_bought ? theme.success : theme.primary}
+                                    name={item.is_bought ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                    size={28}
+                                  />
+                                </Pressable>
+                              </View>
+                            </BentoCard>
+                          </Swipeable>
+                        );
+                      })
+                    ) : (
+                      <EmptyState body="Add household items so everyone can see and update them together." title="List is empty" />
+                    )}
+                  </View>
+                ) : null}
+
+                {activeTab === 'profile' ? (
+                  <View style={styles.sectionGap}>
+                    <BentoCard tone="highlight">
+                      <Text style={styles.sectionTitle}>{userProfile.name}</Text>
+                      <Text style={styles.bodyMuted}>{userProfile.email}</Text>
+                      <View style={styles.statRow}>
+                        <InfoPill label="Avatar" value={userProfile.avatar_emoji ?? '🏡'} />
+                        <InfoPill label="Home" value={activeProfile.name} />
+                      </View>
+                    </BentoCard>
+
+                    <View style={styles.quickActionGrid}>
+                      <QuickActionCard icon="people-outline" label="Members" onPress={() => setShowMembers(true)} testID="profile-open-members" />
+                      <QuickActionCard icon="person-add-outline" label="Invite" onPress={() => setShowInvite(true)} testID="profile-open-invite" />
+                      <QuickActionCard icon="settings-outline" label="Settings" onPress={primeSettingsForm} testID="profile-open-settings" />
+                      <QuickActionCard icon="swap-horizontal-outline" label="Switch" onPress={() => setShowProfileSwitcher(true)} testID="profile-open-switcher" />
+                    </View>
+
+                    <BentoCard>
+                      <View style={styles.reminderSection}>
+                        <Text style={styles.inputLabel}>Daily Reminder</Text>
+                        <View style={styles.reminderRow}>
+                          <View style={styles.reminderInfo}>
+                            <Ionicons color={theme.primary} name="notifications-outline" size={24} />
+                            <View style={styles.reminderTextWrap}>
+                              <Text style={styles.reminderText}>Remind me to add expenses</Text>
+                              <Text style={styles.reminderSubtext}>Daily notification at {reminderTime}</Text>
+                            </View>
+                          </View>
+                          <Pressable
+                            hitSlop={10}
+                            onPress={() => toggleReminder(!reminderEnabled)}
+                            style={[styles.toggleButton, reminderEnabled && styles.toggleButtonActive]}
+                          >
+                            <View style={[styles.toggleCircle, reminderEnabled && styles.toggleCircleActive]} />
+                          </Pressable>
                         </View>
-                      ) : null}
-                    </View>
-                  </BentoCard>
-                </View>
-              ) : null}
-            </ScrollView>
-          )}
 
-          <View style={styles.bottomTabs}>
-            <TabButton active={activeTab === 'dashboard'} badge={0} icon="grid-outline" label="Dashboard" onPress={() => setActiveTab('dashboard')} testID="tab-dashboard" />
-            <TabButton active={activeTab === 'budget'} badge={0} icon="wallet-outline" label="Budget" onPress={() => setActiveTab('budget')} testID="tab-budget" />
-            <TabButton active={activeTab === 'shopping'} badge={shoppingBadgeCount} icon="cart-outline" label="Shopping" onPress={() => setActiveTab('shopping')} testID="tab-shopping" />
-            <TabButton active={activeTab === 'profile'} badge={0} icon="person-outline" label="Profile" onPress={() => setActiveTab('profile')} testID="tab-profile" />
+                        {reminderEnabled ? (
+                          <View style={styles.timePickerRow}>
+                            <Text style={styles.inputLabel}>Reminder time</Text>
+                            <TextInput
+                              keyboardType="numeric"
+                              onChangeText={(value) => updateReminderTime(value)}
+                              placeholder="20:00"
+                              style={styles.timeInput}
+                              value={reminderTime}
+                            />
+                            <Text style={styles.timeHint}>Format: HH:MM (24-hour)</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </BentoCard>
+                  </View>
+                ) : null}
+              </ScrollView>
+            )}
+
+            <View style={styles.bottomTabs}>
+              <TabButton active={activeTab === 'dashboard'} badge={0} icon="grid-outline" label="Dashboard" onPress={() => setActiveTab('dashboard')} testID="tab-dashboard" />
+              <TabButton active={activeTab === 'budget'} badge={0} icon="wallet-outline" label="Budget" onPress={() => setActiveTab('budget')} testID="tab-budget" />
+              <TabButton active={activeTab === 'shopping'} badge={shoppingBadgeCount} icon="cart-outline" label="Shopping" onPress={() => setActiveTab('shopping')} testID="tab-shopping" />
+              <TabButton active={activeTab === 'profile'} badge={0} icon="person-outline" label="Profile" onPress={() => setActiveTab('profile')} testID="tab-profile" />
+            </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
 
-      <ConfirmModal
-        body={confirmModal?.body ?? ''}
-        confirmText={confirmModal?.confirmText ?? 'Confirm'}
-        destructive={confirmModal?.destructive ?? false}
-        onConfirm={() => {
-          confirmModal?.onConfirm();
-          closeConfirm();
-        }}
-        onClose={closeConfirm}
-        title={confirmModal?.title ?? ''}
-        visible={confirmModal?.visible ?? false}
-      />
-
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showBudgetComposer}>
-        <ModalScaffold
-          closeTestID="close-budget-modal"
-          onClose={() => {
-            setShowBudgetComposer(false);
-            setEditingPlanId(null);
-            setBudgetForm(defaultBudgetForm());
+        <ConfirmModal
+          body={confirmModal?.body ?? ''}
+          confirmText={confirmModal?.confirmText ?? 'Confirm'}
+          destructive={confirmModal?.destructive ?? false}
+          onConfirm={() => {
+            confirmModal?.onConfirm();
+            closeConfirm();
           }}
-          title={editingPlanId ? 'Edit Budget Plan' : 'Create Budget Plan'}
-        >
-          <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="budget-plan-name-input" value={budgetForm.name} />
-          <LabeledInput keyboardType="numeric" label={`Total budget (${userCurrency})`} onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="budget-plan-total-input" value={budgetForm.totalAmount} />
-          <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="budget-plan-start-input" value={budgetForm.startDate} />
-          <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="budget-plan-end-input" value={budgetForm.endDate} />
-          <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text={editingPlanId ? 'Update plan' : 'Save plan'} />
-        </ModalScaffold>
-      </Modal>
+          onClose={closeConfirm}
+          title={confirmModal?.title ?? ''}
+          visible={confirmModal?.visible ?? false}
+        />
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showNewPlanComposer}>
-        <ModalScaffold closeTestID="close-new-plan-modal" onClose={() => { setShowNewPlanComposer(false); setNewPlanName(''); }} title="New plan">
-          <View style={styles.segmentRow}>
-            <CategoryChip active={newPlanType === 'budget'} label="Budget Plan" onPress={() => setNewPlanType('budget')} />
-            <CategoryChip active={newPlanType === 'bill'} label="Bill Tracker" onPress={() => setNewPlanType('bill')} />
-            <CategoryChip active={newPlanType === 'savings'} label="Savings Tracker" onPress={() => setNewPlanType('savings')} />
-          </View>
-          {newPlanType === 'budget' ? (
-            <>
-              <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="new-plan-name-input" value={budgetForm.name} />
-              <LabeledInput keyboardType="numeric" label={`Total budget (${userCurrency})`} onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="new-plan-total-input" value={budgetForm.totalAmount} />
-              <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="new-plan-start-input" value={budgetForm.startDate} />
-              <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="new-plan-end-input" value={budgetForm.endDate} />
-              <ModernButton loading={actionBusy} onPress={() => { setShowNewPlanComposer(false); setShowBudgetComposer(true); }} text="Continue to create" />
-            </>
-          ) : (
-            <>
-              <LabeledInput label="Tracker name" onChangeText={setNewPlanName} testID="new-tracker-name-input" value={newPlanName} />
-              <ModernButton loading={actionBusy} onPress={handleCreateTracker} text="Create tracker" />
-            </>
-          )}
-        </ModalScaffold>
-      </Modal>
+        <AnalyseScreen
+          visible={showAnalyse}
+          profile={activeProfile}
+          expenses={profileExpenses}
+          plans={plans}
+          members={members}
+          currency={userCurrency}
+          onClose={() => setShowAnalyse(false)}
+        />
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)}>
-        <ModalScaffold closeTestID="close-edit-tracker-modal" onClose={() => { setEditingBillTrackerId(null); setEditingSavingsTrackerId(null); setEditBillTrackerForm({ name: '' }); setEditSavingsTrackerForm({ name: '' }); }} title="Edit tracker">
-          {editingBillTrackerId ? (
-            <>
-              <LabeledInput label="Tracker name" onChangeText={(value) => setEditBillTrackerForm({ name: value })} testID="edit-bill-tracker-name-input" value={editBillTrackerForm.name} />
-              <ModernButton loading={actionBusy} onPress={handleEditTracker} text="Save" />
-            </>
-          ) : null}
-          {editingSavingsTrackerId ? (
-            <>
-              <LabeledInput label="Tracker name" onChangeText={(value) => setEditSavingsTrackerForm({ name: value })} testID="edit-savings-tracker-name-input" value={editSavingsTrackerForm.name} />
-              <ModernButton loading={actionBusy} onPress={handleEditTracker} text="Save" />
-            </>
-          ) : null}
-        </ModalScaffold>
-      </Modal>
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={showBudgetComposer}>
+          <ModalScaffold
+            closeTestID="close-budget-modal"
+            onClose={() => {
+              setShowBudgetComposer(false);
+              setEditingPlanId(null);
+              setBudgetForm(defaultBudgetForm());
+            }}
+            title={editingPlanId ? 'Edit Budget Plan' : 'Create Budget Plan'}
+          >
+            <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="budget-plan-name-input" value={budgetForm.name} />
+            <LabeledInput keyboardType="numeric" label={`Total budget (${userCurrency})`} onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="budget-plan-total-input" value={budgetForm.totalAmount} />
+            <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="budget-plan-start-input" value={budgetForm.startDate} />
+            <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="budget-plan-end-input" value={budgetForm.endDate} />
+            <ModernButton loading={actionBusy} onPress={handleCreateBudget} testID="budget-save-plan" text={editingPlanId ? 'Update plan' : 'Save plan'} />
+          </ModalScaffold>
+        </Modal>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedBillTrackerId)}>
-        <ModalScaffold closeTestID="close-bill-tracker-detail" onClose={() => setSelectedBillTrackerId(null)} title={billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ?? 'Bill Tracker'}>
-          {selectedBillTrackerId ? (
-            <>
-              <MonthYearSelector
-                hasMonthData={(m) => billPayments.some((p) => p.tracker_id === selectedBillTrackerId && p.month === m && p.year === billViewYear)}
-                onSetMonth={setBillViewMonth}
-                onSetYear={(y) => setBillViewYear(y)}
-                viewMonth={billViewMonth}
-                viewYear={billViewYear}
-                years={[...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort()}
-              />
-              {billTrackerDetailLoading ? (
-                <View style={styles.centerWrap}>
-                  <BentoCard tone="highlight" style={styles.centerCard}>
-                    <ActivityIndicator color={theme.primary} size="large" />
-                    <Text style={styles.bodyMuted}>Loading bill tracker details…</Text>
-                  </BentoCard>
-                </View>
-              ) : (
-                <Suspense
-                  fallback={
-                    <View style={styles.centerWrap}>
-                      <BentoCard tone="highlight" style={styles.centerCard}>
-                        <ActivityIndicator color={theme.primary} size="large" />
-                        <Text style={styles.bodyMuted}>Opening bill tracker…</Text>
-                      </BentoCard>
-                    </View>
-                  }
-                >
-                  <BillTracker
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={showNewPlanComposer}>
+          <ModalScaffold closeTestID="close-new-plan-modal" onClose={() => { setShowNewPlanComposer(false); setNewPlanName(''); }} title="New plan">
+            <View style={styles.segmentRow}>
+              <CategoryChip active={newPlanType === 'budget'} label="Budget Plan" onPress={() => setNewPlanType('budget')} />
+              <CategoryChip active={newPlanType === 'bill'} label="Bill Tracker" onPress={() => setNewPlanType('bill')} />
+              <CategoryChip active={newPlanType === 'savings'} label="Savings Tracker" onPress={() => setNewPlanType('savings')} />
+            </View>
+            {newPlanType === 'budget' ? (
+              <>
+                <LabeledInput label="Plan name" onChangeText={(value) => setBudgetForm((current) => ({ ...current, name: value }))} testID="new-plan-name-input" value={budgetForm.name} />
+                <LabeledInput keyboardType="numeric" label={`Total budget (${userCurrency})`} onChangeText={(value) => setBudgetForm((current) => ({ ...current, totalAmount: value }))} testID="new-plan-total-input" value={budgetForm.totalAmount} />
+                <LabeledInput label="Start date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, startDate: value }))} testID="new-plan-start-input" value={budgetForm.startDate} />
+                <LabeledInput label="End date (YYYY-MM-DD)" onChangeText={(value) => setBudgetForm((current) => ({ ...current, endDate: value }))} testID="new-plan-end-input" value={budgetForm.endDate} />
+                <ModernButton loading={actionBusy} onPress={() => { setShowNewPlanComposer(false); setShowBudgetComposer(true); }} text="Continue to create" />
+              </>
+            ) : (
+              <>
+                <LabeledInput label="Tracker name" onChangeText={setNewPlanName} testID="new-tracker-name-input" value={newPlanName} />
+                <ModernButton loading={actionBusy} onPress={handleCreateTracker} text="Create tracker" />
+              </>
+            )}
+          </ModalScaffold>
+        </Modal>
+
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)}>
+          <ModalScaffold closeTestID="close-edit-tracker-modal" onClose={() => { setEditingBillTrackerId(null); setEditingSavingsTrackerId(null); setEditBillTrackerForm({ name: '' }); setEditSavingsTrackerForm({ name: '' }); }} title="Edit tracker">
+            {editingBillTrackerId ? (
+              <>
+                <LabeledInput label="Tracker name" onChangeText={(value) => setEditBillTrackerForm({ name: value })} testID="edit-bill-tracker-name-input" value={editBillTrackerForm.name} />
+                <ModernButton loading={actionBusy} onPress={handleEditTracker} text="Save" />
+              </>
+            ) : null}
+            {editingSavingsTrackerId ? (
+              <>
+                <LabeledInput label="Tracker name" onChangeText={(value) => setEditSavingsTrackerForm({ name: value })} testID="edit-savings-tracker-name-input" value={editSavingsTrackerForm.name} />
+                <ModernButton loading={actionBusy} onPress={handleEditTracker} text="Save" />
+              </>
+            ) : null}
+          </ModalScaffold>
+        </Modal>
+
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedBillTrackerId)}>
+          <ModalScaffold closeTestID="close-bill-tracker-detail" onClose={() => setSelectedBillTrackerId(null)} title={billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ?? 'Bill Tracker'}>
+            {selectedBillTrackerId ? (
+              <>
+                <MonthYearSelector
+                  hasMonthData={(m) => billPayments.some((p) => p.tracker_id === selectedBillTrackerId && p.month === m && p.year === billViewYear)}
+                  onSetMonth={setBillViewMonth}
+                  onSetYear={(y) => setBillViewYear(y)}
+                  viewMonth={billViewMonth}
+                  viewYear={billViewYear}
+                  years={[...new Set(billPayments.filter((p) => p.tracker_id === selectedBillTrackerId).map((p) => p.year))].sort()}
+                />
+                {billTrackerDetailLoading ? (
+                  <View style={styles.centerWrap}>
+                    <BentoCard tone="highlight" style={styles.centerCard}>
+                      <ActivityIndicator color={theme.primary} size="large" />
+                      <Text style={styles.bodyMuted}>Loading bill tracker details…</Text>
+                    </BentoCard>
+                  </View>
+                ) : (
+                  <BillTrackerComponent
                     currencyCode={userCurrency}
                     trackerId={selectedBillTrackerId}
                     stats={currentMonthBillStatsMap[selectedBillTrackerId]}
@@ -2226,7 +2425,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     members={members}
                     onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
                     onDeleteBill={handleDeleteBillFromTracker}
-                    onMarkPaid={(payment, paymentName) => handleMarkBillPaid(selectedBillTrackerId, payment, paymentName)}
+                    onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
                     plans={plans}
                     profileId={activeProfile?.id ?? ''}
                     recurringBills={recurringBills}
@@ -2234,44 +2433,33 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     viewMonth={billViewMonth !== 'current' ? billViewMonth : undefined}
                     viewYear={billViewMonth !== 'current' ? billViewYear : undefined}
                   />
-                </Suspense>
-              )}
-            </>
-          ) : null}
-        </ModalScaffold>
-      </Modal>
+                )}
+              </>
+            ) : null}
+          </ModalScaffold>
+        </Modal>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedSavingsTrackerId)}>
-        <ModalScaffold closeTestID="close-savings-tracker-detail" onClose={() => setSelectedSavingsTrackerId(null)} title={savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)?.name ?? 'Savings Tracker'}>
-          {selectedSavingsTrackerId ? (
-            <>
-              <MonthYearSelector
-                hasMonthData={(m) => savings.some((e) => e.tracker_id === selectedSavingsTrackerId && new Date(e.date).getMonth() + 1 === m && new Date(e.date).getFullYear() === savingsViewYear)}
-                onSetMonth={setSavingsViewMonth}
-                onSetYear={setSavingsViewYear}
-                viewMonth={savingsViewMonth}
-                viewYear={savingsViewYear}
-                years={[...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort()}
-              />
-              {savingsTrackerDetailLoading ? (
-                <View style={styles.centerWrap}>
-                  <BentoCard tone="highlight" style={styles.centerCard}>
-                    <ActivityIndicator color={theme.primary} size="large" />
-                    <Text style={styles.bodyMuted}>Loading savings tracker details…</Text>
-                  </BentoCard>
-                </View>
-              ) : (
-                <Suspense
-                  fallback={
-                    <View style={styles.centerWrap}>
-                      <BentoCard tone="highlight" style={styles.centerCard}>
-                        <ActivityIndicator color={theme.primary} size="large" />
-                        <Text style={styles.bodyMuted}>Opening savings tracker…</Text>
-                      </BentoCard>
-                    </View>
-                  }
-                >
-                  <SavingsTracker
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedSavingsTrackerId)}>
+          <ModalScaffold closeTestID="close-savings-tracker-detail" onClose={() => setSelectedSavingsTrackerId(null)} title={savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)?.name ?? 'Savings Tracker'}>
+            {selectedSavingsTrackerId ? (
+              <>
+                <MonthYearSelector
+                  hasMonthData={(m) => savings.some((e) => e.tracker_id === selectedSavingsTrackerId && new Date(e.date).getMonth() + 1 === m && new Date(e.date).getFullYear() === savingsViewYear)}
+                  onSetMonth={setSavingsViewMonth}
+                  onSetYear={setSavingsViewYear}
+                  viewMonth={savingsViewMonth}
+                  viewYear={savingsViewYear}
+                  years={[...new Set(savings.filter((e) => e.tracker_id === selectedSavingsTrackerId).map((e) => new Date(e.date).getFullYear()))].sort()}
+                />
+                {savingsTrackerDetailLoading ? (
+                  <View style={styles.centerWrap}>
+                    <BentoCard tone="highlight" style={styles.centerCard}>
+                      <ActivityIndicator color={theme.primary} size="large" />
+                      <Text style={styles.bodyMuted}>Loading savings tracker details…</Text>
+                    </BentoCard>
+                  </View>
+                ) : (
+                  <SavingsTrackerComponent
                     currencyCode={userCurrency}
                     trackerId={selectedSavingsTrackerId}
                     stats={savingsViewMonth === 'current' ? currentMonthSavingsStatsMap[selectedSavingsTrackerId] : undefined}
@@ -2287,684 +2475,794 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     viewMonth={savingsViewMonth !== 'current' ? savingsViewMonth : undefined}
                     viewYear={savingsViewMonth !== 'current' ? savingsViewYear : undefined}
                   />
-                </Suspense>
-              )}
-            </>
-          ) : null}
-        </ModalScaffold>
-      </Modal>
+                )}
+              </>
+            ) : null}
+          </ModalScaffold>
+        </Modal>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedPlan)}>
-        <ModalScaffold closeTestID="close-budget-detail-modal" onClose={() => setSelectedPlanId(null)} title={selectedPlan?.name ?? 'Budget plan'}>
-          {selectedPlan ? (
-            <>
-              <MonthYearSelector
-                hasMonthData={(m) => availableViewMonths.includes(m)}
-                onSetMonth={setActiveViewMonth}
-                onSetYear={setActiveViewYear}
-                viewMonth={activeViewMonth}
-                viewYear={activeViewYear}
-                years={availableViewYears}
-              />
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={Boolean(selectedPlan)}>
+          <ModalScaffold closeTestID="close-budget-detail-modal" onClose={() => setSelectedPlanId(null)} title={selectedPlan?.name ?? 'Budget plan'}>
+            {selectedPlan ? (
+              <>
+                <MonthYearSelector
+                  hasMonthData={(m) => availableViewMonths.includes(m)}
+                  onSetMonth={setActiveViewMonth}
+                  onSetYear={setActiveViewYear}
+                  viewMonth={activeViewMonth}
+                  viewYear={activeViewYear}
+                  years={availableViewYears}
+                />
 
-              {isViewingArchive && monthFilteredExpenses ? (
-                <>
-                  <View style={styles.archiveBadge}>
-                    <Text style={styles.archiveBadgeText}>
-                      Viewing {monthNames[(activeViewMonth as number) - 1]} {activeViewYear}
-                    </Text>
-                  </View>
+                {isViewingArchive && monthFilteredExpenses ? (
+                  <>
+                    <View style={styles.archiveBadge}>
+                      <Text style={styles.archiveBadgeText}>
+                        Viewing {monthNames[(activeViewMonth as number) - 1]} {activeViewYear}
+                      </Text>
+                    </View>
 
-                  {(() => {
-                    const mExpenses = monthFilteredExpenses.filter((e) => !e.is_borrow);
-                    const mSpent = mExpenses.filter((e) => !e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
-                    const mContributions = mExpenses.filter((e) => e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
-                    const mBorrowed = monthFilteredExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
-                    const mRepaid = monthFilteredExpenses.filter((e) => e.is_borrow && e.price < 0).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
-                    const mTotalSpent = mSpent + mContributions + mBorrowed - mRepaid;
-                    const mAllocated = selectedPlan.total_amount + mContributions;
-                    const mRemaining = Math.max(mAllocated - mTotalSpent, 0);
+                    {(() => {
+                      const mExpenses = monthFilteredExpenses.filter((e) => !e.is_borrow);
+                      const mSpent = mExpenses.filter((e) => !e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
+                      const mContributions = mExpenses.filter((e) => e.paid_by).reduce((s, e) => s + Number(e.price ?? 0), 0);
+                      const mBorrowed = monthFilteredExpenses.filter((e) => e.is_borrow && e.price > 0).reduce((s, e) => s + Number(e.price ?? 0), 0);
+                      const mRepaid = monthFilteredExpenses.filter((e) => e.is_borrow && e.price < 0).reduce((s, e) => s + Math.abs(Number(e.price ?? 0)), 0);
+                      const mTotalSpent = mSpent + mContributions + mBorrowed - mRepaid;
+                      const mAllocated = selectedPlan.total_amount + mContributions;
+                      const mRemaining = Math.max(mAllocated - mTotalSpent, 0);
 
-                    const mMemberBalances: Record<string, { avatar: string; borrowed: number; contributed: number; name: string; owes: number; repaid: number }> = {};
-                    monthFilteredExpenses.forEach((e) => {
-                      if (!e.is_borrow) return;
-                      const userId = e.used_by ?? e.added_by;
-                      const member = memberMap.get(userId);
-                      if (!member) return;
-                      if (!mMemberBalances[userId]) mMemberBalances[userId] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
-                      if (e.price > 0) mMemberBalances[userId].borrowed += e.price;
-                      else mMemberBalances[userId].repaid += Math.abs(e.price);
-                    });
-                    mExpenses.filter((e) => e.paid_by).forEach((e) => {
-                      const member = memberMap.get(e.paid_by!);
-                      if (!member) return;
-                      if (!mMemberBalances[e.paid_by!]) mMemberBalances[e.paid_by!] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
-                      mMemberBalances[e.paid_by!].contributed += Number(e.price ?? 0);
-                    });
-                    Object.values(mMemberBalances).forEach((bal) => {
-                      bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
-                    });
+                      const mMemberBalances: Record<string, { avatar: string; borrowed: number; contributed: number; name: string; owes: number; repaid: number }> = {};
+                      monthFilteredExpenses.forEach((e) => {
+                        if (!e.is_borrow) return;
+                        const userId = e.used_by ?? e.added_by;
+                        const member = memberMap.get(userId);
+                        if (!member) return;
+                        if (!mMemberBalances[userId]) mMemberBalances[userId] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
+                        if (e.price > 0) mMemberBalances[userId].borrowed += e.price;
+                        else mMemberBalances[userId].repaid += Math.abs(e.price);
+                      });
+                      mExpenses.filter((e) => e.paid_by).forEach((e) => {
+                        const member = memberMap.get(e.paid_by!);
+                        if (!member) return;
+                        if (!mMemberBalances[e.paid_by!]) mMemberBalances[e.paid_by!] = { ...member, borrowed: 0, contributed: 0, owes: 0, repaid: 0 };
+                        mMemberBalances[e.paid_by!].contributed += Number(e.price ?? 0);
+                      });
+                      Object.values(mMemberBalances).forEach((bal) => {
+                        bal.owes = Math.max(bal.borrowed - bal.repaid - bal.contributed, 0);
+                      });
 
-                    return (
-                      <>
-                        <BentoCard tone="highlight">
-                          <Text style={styles.metricText}>{c(mTotalSpent)}</Text>
-                          <Text style={styles.bodyMuted}>total spent out of {c(mAllocated)} allocated</Text>
-                          <View style={styles.spacer12} />
-                          <ProgressBar progress={mTotalSpent / Math.max(mAllocated, 1)} />
-                        </BentoCard>
+                      return (
+                        <>
+                          <BentoCard tone="highlight">
+                            <Text style={styles.kicker}>{selectedPlan.name}</Text>
+                            <Text style={styles.metricText}>{c(selectedPlan.total_amount)}</Text>
+                            <Text style={styles.bodyMuted}>{formatShortDate(selectedPlan.start_date)} → {formatShortDate(selectedPlan.end_date)}</Text>
+                          </BentoCard>
 
-                        <View style={styles.sectionGap}>
-                          <Text style={styles.inputLabel}>Spending Breakdown</Text>
-                          <View style={styles.statRow}>
-                            <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
-                            {mContributions > 0 ? (
-                              <InfoPill label="+ Contributions" value={c(mContributions)} />
+                          <BentoCard>
+                            <Text style={styles.kicker}>This period</Text>
+                            <View style={styles.spacer12} />
+                            <ProgressBar progress={mTotalSpent / Math.max(mAllocated, 1)} />
+                            <View style={styles.spacer12} />
+                            <View style={styles.cycleStatsRow}>
+                              <View style={styles.cycleStat}>
+                                <Text style={styles.cycleStatValue}>{c(mTotalSpent)}</Text>
+                                <Text style={styles.cycleStatLabel}>Spent</Text>
+                              </View>
+                              <View style={styles.cycleStatDivider} />
+                              <View style={[styles.cycleStat, { alignItems: 'flex-end' }]}>
+                                <Text style={[styles.cycleStatValue, { color: mRemaining > 0 ? theme.success : theme.danger }]}>{c(mRemaining)}</Text>
+                                <Text style={styles.cycleStatLabel}>Remaining</Text>
+                              </View>
+                            </View>
+                            {showContribution ? (
+                              <Pressable onPress={() => setShowBreakdownDetails((v) => !v)} style={styles.detailsToggle}>
+                                <Text style={styles.detailsToggleText}>{showBreakdownDetails ? 'Hide details ▴' : 'Details ▾'}</Text>
+                              </Pressable>
                             ) : null}
-                            <InfoPill label="= Allocated" value={c(mAllocated)} />
-                            <InfoPill label="- Family expenses" value={c(mSpent)} />
-                            {mContributions > 0 ? (
-                              <InfoPill label="- Own-pocket spent" value={c(mContributions)} />
-                            ) : null}
-                            {mBorrowed > 0 ? (
-                              <InfoPill label="- Borrowed" value={c(mBorrowed)} />
-                            ) : null}
-                            {mRepaid > 0 ? (
-                              <InfoPill label="+ Repaid" value={c(mRepaid)} />
-                            ) : null}
-                            <InfoPill label="= Remaining" value={c(mRemaining)} />
-                          </View>
-                          {Object.keys(mMemberBalances).length > 0 ? (
-                            <View style={styles.statRow}>
-                              {Object.values(mMemberBalances).map((bal) => (
-                                <InfoPill
-                                  key={bal.name}
-                                  label={`${bal.avatar} ${bal.name}`}
-                                  value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
-                                />
-                              ))}
+                          </BentoCard>
+
+                          {showContribution && showBreakdownDetails ? (
+                            <View style={styles.sectionGap}>
+                              <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                              <View style={styles.statRow}>
+                                <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
+                                {mContributions > 0 ? (
+                                  <InfoPill label="+ Contributions" value={c(mContributions)} />
+                                ) : null}
+                                <InfoPill label="= Allocated" value={c(mAllocated)} />
+                                <InfoPill label="- Expenses" value={c(mSpent)} />
+                                {mContributions > 0 ? (
+                                  <InfoPill label="- Own-pocket spent" value={c(mContributions)} />
+                                ) : null}
+                                {mBorrowed > 0 ? (
+                                  <InfoPill label="- Borrowed" value={c(mBorrowed)} />
+                                ) : null}
+                                {mRepaid > 0 ? (
+                                  <InfoPill label="+ Repaid" value={c(mRepaid)} />
+                                ) : null}
+                                <InfoPill label="= Remaining" value={c(mRemaining)} />
+                              </View>
+                              {Object.keys(mMemberBalances).length > 0 ? (
+                                <View style={styles.statRow}>
+                                  {Object.values(mMemberBalances).map((bal) => (
+                                    <InfoPill
+                                      key={bal.name}
+                                      label={`${bal.avatar} ${bal.name}`}
+                                      value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
+                                    />
+                                  ))}
+                                </View>
+                              ) : null}
                             </View>
                           ) : null}
-                        </View>
 
-                        {mExpenses.length > 0 ? (
-                          <View style={styles.sectionGap}>
-                            <Text style={styles.inputLabel}>Expenses</Text>
-                            {mExpenses.map((expense) => {
-                              const items = expense.items ?? [];
-                              return (
-                                <BentoCard key={expense.id}>
-                                  <View style={styles.expenseCardRow}>
-                                    <View style={styles.expenseDetails}>
-                                      {expense.description ? (
-                                        <Text style={styles.expenseDescription}>{expense.description}</Text>
-                                      ) : null}
-                                      {items.length > 0 ? (
-                                        <View style={styles.itemsList}>
-                                          {items.map((item, idx) => (
-                                            <View key={idx} style={styles.itemRow}>
-                                              <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                                              <Text style={styles.itemPrice}>{c(item.price)}</Text>
-                                            </View>
-                                          ))}
-                                        </View>
-                                      ) : null}
-                                      <Text style={styles.listSubtitle}>
-                                        {expense.category} • {formatShortDate(expense.date)}
-                                      </Text>
-                                      <Text style={styles.listSubtitle}>
-                                        {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
-                                        {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
-                                      </Text>
-                                    </View>
-                                    <View style={styles.expenseActions}>
-                                      {items.length > 1 ? (
-                                        <Text style={styles.totalAmount}>{c(expense.price)}</Text>
-                                      ) : null}
-                                    </View>
-                                  </View>
-                                </BentoCard>
-                              );
-                            })}
-                          </View>
-                        ) : (
-                          <EmptyState body="No expenses were recorded in this period." title="No expenses" />
-                        )}
-
-                        {(() => {
-                          const archiveBorrows = monthFilteredExpenses.filter((e) => e.is_borrow);
-                          if (archiveBorrows.length === 0) return null;
-                          const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
-                          archiveBorrows.forEach((e) => {
-                            const userId = e.used_by ?? e.added_by;
-                            const member = memberMap.get(userId);
-                            if (!member) return;
-                            if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
-                            if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
-                            else borrowsByMember[userId].repaid += Math.abs(e.price);
-                            borrowsByMember[userId].records.push(e);
-                          });
-                          return (
+                          {mExpenses.length > 0 ? (
                             <View style={styles.sectionGap}>
-                              <Text style={styles.inputLabel}>Borrowed from Budget</Text>
-                              {Object.entries(borrowsByMember).map(([userId, data]) => (
-                                <BentoCard key={userId}>
-                                  <View style={styles.borrowHeaderRow}>
-                                    <View style={{ flex: 1, marginRight: 12 }}>
-                                      <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                                      <Text style={styles.listSubtitle}>{`Borrowed ${c(data.borrowed)} · Repaid ${c(data.repaid)} · Owes ${c(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
-                                    </View>
-                                  </View>
-                                  {data.records.map((record) => (
-                                    <View key={record.id} style={styles.borrowRecordRow}>
-                                      <View style={{ flex: 1 }}>
-                                        <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
+                              <Text style={styles.inputLabel}>Expenses</Text>
+                              {mExpenses.map((expense) => {
+                                const items = expense.items ?? [];
+                                return (
+                                  <BentoCard key={expense.id}>
+                                    <View style={styles.expenseCardRow}>
+                                      <View style={styles.expenseDetails}>
+                                        {expense.description ? (
+                                          <Text style={styles.expenseDescription}>{expense.description}</Text>
+                                        ) : null}
+                                        {items.length > 0 ? (
+                                          <View style={styles.itemsList}>
+                                            {items.map((item, idx) => (
+                                              <View key={idx} style={styles.itemRow}>
+                                                <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                                                <Text style={styles.itemPrice}>{c(item.price)}</Text>
+                                              </View>
+                                            ))}
+                                          </View>
+                                        ) : null}
+                                        <Text style={styles.listSubtitle}>
+                                          {expense.category} • {formatShortDate(expense.date)}
+                                        </Text>
+                                        <Text style={styles.listSubtitle}>
+                                          {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
+                                          {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
+                                        </Text>
+                                      </View>
+                                      <View style={styles.expenseActions}>
+                                        {items.length > 1 ? (
+                                          <Text style={styles.totalAmount}>{c(expense.price)}</Text>
+                                        ) : null}
                                       </View>
                                     </View>
-                                  ))}
-                                </BentoCard>
-                              ))}
+                                  </BentoCard>
+                                );
+                              })}
                             </View>
-                          );
-                        })()}
-                      </>
-                    );
-                  })()}
-                </>
-              ) : (
-                <>
-                  <BentoCard tone="highlight">
-                    <Text style={styles.metricText}>{c(currentPlanMonthStats.totalSpent)}</Text>
-                    <Text style={styles.bodyMuted}>spent this month out of {c(currentPlanMonthStats.allocated)} allocated</Text>
-                    <View style={styles.spacer12} />
-                    <ProgressBar progress={currentPlanMonthStats.totalSpent / Math.max(currentPlanMonthStats.allocated, 1)} />
-                  </BentoCard>
+                          ) : (
+                            <EmptyState body="No expenses were recorded in this period." title="No expenses" />
+                          )}
 
-                  <View style={styles.sectionGap}>
-                    <Text style={styles.inputLabel}>Spending Breakdown</Text>
-                    <View style={styles.statRow}>
-                      <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
-                      {currentPlanMonthStats.contributions > 0 ? (
-                        <InfoPill label="+ Contributions" value={c(currentPlanMonthStats.contributions)} />
+                          {(() => {
+                            const archiveBorrows = monthFilteredExpenses.filter((e) => e.is_borrow);
+                            if (archiveBorrows.length === 0) return null;
+                            const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
+                            archiveBorrows.forEach((e) => {
+                              const userId = e.used_by ?? e.added_by;
+                              const member = memberMap.get(userId);
+                              if (!member) return;
+                              if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
+                              if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
+                              else borrowsByMember[userId].repaid += Math.abs(e.price);
+                              borrowsByMember[userId].records.push(e);
+                            });
+                            const unpaidEntries = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid - data.contributed, 0) > 0);
+                            if (unpaidEntries.length === 0) return null;
+                            return (
+                              <View style={styles.sectionGap}>
+                                <Text style={styles.inputLabel}>Borrowed from Budget</Text>
+                                {unpaidEntries.map(([userId, data]) => {
+                                  const owes = Math.max(data.borrowed - data.repaid - data.contributed, 0);
+                                  const isExpanded = expandedBorrowUser === userId;
+                                  return (
+                                    <BentoCard key={userId}>
+                                      <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
+                                      <View style={styles.borrowStatsRow}>
+                                        <View style={styles.borrowStatItem}>
+                                          <Text style={styles.borrowStatValue}>{c(data.borrowed)}</Text>
+                                          <Text style={styles.borrowStatLabel}>Borrowed</Text>
+                                        </View>
+                                        <View style={styles.cycleStatDivider} />
+                                        <View style={styles.borrowStatItem}>
+                                          <Text style={styles.borrowStatValue}>{c(data.repaid)}</Text>
+                                          <Text style={styles.borrowStatLabel}>Repaid</Text>
+                                        </View>
+                                        <View style={styles.cycleStatDivider} />
+                                        <View style={styles.borrowStatItem}>
+                                          <Text style={[styles.borrowStatValue, { color: theme.danger }]}>{c(owes)}</Text>
+                                          <Text style={styles.borrowStatLabel}>Owes</Text>
+                                        </View>
+                                      </View>
+                                      <Pressable onPress={() => setExpandedBorrowUser(isExpanded ? null : userId)} style={styles.detailsToggle}>
+                                        <Text style={styles.detailsToggleText}>
+                                          {isExpanded ? 'Hide history ▴' : `${data.records.length} transaction${data.records.length !== 1 ? 's' : ''} ▾`}
+                                        </Text>
+                                      </Pressable>
+                                      {isExpanded ? data.records.map((record) => (
+                                        <View key={record.id} style={styles.borrowRecordRow}>
+                                          <Text style={styles.listSubtitle}>
+                                            {`${record.price > 0 ? '↑ Borrowed' : '↓ Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}
+                                          </Text>
+                                        </View>
+                                      )) : null}
+                                    </BentoCard>
+                                  );
+                                })}
+                              </View>
+                            );
+                          })()}
+                        </>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    <BentoCard tone="highlight">
+                      <Text style={styles.kicker}>{selectedPlan.name}</Text>
+                      <Text style={styles.metricText}>{c(selectedPlan.total_amount)}</Text>
+                      <Text style={styles.bodyMuted}>{formatShortDate(selectedPlan.start_date)} → {selectedPlan.end_date ? formatShortDate(selectedPlan.end_date) : 'ongoing'}</Text>
+                    </BentoCard>
+
+                    <BentoCard>
+                      <Text style={styles.kicker}>This cycle</Text>
+                      <View style={styles.spacer12} />
+                      <ProgressBar progress={currentPlanMonthStats.totalSpent / Math.max(currentPlanMonthStats.allocated, 1)} />
+                      <View style={styles.spacer12} />
+                      <View style={styles.cycleStatsRow}>
+                        <View style={styles.cycleStat}>
+                          <Text style={styles.cycleStatValue}>{c(currentPlanMonthStats.totalSpent)}</Text>
+                          <Text style={styles.cycleStatLabel}>Spent</Text>
+                        </View>
+                        <View style={styles.cycleStatDivider} />
+                        <View style={[styles.cycleStat, { alignItems: 'flex-end' }]}>
+                          <Text style={[styles.cycleStatValue, { color: currentPlanMonthStats.remaining > 0 ? theme.success : theme.danger }]}>{c(currentPlanMonthStats.remaining)}</Text>
+                          <Text style={styles.cycleStatLabel}>Remaining</Text>
+                        </View>
+                      </View>
+                      {showContribution ? (
+                        <Pressable onPress={() => setShowBreakdownDetails((v) => !v)} style={styles.detailsToggle}>
+                          <Text style={styles.detailsToggleText}>{showBreakdownDetails ? 'Hide details ▴' : 'Details ▾'}</Text>
+                        </Pressable>
                       ) : null}
-                      <InfoPill label="= Allocated" value={c(currentPlanMonthStats.allocated)} />
-                      <InfoPill label="- Family expenses" value={c(currentPlanMonthStats.spent)} />
-                      {currentPlanMonthStats.contributions > 0 ? (
-                        <InfoPill label="- Own-pocket spent" value={c(currentPlanMonthStats.contributions)} />
-                      ) : null}
-                      {currentPlanMonthStats.borrowed > 0 ? (
-                        <InfoPill label="- Borrowed" value={c(currentPlanMonthStats.borrowed)} />
-                      ) : null}
-                      {currentPlanMonthStats.repaid > 0 ? (
-                        <InfoPill label="+ Repaid" value={c(currentPlanMonthStats.repaid)} />
-                      ) : null}
-                      <InfoPill label="= Remaining" value={c(currentPlanMonthStats.remaining)} />
-                    </View>
-                    {Object.keys(currentPlanMonthStats.memberBalances).length > 0 ? (
-                      <View style={styles.statRow}>
-                        {Object.values(currentPlanMonthStats.memberBalances).map((bal) => (
-                          <InfoPill
-                            key={bal.name}
-                            label={`${bal.avatar} ${bal.name}`}
-                            value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
-                          />
-                        ))}
+                    </BentoCard>
+
+                    {showContribution && showBreakdownDetails ? (
+                      <View style={styles.sectionGap}>
+                        <Text style={styles.inputLabel}>Spending Breakdown</Text>
+                        <View style={styles.statRow}>
+                          <InfoPill label="Plan Budget" value={c(selectedPlan.total_amount)} />
+                          {currentPlanMonthStats.contributions > 0 ? (
+                            <InfoPill label="+ Contributions" value={c(currentPlanMonthStats.contributions)} />
+                          ) : null}
+                          <InfoPill label="= Allocated" value={c(currentPlanMonthStats.allocated)} />
+                          <InfoPill label="- Expenses" value={c(currentPlanMonthStats.spent)} />
+                          {currentPlanMonthStats.contributions > 0 ? (
+                            <InfoPill label="- Own-pocket spent" value={c(currentPlanMonthStats.contributions)} />
+                          ) : null}
+                          {currentPlanMonthStats.borrowed > 0 ? (
+                            <InfoPill label="- Borrowed" value={c(currentPlanMonthStats.borrowed)} />
+                          ) : null}
+                          {currentPlanMonthStats.repaid > 0 ? (
+                            <InfoPill label="+ Repaid" value={c(currentPlanMonthStats.repaid)} />
+                          ) : null}
+                          <InfoPill label="= Remaining" value={c(currentPlanMonthStats.remaining)} />
+                        </View>
+                        {Object.keys(currentPlanMonthStats.memberBalances).length > 0 ? (
+                          <View style={styles.statRow}>
+                            {Object.values(currentPlanMonthStats.memberBalances).map((bal) => (
+                              <InfoPill
+                                key={bal.name}
+                                label={`${bal.avatar} ${bal.name}`}
+                                value={bal.owes > 0 ? `Owes ${c(bal.owes)}` : `Credit ${c(bal.contributed - bal.borrowed + bal.repaid)}`}
+                              />
+                            ))}
+                          </View>
+                        ) : null}
                       </View>
                     ) : null}
-                  </View>
 
-                  <View style={styles.rowBetween}>
-                    <View style={styles.segmentRow}>
-                      {expenseFilters.map((filter) => (
-                        <CategoryChip key={filter} active={expenseView === filter} label={filter} onPress={() => setExpenseView(filter)} />
-                      ))}
+                    <View style={styles.rowBetween}>
+                      <View style={styles.segmentRow}>
+                        {expenseFilters.map((filter) => (
+                          <CategoryChip key={filter} active={expenseView === filter} label={filter} onPress={() => setExpenseView(filter)} />
+                        ))}
+                      </View>
+                      <Pressable hitSlop={10} onPress={() => setShowExpenseFilters(true)}>
+                        <Ionicons color={theme.primary} name="options-outline" size={24} />
+                      </Pressable>
                     </View>
-                    <Pressable hitSlop={10} onPress={() => setShowExpenseFilters(true)}>
-                      <Ionicons color={theme.primary} name="options-outline" size={24} />
-                    </Pressable>
-                  </View>
 
-                  <View style={styles.dualActions}>
-                    <ModernButton
-                      icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
-                      onPress={() => setShowExpenseComposer(true)}
-                      testID="open-add-expense"
-                      text="Add expense"
-                    />
-                    <ModernButton
-                      icon={<Ionicons color="#FFFFFF" name="cash-outline" size={18} />}
-                      onPress={() => setShowBorrowComposer(true)}
-                      secondary
-                      testID="open-borrow"
-                      text="Borrow"
-                    />
-                  </View>
+                    <View style={styles.dualActions}>
+                      <ModernButton
+                        icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
+                        onPress={() => setShowExpenseComposer(true)}
+                        testID="open-add-expense"
+                        text="Add expense"
+                      />
+                      <ModernButton
+                        icon={<Ionicons color="#FFFFFF" name="cash-outline" size={18} />}
+                        onPress={() => setShowBorrowComposer(true)}
+                        secondary
+                        testID="open-borrow"
+                        text="Borrow"
+                      />
+                    </View>
 
-                  {filteredExpenses.length > 0 ? (
-                    filteredExpenses.map((expense) => {
-                      const items = expense.items ?? [];
-                      const expenseTitle = items.length > 0 
-                        ? items.map(i => i.name).join(', ')
-                        : expense.description || 'Expense';
-                      const hasMultipleItems = items.length > 1;
-                      
-                      return (
-                        <BentoCard key={expense.id}>
-                          <View style={styles.expenseCardRow}>
-                            <View style={styles.expenseDetails}>
-                              {expense.description ? (
-                                <Text style={styles.expenseDescription}>{expense.description}</Text>
-                              ) : null}
-                              {items.length > 0 ? (
-                                <View style={styles.itemsList}>
-                                  {items.map((item, idx) => (
-                                    <View key={idx} style={styles.itemRow}>
-                                      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                                      <Text style={styles.itemPrice}>{c(item.price)}</Text>
-                                    </View>
-                                  ))}
-                                </View>
-                              ) : null}
-                              <Text style={styles.listSubtitle}>
-                                {expense.category} • {formatShortDate(expense.date)}
-                              </Text>
-                              <Text style={styles.listSubtitle}>
-                                {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
-                                {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
-                              </Text>
-                            </View>
-                            
-                            <View style={styles.expenseActions}>
-                              {hasMultipleItems ? (
-                                <Text style={styles.totalAmount}>{c(expense.price)}</Text>
-                              ) : null}
-                              <View style={styles.actionButtons}>
-                                <Pressable
-                                  hitSlop={12}
-                                  onPress={(event) => {
-                                    event.stopPropagation();
-                                    startEditExpense(expense);
-                                  }}
-                                  style={styles.editButton}
-                                  testID={`expense-edit-${expense.id}`}
-                                >
-                                  <Ionicons color={theme.primary} name="pencil" size={18} />
-                                </Pressable>
-                                <Pressable
-                                  hitSlop={12}
-                                  onPress={(event) => {
-                                    event.stopPropagation();
-                                    handleDeleteExpense(expense.id, expenseTitle);
-                                  }}
-                                  style={styles.editButton}
-                                  testID={`expense-delete-${expense.id}`}
-                                >
-                                  <Ionicons color={theme.danger} name="trash" size={18} />
-                                </Pressable>
+                    {filteredExpenses.length > 0 ? (
+                      filteredExpenses.map((expense) => {
+                        const items = expense.items ?? [];
+                        const expenseTitle = items.length > 0
+                          ? items.map(i => i.name).join(', ')
+                          : expense.description || 'Expense';
+                        const hasMultipleItems = items.length > 1;
+
+                        return (
+                          <BentoCard key={expense.id}>
+                            <View style={styles.expenseCardRow}>
+                              <View style={styles.expenseDetails}>
+                                {expense.description ? (
+                                  <Text style={styles.expenseDescription}>{expense.description}</Text>
+                                ) : null}
+                                {items.length > 0 ? (
+                                  <View style={styles.itemsList}>
+                                    {items.map((item, idx) => (
+                                      <View key={idx} style={styles.itemRow}>
+                                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                                        <Text style={styles.itemPrice}>{c(item.price)}</Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                ) : null}
+                                <Text style={styles.listSubtitle}>
+                                  {expense.category} • {formatShortDate(expense.date)}
+                                </Text>
+                                <Text style={styles.listSubtitle}>
+                                  {expense.paid_by ? `Paid by ${memberMap.get(expense.paid_by)?.name ?? 'Member'}` : 'Paid from Family Budget'}
+                                  {expense.used_by ? ` · Used by ${memberMap.get(expense.used_by)?.name ?? 'Member'}` : ''}
+                                </Text>
                               </View>
-                            </View>
-                          </View>
-                        </BentoCard>
-                      );
-                    })
-                  ) : (
-                    <EmptyState body="Use the add button to capture a new family expense." title="No expenses in this view" />
-                  )}
 
-                  {(() => {
-                    const planBorrows = currentPlanExpenses.filter((e) => e.is_borrow && e.plan_id === selectedPlan.id);
-                    if (planBorrows.length === 0) return null;
-                    const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
-                    planBorrows.forEach((e) => {
-                      const userId = e.used_by ?? e.added_by;
-                      const member = memberMap.get(userId);
-                      if (!member) return;
-                      if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
-                      if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
-                      else borrowsByMember[userId].repaid += Math.abs(e.price);
-                      borrowsByMember[userId].records.push(e);
-                    });
-                    Object.entries(personalContributions).forEach(([userId, data]) => {
-                      if (borrowsByMember[userId]) {
-                        borrowsByMember[userId].contributed = data.total;
-                      }
-                    });
-                    return (
-                      <View style={styles.sectionGap}>
-                        <Text style={styles.inputLabel}>Borrowed from Budget</Text>
-                        {Object.entries(borrowsByMember).map(([userId, data]) => (
-                          <BentoCard key={userId}>
-                            <View style={styles.borrowHeaderRow}>
-                              <View style={{ flex: 1, marginRight: 12 }}>
-                                <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
-                                <Text style={styles.listSubtitle}>{`Borrowed ${c(data.borrowed)} · Repaid ${c(data.repaid)} · Owes ${c(Math.max(data.borrowed - data.repaid - data.contributed, 0))}`}</Text>
-                              </View>
-                              <ModernButton
-                                onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
-                                secondary
-                                style={{ flexShrink: 0 }}
-                                text="Repay"
-                                testID={`repay-${userId}`}
-                              />
-                            </View>
-                            {data.records.map((record) => (
-                              <View key={record.id} style={styles.borrowRecordRow}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={styles.listSubtitle}>{`${record.price > 0 ? 'Borrowed' : 'Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}</Text>
-                                </View>
+                              <View style={styles.expenseActions}>
+                                {hasMultipleItems ? (
+                                  <Text style={styles.totalAmount}>{c(expense.price)}</Text>
+                                ) : null}
                                 <View style={styles.actionButtons}>
-                                  <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
+                                  <Pressable
+                                    hitSlop={12}
+                                    onPress={(event) => {
+                                      event.stopPropagation();
+                                      startEditExpense(expense);
+                                    }}
+                                    style={styles.editButton}
+                                    testID={`expense-edit-${expense.id}`}
+                                  >
                                     <Ionicons color={theme.primary} name="pencil" size={18} />
                                   </Pressable>
-                                  <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
+                                  <Pressable
+                                    hitSlop={12}
+                                    onPress={(event) => {
+                                      event.stopPropagation();
+                                      handleDeleteExpense(expense.id, expenseTitle);
+                                    }}
+                                    style={styles.editButton}
+                                    testID={`expense-delete-${expense.id}`}
+                                  >
                                     <Ionicons color={theme.danger} name="trash" size={18} />
                                   </Pressable>
                                 </View>
                               </View>
-                            ))}
+                            </View>
                           </BentoCard>
-                        ))}
-                      </View>
-                    );
-                  })()}
-                </>
-              )}
-            </>
-          ) : null}
-          {!isViewingArchive && (
-            <>
-              <View style={styles.spacer16} />
-              <ModernButton
-                destructive
-                onPress={() => selectedPlan && handleResetBudget(selectedPlan.id, selectedPlan.name)}
-                testID="reset-budget-button"
-                text="Reset Budget"
-              />
-            </>
-          )}
-        </ModalScaffold>
-      </Modal>
+                        );
+                      })
+                    ) : (
+                      <EmptyState body="Use the add button to capture a new family expense." title="No expenses in this view" />
+                    )}
 
-      <Modal animationType="slide" transparent visible={showExpenseComposer}>
-        <BottomSheet onClose={() => {
-          setShowExpenseComposer(false);
-          setEditingExpenseId(null);
-          setExpenseForm(defaultExpenseForm());
-        }}>
-          <Text style={styles.sectionTitle}>{editingExpenseId ? 'Edit Expense' : 'Add Expense'}</Text>
-          
-          <View style={styles.fieldSection}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.inputLabel}>Items</Text>
-              <Text style={styles.totalText}>Total: {c(expenseTotal)}</Text>
-            </View>
-            
-            {expenseForm.items.map((item, index) => (
-              <View key={index} style={styles.itemInputRow}>
-                <TextInput
-                  onChangeText={(value) => updateExpenseItem(index, 'name', value)}
-                  placeholder="Item name"
-                  style={[styles.textInput, styles.itemNameInput]}
-                  value={item.name}
-                />
-                <TextInput
-                  keyboardType="numeric"
-                  onChangeText={(value) => updateExpenseItem(index, 'price', value)}
-                  placeholder={userCurrency}
-                  style={[styles.textInput, styles.itemPriceInput]}
-                  value={item.price}
-                />
-                {expenseForm.items.length > 1 ? (
-                  <Pressable hitSlop={10} onPress={() => removeExpenseItem(index)} style={styles.removeItemButton}>
-                    <Ionicons color={theme.danger} name="close-circle" size={24} />
-                  </Pressable>
-                ) : null}
-              </View>
-            ))}
-            
-            <Pressable hitSlop={10} onPress={addExpenseItem} style={styles.addItemButton}>
-              <Ionicons color={theme.primary} name="add-circle-outline" size={20} />
-              <Text style={styles.addItemText}>Add item</Text>
-            </Pressable>
-          </View>
+                    {(() => {
+                      const planBorrows = currentPlanExpenses.filter((e) => e.is_borrow && e.plan_id === selectedPlan.id);
+                      if (planBorrows.length === 0) return null;
+                      const borrowsByMember: Record<string, { member: { name: string; avatar: string }; borrowed: number; contributed: number; repaid: number; records: ExpenseWithItems[] }> = {};
+                      planBorrows.forEach((e) => {
+                        const userId = e.used_by ?? e.added_by;
+                        const member = memberMap.get(userId);
+                        if (!member) return;
+                        if (!borrowsByMember[userId]) borrowsByMember[userId] = { member, borrowed: 0, contributed: 0, repaid: 0, records: [] };
+                        if (e.price > 0) borrowsByMember[userId].borrowed += e.price;
+                        else borrowsByMember[userId].repaid += Math.abs(e.price);
+                        borrowsByMember[userId].records.push(e);
+                      });
+                      Object.entries(personalContributions).forEach(([userId, data]) => {
+                        if (borrowsByMember[userId]) {
+                          borrowsByMember[userId].contributed = data.total;
+                        }
+                      });
+                      const unpaidBorrows = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid - data.contributed, 0) > 0);
+                      if (unpaidBorrows.length === 0) return null;
+                      return (
+                        <View style={styles.sectionGap}>
+                          <Text style={styles.inputLabel}>Borrowed from Budget</Text>
+                          {unpaidBorrows.map(([userId, data]) => {
+                            const owes = Math.max(data.borrowed - data.repaid - data.contributed, 0);
+                            const isExpanded = expandedBorrowUser === userId;
+                            return (
+                              <BentoCard key={userId}>
+                                {/* Summary row */}
+                                <View style={styles.borrowHeaderRow}>
+                                  <Text style={styles.listTitle}>{`${data.member.avatar} ${data.member.name}`}</Text>
+                                  <ModernButton
+                                    onPress={() => { setRepayForm({ amount: '', borrowId: userId, date: new Date().toISOString().slice(0, 10) }); setShowRepayComposer(true); }}
+                                    secondary
+                                    style={{ flexShrink: 0 }}
+                                    text="Repay"
+                                    testID={`repay-${userId}`}
+                                  />
+                                </View>
 
-          <View style={styles.fieldSection}>
-            <Text style={styles.inputLabel}>Category</Text>
-            <View style={styles.segmentRow}>
-              {expenseCategories.map((category) => (
-                <CategoryChip key={category.key} active={expenseForm.category === category.key} label={category.key} onPress={() => setExpenseForm((current) => ({ ...current, category: category.key }))} />
-              ))}
-            </View>
-          </View>
-          {expenseForm.category === 'Other' ? (
-            <LabeledInput label="Custom category" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
-          ) : null}
-          <View style={styles.fieldSection}>
-            <Text style={styles.inputLabel}>Who paid?</Text>
-            <View style={styles.segmentRow}>
-              <CategoryChip
-                active={expenseForm.paidBy === null}
-                label="Family Budget"
-                onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null, usedBy: current.usedBy ?? session?.user?.id ?? null }))}
-              />
-              {members.map((member) => (
-                <CategoryChip
-                  key={member.user_id}
-                  active={expenseForm.paidBy === member.user_id}
-                  label={member.user_profile?.name ?? 'Member'}
-                  onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id, usedBy: null }))}
+                                {/* Compact 3-stat row */}
+                                <View style={styles.borrowStatsRow}>
+                                  <View style={styles.borrowStatItem}>
+                                    <Text style={styles.borrowStatValue}>{c(data.borrowed)}</Text>
+                                    <Text style={styles.borrowStatLabel}>Borrowed</Text>
+                                  </View>
+                                  <View style={styles.cycleStatDivider} />
+                                  <View style={styles.borrowStatItem}>
+                                    <Text style={styles.borrowStatValue}>{c(data.repaid)}</Text>
+                                    <Text style={styles.borrowStatLabel}>Repaid</Text>
+                                  </View>
+                                  <View style={styles.cycleStatDivider} />
+                                  <View style={styles.borrowStatItem}>
+                                    <Text style={[styles.borrowStatValue, { color: owes > 0 ? theme.danger : theme.success }]}>{c(owes)}</Text>
+                                    <Text style={styles.borrowStatLabel}>Owes</Text>
+                                  </View>
+                                </View>
+
+                                {/* Collapsible history */}
+                                <Pressable
+                                  onPress={() => setExpandedBorrowUser(isExpanded ? null : userId)}
+                                  style={styles.detailsToggle}
+                                >
+                                  <Text style={styles.detailsToggleText}>
+                                    {isExpanded ? 'Hide history ▴' : `${data.records.length} transaction${data.records.length !== 1 ? 's' : ''} ▾`}
+                                  </Text>
+                                </Pressable>
+
+                                {isExpanded ? data.records.map((record) => (
+                                  <View key={record.id} style={styles.borrowRecordRow}>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.listSubtitle}>
+                                        {`${record.price > 0 ? '↑ Borrowed' : '↓ Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.actionButtons}>
+                                      <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
+                                        <Ionicons color={theme.primary} name="pencil" size={18} />
+                                      </Pressable>
+                                      <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
+                                        <Ionicons color={theme.danger} name="trash" size={18} />
+                                      </Pressable>
+                                    </View>
+                                  </View>
+                                )) : null}
+                              </BentoCard>
+                            );
+                          })}
+                        </View>
+                      );
+                    })()}
+                  </>
+                )}
+              </>
+            ) : null}
+            {!isViewingArchive && (
+              <>
+                <View style={styles.spacer16} />
+                <ModernButton
+                  destructive
+                  onPress={() => selectedPlan && handleResetBudget(selectedPlan.id, selectedPlan.name)}
+                  testID="reset-budget-button"
+                  text="Reset Budget"
                 />
-              ))}
-            </View>
-          </View>
-          {expenseForm.paidBy === null ? (
+              </>
+            )}
+          </ModalScaffold>
+        </Modal>
+
+        <Modal animationType="slide" transparent visible={showExpenseComposer}>
+          <BottomSheet onClose={() => {
+            setShowExpenseComposer(false);
+            setEditingExpenseId(null);
+            setExpenseForm(defaultExpenseForm());
+          }}>
+            <Text style={styles.sectionTitle}>{editingExpenseId ? 'Edit Expense' : 'Add Expense'}</Text>
+
             <View style={styles.fieldSection}>
-              <Text style={styles.inputLabel}>Who used it?</Text>
-              <View style={styles.segmentRow}>
-                <CategoryChip
-                  active={expenseForm.usedBy === null}
-                  label="Shared/Family"
-                  onPress={() => setExpenseForm((current) => ({ ...current, usedBy: null }))}
-                />
-                {members.map((member) => (
-                  <CategoryChip
-                    key={member.user_id}
-                    active={expenseForm.usedBy === member.user_id}
-                    label={member.user_profile?.name ?? 'Member'}
-                    onPress={() => setExpenseForm((current) => ({ ...current, usedBy: member.user_id }))}
+              <View style={styles.rowBetween}>
+                <Text style={styles.inputLabel}>Items</Text>
+                <Text style={styles.totalText}>Total: {c(expenseTotal)}</Text>
+              </View>
+
+              {expenseForm.items.map((item, index) => (
+                <View key={index} style={styles.itemInputRow}>
+                  <TextInput
+                    onChangeText={(value) => updateExpenseItem(index, 'name', value)}
+                    placeholder="Item name"
+                    style={[styles.textInput, styles.itemNameInput]}
+                    value={item.name}
                   />
+                  <TextInput
+                    keyboardType="numeric"
+                    onChangeText={(value) => updateExpenseItem(index, 'price', value)}
+                    placeholder={userCurrency}
+                    style={[styles.textInput, styles.itemPriceInput]}
+                    value={item.price}
+                  />
+                  {expenseForm.items.length > 1 ? (
+                    <Pressable hitSlop={10} onPress={() => removeExpenseItem(index)} style={styles.removeItemButton}>
+                      <Ionicons color={theme.danger} name="close-circle" size={24} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+
+              <Pressable hitSlop={10} onPress={addExpenseItem} style={styles.addItemButton}>
+                <Ionicons color={theme.primary} name="add-circle-outline" size={20} />
+                <Text style={styles.addItemText}>Add item</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.fieldSection}>
+              <Text style={styles.inputLabel}>Category</Text>
+              <View style={styles.segmentRow}>
+                {expenseCategories.map((category) => (
+                  <CategoryChip key={category.key} active={expenseForm.category === category.key} label={category.key} onPress={() => setExpenseForm((current) => ({ ...current, category: category.key }))} />
                 ))}
               </View>
             </View>
-          ) : null}
-          <DatePickerField date={expenseForm.date} label="Date" onDateChange={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" />
-          
-          <LabeledInput 
-            label="Description (optional)" 
-            onChangeText={(value) => setExpenseForm((current) => ({ ...current, description: value }))} 
-            testID="expense-description-input" 
-            value={expenseForm.description} 
-          />
-          
-          <View style={styles.spacer16} />
-          <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text={editingExpenseId ? 'Update expense' : 'Save expense'} />
-        </BottomSheet>
-      </Modal>
-
-<Modal animationType="slide" transparent visible={showShoppingComposer}>
-        <BottomSheet onClose={() => setShowShoppingComposer(false)}>
-          <Text style={styles.sectionTitle}>Add Shopping Item</Text>
-          <LabeledInput label="Product name" onChangeText={(value) => setShoppingForm((current) => ({ ...current, name: value }))} testID="shopping-name-input" value={shoppingForm.name} />
-          <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shopping-quantity-input" value={shoppingForm.quantity} />
-          <Text style={styles.inputLabel}>Category</Text>
-          <View style={styles.segmentRow}>
-            {shoppingCategories.map((category) => (
-              <CategoryChip key={category} active={shoppingForm.category === category} label={category} onPress={() => setShoppingForm((current) => ({ ...current, category }))} />
-            ))}
-          </View>
-          <View style={styles.spacer16} />
-<ModernButton loading={actionBusy} onPress={handleAddShoppingItem} testID="shopping-save-button" text="Add item" />
-        </BottomSheet>
-      </Modal>
-
-      <Modal animationType="slide" transparent visible={showBoughtComposer}>
-        <BottomSheet onClose={() => { setShowBoughtComposer(false); setPendingBoughtItem(null); setBoughtForm({ price: '', paidBy: null, planId: '' }); }}>
-          <Text style={styles.sectionTitle}>Mark as Bought</Text>
-          {pendingBoughtItem ? (
-            <>
-              <Text style={styles.bodyMuted}>
-                {pendingBoughtItem.name}
-                {pendingBoughtItem.quantity ? ` (Qty: ${pendingBoughtItem.quantity})` : ''}
-                {pendingBoughtItem.category ? ` • ${pendingBoughtItem.category}` : ''}
-              </Text>
-              <View style={styles.spacer12} />
-              <Text style={styles.inputLabel}>Budget plan (optional)</Text>
-              <View style={styles.segmentRow}>
-                <CategoryChip active={boughtForm.planId === ''} label="No budget link" onPress={() => setBoughtForm((current) => ({ ...current, planId: '', price: '', paidBy: null }))} />
-                {plans.map((plan) => (
-                  <CategoryChip key={plan.id} active={boughtForm.planId === plan.id} label={plan.name} onPress={() => setBoughtForm((current) => ({ ...current, planId: plan.id }))} />
-                ))}
-              </View>
-              {boughtForm.planId ? (
-                <>
-                  <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
+            {expenseForm.category === 'Other' ? (
+              <LabeledInput label="Custom category" onChangeText={(value) => setExpenseForm((current) => ({ ...current, customCategory: value }))} testID="expense-category-custom-input" value={expenseForm.customCategory} />
+            ) : null}
+            {showContribution ? (
+              <>
+                <View style={styles.fieldSection}>
                   <Text style={styles.inputLabel}>Who paid?</Text>
                   <View style={styles.segmentRow}>
-                    <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
+                    <CategoryChip
+                      active={expenseForm.paidBy === null}
+                      label="Shared"
+                      onPress={() => setExpenseForm((current) => ({ ...current, paidBy: null, usedBy: current.usedBy ?? session?.user?.id ?? null }))}
+                    />
                     {members.map((member) => (
-                      <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
+                      <CategoryChip
+                        key={member.user_id}
+                        active={expenseForm.paidBy === member.user_id}
+                        label={member.user_profile?.name ?? 'Member'}
+                        onPress={() => setExpenseForm((current) => ({ ...current, paidBy: member.user_id, usedBy: null }))}
+                      />
                     ))}
                   </View>
-                </>
-              ) : null}
-              <View style={styles.spacer16} />
-              <ModernButton loading={actionBusy} onPress={handleConfirmBought} testID="confirm-bought-button" text={boughtForm.planId ? 'Confirm & Add to Budget' : 'Confirm Bought'} />
-            </>
-          ) : null}
-        </BottomSheet>
-      </Modal>
-
-<Modal animationType="slide" transparent visible={showBorrowComposer}>
-        <BottomSheet onClose={() => { setShowBorrowComposer(false); setBorrowForm({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' }); setEditingBorrowId(null); }}>
-          <Text style={styles.sectionTitle}>{editingBorrowId ? 'Edit Borrow' : 'Borrow from Budget'}</Text>
-          <LabeledInput keyboardType="numeric" label={`Amount (${userCurrency})`} onChangeText={(value) => setBorrowForm((current) => ({ ...current, amount: value }))} testID="borrow-amount-input" value={borrowForm.amount} />
-          <DatePickerField date={borrowForm.date} label="Date" onDateChange={(value) => setBorrowForm((current) => ({ ...current, date: value }))} testID="borrow-date-input" />
-          <LabeledInput label="Description (optional)" onChangeText={(value) => setBorrowForm((current) => ({ ...current, description: value }))} testID="borrow-description-input" value={borrowForm.description} />
-          <View style={styles.spacer16} />
-          <ModernButton loading={actionBusy} onPress={handleBorrow} testID="borrow-save-button" text={editingBorrowId ? 'Update' : 'Borrow'} />
-        </BottomSheet>
-      </Modal>
-
-      <Modal animationType="slide" transparent visible={showRepayComposer}>
-        <BottomSheet onClose={() => { setShowRepayComposer(false); setRepayForm({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) }); }}>
-          <Text style={styles.sectionTitle}>Repay to Budget</Text>
-          <LabeledInput keyboardType="numeric" label={`Amount (${userCurrency})`} onChangeText={(value) => setRepayForm((current) => ({ ...current, amount: value }))} testID="repay-amount-input" value={repayForm.amount} />
-          <DatePickerField date={repayForm.date} label="Date" onDateChange={(value) => setRepayForm((current) => ({ ...current, date: value }))} testID="repay-date-input" />
-          <View style={styles.spacer16} />
-          <ModernButton loading={actionBusy} onPress={handleRepay} testID="repay-save-button" text="Repay" />
-        </BottomSheet>
-      </Modal>
-
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showMembers}>
-        <ModalScaffold closeTestID="close-members-modal" onClose={() => setShowMembers(false)} title="Members">
-          {members.map((member) => (
-            <BentoCard key={member.id}>
-              <View style={styles.rowBetween}>
-                <View style={styles.memberAvatar}>
-                  <Text style={styles.memberAvatarText}>{member.user_profile?.avatar_emoji ?? '🏡'}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.listTitle}>{member.user_profile?.name ?? 'Member'}</Text>
-                  <Text style={styles.listSubtitle}>{member.user_profile?.email ?? '—'}</Text>
-                  <Text style={styles.listSubtitle}>Joined {formatShortDate(member.joined_at)}</Text>
+                {expenseForm.paidBy === null ? (
+                  <View style={styles.fieldSection}>
+                    <Text style={styles.inputLabel}>Who used it?</Text>
+                    <View style={styles.segmentRow}>
+                      <CategoryChip
+                        active={expenseForm.usedBy === null}
+                        label="Everyone"
+                        onPress={() => setExpenseForm((current) => ({ ...current, usedBy: null }))}
+                      />
+                      {members.map((member) => (
+                        <CategoryChip
+                          key={member.user_id}
+                          active={expenseForm.usedBy === member.user_id}
+                          label={member.user_profile?.name ?? 'Member'}
+                          onPress={() => setExpenseForm((current) => ({ ...current, usedBy: member.user_id }))}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            <DatePickerField date={expenseForm.date} label="Date" onDateChange={(value) => setExpenseForm((current) => ({ ...current, date: value }))} testID="expense-date-input" />
+
+            <LabeledInput
+              label="Description (optional)"
+              onChangeText={(value) => setExpenseForm((current) => ({ ...current, description: value }))}
+              testID="expense-description-input"
+              value={expenseForm.description}
+            />
+
+            <View style={styles.spacer16} />
+            <ModernButton loading={actionBusy} onPress={handleAddExpense} testID="expense-save-button" text={editingExpenseId ? 'Update expense' : 'Save expense'} />
+          </BottomSheet>
+        </Modal>
+
+        <Modal animationType="slide" transparent visible={showShoppingComposer}>
+          <BottomSheet onClose={() => setShowShoppingComposer(false)}>
+            <Text style={styles.sectionTitle}>Add Shopping Item</Text>
+            <LabeledInput label="Product name" onChangeText={(value) => setShoppingForm((current) => ({ ...current, name: value }))} testID="shopping-name-input" value={shoppingForm.name} />
+            <LabeledInput label="Quantity (optional)" onChangeText={(value) => setShoppingForm((current) => ({ ...current, quantity: value }))} testID="shopping-quantity-input" value={shoppingForm.quantity} />
+            <Text style={styles.inputLabel}>Category</Text>
+            <View style={styles.segmentRow}>
+              {shoppingCategories.map((category) => (
+                <CategoryChip key={category} active={shoppingForm.category === category} label={category} onPress={() => setShoppingForm((current) => ({ ...current, category }))} />
+              ))}
+            </View>
+            <View style={styles.spacer16} />
+            <ModernButton loading={actionBusy} onPress={handleAddShoppingItem} testID="shopping-save-button" text="Add item" />
+          </BottomSheet>
+        </Modal>
+
+        <Modal animationType="slide" transparent visible={showBoughtComposer}>
+          <BottomSheet onClose={() => { setShowBoughtComposer(false); setPendingBoughtItem(null); setBoughtForm({ price: '', paidBy: null, planId: '' }); }}>
+            <Text style={styles.sectionTitle}>Mark as Bought</Text>
+            {pendingBoughtItem ? (
+              <>
+                <Text style={styles.bodyMuted}>
+                  {pendingBoughtItem.name}
+                  {pendingBoughtItem.quantity ? ` (Qty: ${pendingBoughtItem.quantity})` : ''}
+                  {pendingBoughtItem.category ? ` • ${pendingBoughtItem.category}` : ''}
+                </Text>
+                <View style={styles.spacer12} />
+                <Text style={styles.inputLabel}>Budget plan (optional)</Text>
+                <View style={styles.segmentRow}>
+                  <CategoryChip active={boughtForm.planId === ''} label="No budget link" onPress={() => setBoughtForm((current) => ({ ...current, planId: '', price: '', paidBy: null }))} />
+                  {plans.map((plan) => (
+                    <CategoryChip key={plan.id} active={boughtForm.planId === plan.id} label={plan.name} onPress={() => setBoughtForm((current) => ({ ...current, planId: plan.id }))} />
+                  ))}
                 </View>
-              </View>
-            </BentoCard>
-          ))}
-        </ModalScaffold>
-      </Modal>
+                {boughtForm.planId ? (
+                  <>
+                    <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
+                    <Text style={styles.inputLabel}>Who paid?</Text>
+                    <View style={styles.segmentRow}>
+                      <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
+                      {members.map((member) => (
+                        <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
+                      ))}
+                    </View>
+                  </>
+                ) : null}
+                <View style={styles.spacer16} />
+                <ModernButton loading={actionBusy} onPress={handleConfirmBought} testID="confirm-bought-button" text={boughtForm.planId ? 'Confirm & Add to Budget' : 'Confirm Bought'} />
+              </>
+            ) : null}
+          </BottomSheet>
+        </Modal>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showInvite}>
-        <ModalScaffold closeTestID="close-invite-modal" onClose={() => setShowInvite(false)} title="Invite Member">
-          <Text style={styles.bodyMuted}>Send an email invite or share the generated link. The invite opens NestLedger and joins the selected profile.</Text>
-          <LabeledInput label="Invitee email" onChangeText={setInviteEmail} testID="invite-email-input" value={inviteEmail} />
-          <ModernButton loading={actionBusy} onPress={handleSendInvite} testID="invite-send-email" text="Send invite email" />
-          {lastInviteLink ? (
-            <BentoCard>
-              <Text style={styles.cardTitle}>Shareable invite link</Text>
-              <Text style={styles.linkBlock}>{lastInviteLink}</Text>
-              <View style={styles.dualActions}>
-                <ModernButton
-                  onPress={() => Clipboard.setStringAsync(lastInviteLink).then(() => announce('Invite link copied.'))}
-                  secondary
-                  testID="invite-copy-link"
-                  text="Copy link"
-                />
-                <ModernButton onPress={() => Share.share({ message: lastInviteLink })} testID="invite-share-link" text="Share link" />
-              </View>
-            </BentoCard>
-          ) : null}
-        </ModalScaffold>
-      </Modal>
+        <Modal animationType="slide" transparent visible={showBorrowComposer}>
+          <BottomSheet onClose={() => { setShowBorrowComposer(false); setBorrowForm({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' }); setEditingBorrowId(null); }}>
+            <Text style={styles.sectionTitle}>{editingBorrowId ? 'Edit Borrow' : 'Borrow from Budget'}</Text>
+            <LabeledInput keyboardType="numeric" label={`Amount (${userCurrency})`} onChangeText={(value) => setBorrowForm((current) => ({ ...current, amount: value }))} testID="borrow-amount-input" value={borrowForm.amount} />
+            <DatePickerField date={borrowForm.date} label="Date" onDateChange={(value) => setBorrowForm((current) => ({ ...current, date: value }))} testID="borrow-date-input" />
+            <LabeledInput label="Description (optional)" onChangeText={(value) => setBorrowForm((current) => ({ ...current, description: value }))} testID="borrow-description-input" value={borrowForm.description} />
+            <View style={styles.spacer16} />
+            <ModernButton loading={actionBusy} onPress={handleBorrow} testID="borrow-save-button" text={editingBorrowId ? 'Update' : 'Borrow'} />
+          </BottomSheet>
+        </Modal>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showNotifications}>
-        <ModalScaffold
-          closeTestID="close-notifications-modal"
-          onClose={() => setShowNotifications(false)}
-          rightAction={
-            <Pressable hitSlop={10} onPress={() => activeProfile && session?.user && notificationApi.markAllRead(activeProfile.id, session.user.id).then(() => refreshProfileData(activeProfile.id))} testID="notifications-mark-all-read">
-              <Text style={styles.linkText}>Mark all read</Text>
-            </Pressable>
-          }
-          title="Notifications"
-        >
-          {notifications.length > 0 ? (
-            notifications.map((item) => (
-              <Pressable key={item.id} onPress={() => notificationApi.markRead(item.id).then(() => activeProfile && refreshProfileData(activeProfile.id))} testID={`notification-item-${item.id}`}>
-                <BentoCard tone={item.is_read ? 'default' : 'highlight'}>
-                  <Text style={styles.listTitle}>{item.message}</Text>
-                  <Text style={styles.listSubtitle}>{formatShortDate(item.created_at)}</Text>
-                </BentoCard>
+        <Modal animationType="slide" transparent visible={showRepayComposer}>
+          <BottomSheet onClose={() => { setShowRepayComposer(false); setRepayForm({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) }); }}>
+            <Text style={styles.sectionTitle}>Repay to Budget</Text>
+            <LabeledInput keyboardType="numeric" label={`Amount (${userCurrency})`} onChangeText={(value) => setRepayForm((current) => ({ ...current, amount: value }))} testID="repay-amount-input" value={repayForm.amount} />
+            <DatePickerField date={repayForm.date} label="Date" onDateChange={(value) => setRepayForm((current) => ({ ...current, date: value }))} testID="repay-date-input" />
+            <View style={styles.spacer16} />
+            <ModernButton loading={actionBusy} onPress={handleRepay} testID="repay-save-button" text="Repay" />
+          </BottomSheet>
+        </Modal>
+
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={showMembers}>
+          <ModalScaffold closeTestID="close-members-modal" onClose={() => setShowMembers(false)} title="Members">
+            {members.map((member) => (
+              <BentoCard key={member.id}>
+                <View style={styles.rowBetween}>
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberAvatarText}>{member.user_profile?.avatar_emoji ?? '🏡'}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.listTitle}>{member.user_profile?.name ?? 'Member'}</Text>
+                    <Text style={styles.listSubtitle}>{member.user_profile?.email ?? '—'}</Text>
+                    <Text style={styles.listSubtitle}>Joined {formatShortDate(member.joined_at)}</Text>
+                  </View>
+                </View>
+              </BentoCard>
+            ))}
+          </ModalScaffold>
+        </Modal>
+
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={showInvite}>
+          <ModalScaffold closeTestID="close-invite-modal" onClose={() => setShowInvite(false)} title="Invite Member">
+            <Text style={styles.bodyMuted}>Send an email invite or share the generated link. The invite opens NestLedger and joins the selected profile.</Text>
+            <LabeledInput label="Invitee email" onChangeText={setInviteEmail} testID="invite-email-input" value={inviteEmail} />
+            <ModernButton loading={actionBusy} onPress={handleSendInvite} testID="invite-send-email" text="Send invite email" />
+            {lastInviteLink ? (
+              <BentoCard>
+                <Text style={styles.cardTitle}>Shareable invite link</Text>
+                <Text style={styles.linkBlock}>{lastInviteLink}</Text>
+                <View style={styles.dualActions}>
+                  <ModernButton
+                    onPress={() => Clipboard.setStringAsync(lastInviteLink).then(() => announce('Invite link copied.'))}
+                    secondary
+                    testID="invite-copy-link"
+                    text="Copy link"
+                  />
+                  <ModernButton onPress={() => Share.share({ message: lastInviteLink })} testID="invite-share-link" text="Share link" />
+                </View>
+              </BentoCard>
+            ) : null}
+          </ModalScaffold>
+        </Modal>
+
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={showNotifications}>
+          <ModalScaffold
+            closeTestID="close-notifications-modal"
+            onClose={() => setShowNotifications(false)}
+            rightAction={
+              <Pressable hitSlop={10} onPress={() => activeProfile && session?.user && notificationApi.markAllRead(activeProfile.id, session.user.id).then(() => refreshProfileData(activeProfile.id))} testID="notifications-mark-all-read">
+                <Text style={styles.linkText}>Mark all read</Text>
               </Pressable>
-            ))
-          ) : (
-            <EmptyState body="Recent activity for this profile will show here." title="All caught up" />
-          )}
-        </ModalScaffold>
-      </Modal>
+            }
+            title="Notifications"
+          >
+            {notifications.length > 0 ? (
+              notifications.map((item) => (
+                <Pressable key={item.id} onPress={() => notificationApi.markRead(item.id).then(() => activeProfile && refreshProfileData(activeProfile.id))} testID={`notification-item-${item.id}`}>
+                  <BentoCard tone={item.is_read ? 'default' : 'highlight'}>
+                    <Text style={styles.listTitle}>{item.message}</Text>
+                    <Text style={styles.listSubtitle}>{formatShortDate(item.created_at)}</Text>
+                  </BentoCard>
+                </Pressable>
+              ))
+            ) : (
+              <EmptyState body="Recent activity for this profile will show here." title="All caught up" />
+            )}
+          </ModalScaffold>
+        </Modal>
 
-      <Suspense fallback={null}>
-        <ProfileSettingsModal
-          actionBusy={actionBusy}
-          deletingProfile={activeProfile ? deletingProfileIds.has(activeProfile.id) : false}
-          onChange={setProfileForm}
-          onClose={() => setShowProfileSettings(false)}
-          onDeleteSpace={() => activeProfile && handleDeleteSpace(activeProfile.id)}
-          onSave={handleSaveSettings}
-          onSignOut={() => authApi.signOut()}
-          profileForm={profileForm}
-          visible={showProfileSettings}
-        />
-      </Suspense>
+        <Suspense fallback={null}>
+          <ProfileSettingsModal
+            actionBusy={actionBusy}
+            contributionEnabled={contributionEnabled}
+            deletingProfile={activeProfile ? deletingProfileIds.has(activeProfile.id) : false}
+            onChange={setProfileForm}
+            onClose={() => setShowProfileSettings(false)}
+            onDeleteSpace={() => activeProfile && handleDeleteSpace(activeProfile.id)}
+            onSave={handleSaveSettings}
+            onSignOut={() => authApi.signOut()}
+            onToggleContribution={handleToggleContribution}
+            profileForm={profileForm}
+            visible={showProfileSettings}
+          />
+        </Suspense>
 
-      <Modal animationType="slide" presentationStyle="pageSheet" visible={showExpenseFilters}>
-        <ModalScaffold closeTestID="close-expense-filters-modal" onClose={() => setShowExpenseFilters(false)} title="Filter Expenses">
-          <Text style={styles.inputLabel}>Time window</Text>
-          <View style={styles.segmentRow}>
-            {expenseFilters.map((filter) => (
-              <CategoryChip key={filter} active={expenseView === filter} label={filter} onPress={() => setExpenseView(filter)} />
-            ))}
-          </View>
-          <Text style={styles.inputLabel}>Category search</Text>
-          <View style={styles.segmentRow}>
-            <CategoryChip active={expenseCategoryFilter === 'All'} label="All" onPress={() => setExpenseCategoryFilter('All')} />
-            {expenseCategories.map((category) => (
-              <CategoryChip key={category.key} active={expenseCategoryFilter === category.key} label={category.key} onPress={() => setExpenseCategoryFilter(category.key)} />
-            ))}
-          </View>
-        </ModalScaffold>
-      </Modal>
-    </SafeAreaView>
+        <Modal animationType="slide" presentationStyle="pageSheet" visible={showExpenseFilters}>
+          <ModalScaffold closeTestID="close-expense-filters-modal" onClose={() => setShowExpenseFilters(false)} title="Filter Expenses">
+            <Text style={styles.inputLabel}>Time window</Text>
+            <View style={styles.segmentRow}>
+              {expenseFilters.map((filter) => (
+                <CategoryChip key={filter} active={expenseView === filter} label={filter} onPress={() => setExpenseView(filter)} />
+              ))}
+            </View>
+            <Text style={styles.inputLabel}>Category search</Text>
+            <View style={styles.segmentRow}>
+              <CategoryChip active={expenseCategoryFilter === 'All'} label="All" onPress={() => setExpenseCategoryFilter('All')} />
+              {expenseCategories.map((category) => (
+                <CategoryChip key={category.key} active={expenseCategoryFilter === category.key} label={category.key} onPress={() => setExpenseCategoryFilter(category.key)} />
+              ))}
+            </View>
+          </ModalScaffold>
+        </Modal>
+      </SafeAreaView>
     </GestureHandlerRootView>
   );
 }
@@ -3151,6 +3449,25 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  analyseCardRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  analyseCardIcon: {
+    alignItems: 'center',
+    backgroundColor: theme.primarySoft,
+    borderRadius: 12,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  analyseCardTitle: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
   appShell: {
     backgroundColor: theme.background,
     flex: 1,
@@ -3163,6 +3480,126 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
+  },
+  backRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 2,
+  },
+  backRowText: {
+    color: theme.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  spaceTypeGrid: {
+    gap: 10,
+  },
+  spaceTypeCard: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  spaceTypeCardActive: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary,
+  },
+  spaceTypeEmoji: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  spaceTypeLabel: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  spaceTypeLabelActive: {
+    color: theme.primary,
+  },
+  spaceTypeDesc: {
+    color: theme.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  spaceTypeDescActive: {
+    color: theme.primary,
+  },
+  breakdownSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  breakdownStat: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 2,
+  },
+  breakdownStatValue: {
+    color: theme.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  breakdownStatLabel: {
+    color: theme.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  detailsToggle: {
+    alignItems: 'center',
+    marginTop: 10,
+    paddingVertical: 4,
+  },
+  detailsToggleText: {
+    color: theme.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  cycleStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cycleStat: {
+    flex: 1,
+    gap: 2,
+  },
+  cycleStatValue: {
+    color: theme.text,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  cycleStatLabel: {
+    color: theme.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  cycleStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: theme.border,
+    marginHorizontal: 16,
+  },
+  borrowStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  borrowStatItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  borrowStatValue: {
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  borrowStatLabel: {
+    color: theme.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
   },
   avatarChoice: {
     alignItems: 'center',

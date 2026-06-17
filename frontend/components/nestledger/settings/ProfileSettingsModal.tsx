@@ -1,5 +1,5 @@
 import { ReactNode, useMemo, useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { CURRENCY_INFO, theme } from '@/constants/nestledger';
 
@@ -23,15 +23,25 @@ export type SettingsSectionItem = {
 
 type ProfileSettingsModalProps = {
   actionBusy: boolean;
+  contributionEnabled: boolean;
   deletingProfile: boolean;
   onChange: (value: CreateProfileForm) => void;
   onClose: () => void;
   onDeleteSpace: () => void;
   onSave: () => void;
   onSignOut: () => void;
+  onToggleContribution: () => void;
   profileForm: CreateProfileForm;
   visible: boolean;
 };
+
+const SPACE_TYPES = [
+  { type: 'personal',      emoji: '🙋', label: 'Personal',      desc: 'Your own spending.' },
+  { type: 'family',        emoji: '🏠', label: 'Family / Home', desc: 'Household budget.' },
+  { type: 'trip_family',   emoji: '✈️', label: 'Family Trip',   desc: 'Travel with family.' },
+  { type: 'trip_friends',  emoji: '🧳', label: 'Friend Trip',   desc: 'Trip with friends.' },
+  { type: 'shared_living', emoji: '🏡', label: 'Shared Living', desc: 'Shared house/flat.' },
+] as const;
 
 const settingsSections: SettingsSectionItem[] = [
   { key: 'personal', title: 'Personal profile', description: 'Your name, avatar, and default currency.' },
@@ -42,12 +52,14 @@ const settingsSections: SettingsSectionItem[] = [
 
 export function ProfileSettingsModal({
   actionBusy,
+  contributionEnabled,
   deletingProfile,
   onChange,
   onClose,
   onDeleteSpace,
   onSave,
   onSignOut,
+  onToggleContribution,
   profileForm,
   visible,
 }: ProfileSettingsModalProps) {
@@ -93,12 +105,43 @@ export function ProfileSettingsModal({
               selected={profileForm.familyEmoji}
               onPick={(value) => onChange({ ...profileForm, familyEmoji: value })}
             />
+            <Text style={styles.inputLabel}>Space type</Text>
+            <View style={styles.spaceTypeGrid}>
+              {SPACE_TYPES.map((st) => {
+                const selected = profileForm.spaceType === st.type;
+                return (
+                  <Pressable
+                    key={st.type}
+                    onPress={() => onChange({ ...profileForm, spaceType: st.type })}
+                    style={[styles.spaceTypeCard, selected && styles.spaceTypeCardActive]}
+                  >
+                    <Text style={styles.spaceTypeEmoji}>{st.emoji}</Text>
+                    <Text style={[styles.spaceTypeLabel, selected && styles.spaceTypeLabelActive]}>{st.label}</Text>
+                    <Text style={[styles.spaceTypeDesc, selected && styles.spaceTypeDescActive]}>{st.desc}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </SettingsSection>
 
           <SettingsSection item={settingsSections[2]}>
             <Text style={styles.preferenceHint}>
               Amount formatting updates everywhere after you save, while keeping all existing budget and tracker logic the same.
             </Text>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleTextWrap}>
+                <Text style={styles.toggleLabel}>Contributions</Text>
+                <Text style={styles.toggleDesc}>
+                  Track who paid in expenses, add contributions to budgets, and offset borrows automatically.
+                </Text>
+              </View>
+              <Switch
+                onValueChange={onToggleContribution}
+                thumbColor={contributionEnabled ? theme.primary : theme.border}
+                trackColor={{ false: theme.surfaceMuted, true: theme.primarySoft }}
+                value={contributionEnabled}
+              />
+            </View>
           </SettingsSection>
 
           <SettingsSection item={settingsSections[3]}>
@@ -171,5 +214,67 @@ const styles = StyleSheet.create({
     color: theme.text,
     fontSize: 16,
     fontWeight: '800',
+  },
+  toggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  toggleTextWrap: {
+    flex: 1,
+    gap: 3,
+  },
+  toggleLabel: {
+    color: theme.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toggleDesc: {
+    color: theme.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  spaceTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  spaceTypeCard: {
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flex: 1,
+    minWidth: '28%',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    gap: 3,
+  },
+  spaceTypeCardActive: {
+    backgroundColor: theme.primarySoft,
+    borderColor: theme.primary,
+  },
+  spaceTypeEmoji: {
+    fontSize: 20,
+  },
+  spaceTypeLabel: {
+    color: theme.text,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  spaceTypeLabelActive: {
+    color: theme.primary,
+  },
+  spaceTypeDesc: {
+    color: theme.textMuted,
+    fontSize: 10,
+    textAlign: 'center',
+    lineHeight: 13,
+  },
+  spaceTypeDescActive: {
+    color: theme.primary,
   },
 });

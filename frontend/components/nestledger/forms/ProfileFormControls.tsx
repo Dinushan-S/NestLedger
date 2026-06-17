@@ -17,6 +17,7 @@ export type CreateProfileForm = {
   familyEmoji: string;
   familyName: string;
   name: string;
+  spaceType: string;
 };
 
 type ProfileFormFieldsProps = {
@@ -95,12 +96,12 @@ export function ProfileFormFields({
       {!userOnly ? (
         <>
           <LabeledInput
-            label="Family / home name"
+            label="Space name"
             onChangeText={(value: string) => onChange({ ...form, familyName: value })}
             testID={`${prefix}-family-name-input`}
             value={form.familyName}
           />
-          <Text style={styles.inputLabel}>Family avatar</Text>
+          <Text style={styles.inputLabel}>Space avatar</Text>
           <AvatarPicker
             selected={form.familyEmoji}
             testIDPrefix={`${prefix}-family-avatar`}

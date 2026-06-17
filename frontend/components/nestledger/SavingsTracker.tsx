@@ -29,7 +29,7 @@ const now = new Date();
 const currentMonth = now.getMonth() + 1;
 const currentYear = now.getFullYear();
 
-export default function SavingsTracker({
+export function SavingsTracker({
   trackerId,
   savings,
   plans,
@@ -233,7 +233,7 @@ export default function SavingsTracker({
           <Pressable onPress={() => setShowDeposit(false)} style={s.sheetBackdrop}>
             <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={s.sheetCard}>
             <View style={s.sheetGrabber} />
-            <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+            <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Pressable onPress={(e) => e.stopPropagation()}>
                 <Text style={s.sectionTitle}>Add Deposit</Text>
 
@@ -330,7 +330,7 @@ export default function SavingsTracker({
           <Pressable onPress={() => setShowWithdraw(false)} style={s.sheetBackdrop}>
           <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={s.sheetCard}>
             <View style={s.sheetGrabber} />
-            <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+            <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Pressable onPress={(e) => e.stopPropagation()}>
                 <Text style={s.sectionTitle}>Withdraw</Text>
 
@@ -516,7 +516,7 @@ function SafeWrap({ children, onClose, title }: { children: React.ReactNode; onC
         <Text style={s.modalTitle}>{title}</Text>
         <View />
       </View>
-      <ScrollView contentContainerStyle={s.modalContent}>{children}</ScrollView>
+      <ScrollView contentContainerStyle={s.modalContent} showsVerticalScrollIndicator={false}>{children}</ScrollView>
     </View>
   );
 }
@@ -761,3 +761,5 @@ const s = StyleSheet.create({
     paddingBottom: 40,
   },
 });
+
+export default SavingsTracker;

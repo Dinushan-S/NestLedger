@@ -14,6 +14,7 @@ create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   emoji_avatar text,
+  space_type text not null default 'family' check (space_type in ('personal', 'family', 'trip_family', 'trip_friends', 'shared_living')),
   bill_tracker_enabled boolean not null default false,
   savings_tracker_enabled boolean not null default false,
   created_by uuid not null references auth.users(id) on delete cascade,
