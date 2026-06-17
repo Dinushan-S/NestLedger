@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Device from 'expo-device';
+import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { Session } from '@supabase/supabase-js';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -237,6 +238,7 @@ const notificationTypes = {
 };
 
 export default function NestLedgerApp({ initialInviteToken }: Props) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width >= 720;
@@ -784,8 +786,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       } else {
         const result = await authApi.signUp(authForm);
         if (!result.session) {
-          setAuthMessage('Account created. Please confirm your email, then sign in.');
-          setAuthMode('signin');
+          router.push({
+            pathname: '/confirm-email',
+            params: {
+              email: authForm.email.trim(),
+              token: pendingInviteToken ?? '',
+            },
+          });
         }
       }
     } catch (error) {
@@ -1335,52 +1342,55 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       });
     } else {
       setPendingBoughtItem(item);
-      setBoughtForm({ price: '', paidBy: null, planId: plans[0]?.id ?? '' });
+      setBoughtForm({ price: '', paidBy: null, planId: '' });
       setShowBoughtComposer(true);
     }
   };
 
   const handleConfirmBought = async () => {
     if (!session?.user || !activeProfile || !pendingBoughtItem) return;
-    const price = Number(boughtForm.price);
-    if (!price || price <= 0) {
-      announce('Enter a valid price.');
-      return;
-    }
-    if (!boughtForm.planId) {
-      announce('Select a budget plan.');
-      return;
-    }
-
-    const plan = plans.find(p => p.id === boughtForm.planId);
-    if (!plan) {
-      announce('Budget plan not found.');
-      return;
-    }
 
     await runAction(async () => {
-      const itemDescription = pendingBoughtItem.quantity 
-        ? `${pendingBoughtItem.name} (Qty: ${pendingBoughtItem.quantity})`
-        : pendingBoughtItem.name;
+      if (!boughtForm.planId) {
+        await shoppingApi.markBought(pendingBoughtItem.id, session.user.id);
+        await notifyOtherMembers(
+          `${userProfile?.name ?? 'A member'} marked ${pendingBoughtItem.name} as bought.`,
+          notificationTypes.shoppingBought,
+        );
+      } else {
+        const price = Number(boughtForm.price);
+        if (!price || price <= 0) {
+          throw new Error('Enter a valid price.');
+        }
 
-      const newExpense = await expenseApi.addExpenseWithId({
-        added_by: session.user.id,
-        category: pendingBoughtItem.category || 'Groceries',
-        date: new Date().toISOString(),
-        description: pendingBoughtItem.category || null,
-        is_borrow: false,
-        items: [{ name: itemDescription, price }],
-        paid_by: boughtForm.paidBy,
-        plan_id: boughtForm.planId,
-        profile_id: activeProfile.id,
-        used_by: boughtForm.paidBy,
-      });
+        const plan = plans.find(p => p.id === boughtForm.planId);
+        if (!plan) {
+          throw new Error('Budget plan not found.');
+        }
 
-      await shoppingApi.markBought(pendingBoughtItem.id, session.user.id, newExpense.id);
-      await notifyOtherMembers(
-        `${userProfile?.name ?? 'A member'} bought ${pendingBoughtItem.name} for ${c(price)} ✓`,
-        notificationTypes.shoppingBought,
-      );
+        const itemDescription = pendingBoughtItem.quantity
+          ? `${pendingBoughtItem.name} (Qty: ${pendingBoughtItem.quantity})`
+          : pendingBoughtItem.name;
+
+        const newExpense = await expenseApi.addExpenseWithId({
+          added_by: session.user.id,
+          category: pendingBoughtItem.category || 'Groceries',
+          date: new Date().toISOString(),
+          description: pendingBoughtItem.category || null,
+          is_borrow: false,
+          items: [{ name: itemDescription, price }],
+          paid_by: boughtForm.paidBy,
+          plan_id: boughtForm.planId,
+          profile_id: activeProfile.id,
+          used_by: boughtForm.paidBy,
+        });
+
+        await shoppingApi.markBought(pendingBoughtItem.id, session.user.id, newExpense.id);
+        await notifyOtherMembers(
+          `${userProfile?.name ?? 'A member'} bought ${pendingBoughtItem.name} for ${c(price)} ✓`,
+          notificationTypes.shoppingBought,
+        );
+      }
 
       setShowBoughtComposer(false);
       setPendingBoughtItem(null);
@@ -1425,7 +1435,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
       setLastInviteLink(result.shareable_link);
       setInviteEmail('');
-      announce('Invitation sent. You can also copy or share the invite link.');
+      announce(
+        result.email_delivered
+          ? 'Invitation email sent. You can also copy or share the invite link.'
+          : 'Invite created, but email delivery failed. Share the invite link manually.',
+      );
     });
   };
 
@@ -2804,22 +2818,27 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                 {pendingBoughtItem.category ? ` • ${pendingBoughtItem.category}` : ''}
               </Text>
               <View style={styles.spacer12} />
-              <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
-              <Text style={styles.inputLabel}>Who paid?</Text>
+              <Text style={styles.inputLabel}>Budget plan (optional)</Text>
               <View style={styles.segmentRow}>
-                <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
-                {members.map((member) => (
-                  <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
-                ))}
-              </View>
-              <Text style={styles.inputLabel}>Budget plan</Text>
-              <View style={styles.segmentRow}>
+                <CategoryChip active={boughtForm.planId === ''} label="No budget link" onPress={() => setBoughtForm((current) => ({ ...current, planId: '', price: '', paidBy: null }))} />
                 {plans.map((plan) => (
                   <CategoryChip key={plan.id} active={boughtForm.planId === plan.id} label={plan.name} onPress={() => setBoughtForm((current) => ({ ...current, planId: plan.id }))} />
                 ))}
               </View>
+              {boughtForm.planId ? (
+                <>
+                  <LabeledInput keyboardType="numeric" label={`Price (${userCurrency})`} onChangeText={(value) => setBoughtForm((current) => ({ ...current, price: value }))} testID="bought-price-input" value={boughtForm.price} />
+                  <Text style={styles.inputLabel}>Who paid?</Text>
+                  <View style={styles.segmentRow}>
+                    <CategoryChip active={boughtForm.paidBy === null} label="Family Budget" onPress={() => setBoughtForm((current) => ({ ...current, paidBy: null }))} />
+                    {members.map((member) => (
+                      <CategoryChip key={member.id} active={boughtForm.paidBy === member.user_id} label={member.user_profile?.name ?? 'Member'} onPress={() => setBoughtForm((current) => ({ ...current, paidBy: member.user_id }))} />
+                    ))}
+                  </View>
+                </>
+              ) : null}
               <View style={styles.spacer16} />
-              <ModernButton loading={actionBusy} onPress={handleConfirmBought} testID="confirm-bought-button" text="Confirm & Add to Budget" />
+              <ModernButton loading={actionBusy} onPress={handleConfirmBought} testID="confirm-bought-button" text={boughtForm.planId ? 'Confirm & Add to Budget' : 'Confirm Bought'} />
             </>
           ) : null}
         </BottomSheet>

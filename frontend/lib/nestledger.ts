@@ -655,7 +655,7 @@ export const inviteApi = {
     });
   },
   async sendInvite(session: Session, payload: InvitePayload) {
-    return callBackend<{ invite_token: string; shareable_link: string }>('/invitations/send', session.access_token, payload);
+    return callBackend<{ email_delivered: boolean; invite_token: string; shareable_link: string }>('/invitations/send', session.access_token, payload);
   },
 };
 

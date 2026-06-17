@@ -11,6 +11,14 @@ def test_health_ok(api_client, base_url):
     assert data == {"ok": True}
 
 
+def test_invite_landing_page_renders(api_client, base_url):
+    response = api_client.get(f"{base_url}/invite?token=test-token", timeout=20)
+
+    assert response.status_code == 200
+    assert "Open your NestLedger invite" in response.text
+    assert "nestledger://invite?token=test-token" in response.text
+
+
 def test_invitation_send_requires_auth(api_client, base_url, primary_profile_id):
     payload = {
         "invited_email": "nestledger.e2e.member@example.org",

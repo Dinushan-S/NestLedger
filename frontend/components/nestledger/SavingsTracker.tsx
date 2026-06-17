@@ -50,11 +50,12 @@ export default function SavingsTracker({
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const todayStr = todayISO();
-  const [depositForm, setDepositForm] = useState({ amount: '', note: '', date: todayStr, name: '' });
+  const [depositForm, setDepositForm] = useState({ amount: '', note: '', planId: '', date: todayStr, name: '' });
   const [withdrawForm, setWithdrawForm] = useState({ amount: '', note: '', planId: '', reason: 'Other' as string, date: todayStr, name: '' });
   const [selectedEntry, setSelectedEntry] = useState<SavingsEntry | null>(null);
   const [showDepositPicker, setShowDepositPicker] = useState(false);
   const [showWithdrawPicker, setShowWithdrawPicker] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   const trackerSavings = useMemo(() => {
     return savings.filter((e) => e.tracker_id === trackerId);
@@ -73,6 +74,10 @@ export default function SavingsTracker({
   const totalSavings = useMemo(() => {
     return filteredSavings.reduce((sum, e) => sum + e.amount, 0);
   }, [filteredSavings]);
+
+  const trackerBalance = useMemo(() => {
+    return trackerSavings.reduce((sum, e) => sum + e.amount, 0);
+  }, [trackerSavings]);
 
   const thisMonthEntries = useMemo(() => {
     return filteredSavings.filter((e) => {
@@ -96,18 +101,22 @@ export default function SavingsTracker({
       amount,
       note: depositForm.note.trim() || null,
       name: depositForm.name.trim() || null,
-      linked_plan_id: null,
+      linked_plan_id: depositForm.planId || null,
       date: depositForm.date,
       added_by: userId,
       tracker_id: trackerId,
     });
     setShowDeposit(false);
-    setDepositForm({ amount: '', note: '', date: todayStr, name: '' });
+    setDepositForm({ amount: '', note: '', planId: '', date: todayStr, name: '' });
   };
 
   const handleSubmitWithdraw = () => {
     const amount = Number(withdrawForm.amount);
     if (!amount || amount <= 0) return;
+    if (amount > trackerBalance) {
+      setWithdrawError('Withdrawal exceeds the available savings balance.');
+      return;
+    }
     onWithdraw({
       profile_id: profileId,
       amount: -amount,
@@ -119,6 +128,7 @@ export default function SavingsTracker({
       tracker_id: trackerId,
     });
     setShowWithdraw(false);
+    setWithdrawError(null);
     setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr, name: '' });
   };
 
@@ -137,9 +147,9 @@ export default function SavingsTracker({
           </Text>
         </View>
         <View style={s.actionButtons}>
-          <ModernButton onPress={() => { setDepositForm({ amount: '', note: '', date: todayStr, name: '' }); setShowDeposit(true); }} secondary text="Deposit" />
+          <ModernButton onPress={() => { setDepositForm({ amount: '', note: '', planId: '', date: todayStr, name: '' }); setShowDeposit(true); }} secondary text="Deposit" />
           <ModernButton
-            onPress={() => { setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr, name: '' }); setShowWithdraw(true); }}
+            onPress={() => { setWithdrawError(null); setWithdrawForm({ amount: '', note: '', planId: '', reason: 'Other', date: todayStr, name: '' }); setShowWithdraw(true); }}
             secondary
             testID="savings-open-withdraw"
             text="Withdraw"
@@ -266,6 +276,29 @@ export default function SavingsTracker({
                   />
                 </View>
 
+                {plans.length > 0 ? (
+                  <View style={s.fieldSection}>
+                    <Text style={s.inputLabel}>Linked budget plan (optional)</Text>
+                    <View style={s.segmentRow}>
+                      <CategoryChip
+                        active={depositForm.planId === ''}
+                        label="No plan"
+                        onPress={() => setDepositForm((f) => ({ ...f, planId: '' }))}
+                        testID="savings-deposit-plan-none"
+                      />
+                      {plans.map((plan) => (
+                        <CategoryChip
+                          key={plan.id}
+                          active={depositForm.planId === plan.id}
+                          label={plan.name}
+                          onPress={() => setDepositForm((f) => ({ ...f, planId: plan.id }))}
+                          testID={`savings-deposit-plan-${plan.id}`}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
                 <View style={s.inputGroup}>
                   <Text style={s.inputLabel}>Note (optional)</Text>
                   <TextInput
@@ -305,7 +338,7 @@ export default function SavingsTracker({
                   <Text style={s.inputLabel}>Amount ({currencyCode})</Text>
                   <TextInput
                     keyboardType="numeric"
-                    onChangeText={(v) => setWithdrawForm((f) => ({ ...f, amount: v }))}
+                    onChangeText={(v) => { setWithdrawError(null); setWithdrawForm((f) => ({ ...f, amount: v })); }}
                     placeholder="e.g. 5000"
                     placeholderTextColor={theme.textMuted}
                     style={s.input}
@@ -313,6 +346,8 @@ export default function SavingsTracker({
                     value={withdrawForm.amount}
                   />
                 </View>
+
+                <Text style={s.balanceHint}>Available balance: {formatCurrency(trackerBalance, currencyCode)}</Text>
 
                 <View style={s.inputGroup}>
                   <Text style={s.inputLabel}>Date</Text>
@@ -396,6 +431,10 @@ export default function SavingsTracker({
                     value={withdrawForm.note}
                   />
                 </View>
+
+                {withdrawError ? (
+                  <Text style={s.errorText}>{withdrawError}</Text>
+                ) : null}
 
                 <View style={s.spacer16} />
                 <ModernButton
@@ -674,10 +713,20 @@ const s = StyleSheet.create({
     color: theme.text,
     fontSize: 16,
   },
+  balanceHint: {
+    color: theme.textMuted,
+    fontSize: 13,
+    marginTop: -2,
+  },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+  },
+  errorText: {
+    color: theme.danger,
+    fontSize: 13,
+    fontWeight: '600',
   },
   detailAmount: {
     color: theme.text,

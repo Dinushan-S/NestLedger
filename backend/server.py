@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import requests
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
@@ -32,6 +33,11 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_LOGIN = os.getenv("SMTP_LOGIN", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 INVITE_EMAIL_DELIVERY = os.getenv("INVITE_EMAIL_DELIVERY", "enabled").lower()
+ANDROID_STORE_URL = os.getenv(
+    "ANDROID_STORE_URL",
+    "https://play.google.com/store/apps/details?id=com.nestledger.app",
+)
+IOS_STORE_URL = os.getenv("IOS_STORE_URL", "")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -214,9 +220,10 @@ def send_brevo_invite(
     <div style='font-family: Arial, sans-serif; color: #2D312F; line-height: 1.6;'>
       <h2>{inviter_name} invited you to join {profile_name} on NestLedger</h2>
       <p>Tap below to open the app and accept the invitation.</p>
-      <p><a href='{invite_link}' style='display:inline-block;padding:12px 18px;background:#5D7B6F;color:#fff;border-radius:999px;text-decoration:none;'>Open NestLedger</a></p>
-      <p>If the app does not open automatically, use this fallback link:</p>
+      <p><a href='{fallback_link}' style='display:inline-block;padding:12px 18px;background:#5D7B6F;color:#fff;border-radius:999px;text-decoration:none;'>Open NestLedger</a></p>
+      <p>If the app does not open automatically, use this link again after installing the app:</p>
       <p><a href='{fallback_link}'>{fallback_link}</a></p>
+      <p style='font-size:12px;color:#5F6B64;'>Direct app link: {invite_link}</p>
     </div>
     """
 
@@ -227,7 +234,7 @@ def send_brevo_invite(
     message["From"] = f"{BREVO_FROM_NAME} <{BREVO_FROM_EMAIL}>"
     message["To"] = recipient_email
     message.set_content(
-        f"{inviter_name} invited you to join {profile_name} on NestLedger. Open the app using {invite_link} or use {fallback_link}.",
+        f"{inviter_name} invited you to join {profile_name} on NestLedger. Open {fallback_link} to continue in the app or install it first.",
     )
     message.add_alternative(html, subtype="html")
 
@@ -261,12 +268,128 @@ def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:
             "updated_at": timestamp,
         },
         prefer="resolution=merge-duplicates,return=representation",
-    )
+    ) 
+
+
+def build_invite_landing_html(token: str) -> str:
+    encoded_token = quote(token, safe="")
+    deep_link = f"nestledger://invite?token={encoded_token}"
+    safe_public_url = APP_PUBLIC_URL.rstrip("/")
+    ios_store_url = IOS_STORE_URL or safe_public_url
+    android_store_url = ANDROID_STORE_URL
+
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NestLedger Invite</title>
+    <style>
+      :root {{
+        color-scheme: light;
+        font-family: Arial, sans-serif;
+      }}
+      body {{
+        margin: 0;
+        background: #f6f5f2;
+        color: #2d312f;
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }}
+      .card {{
+        max-width: 420px;
+        width: 100%;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(45, 49, 47, 0.12);
+        padding: 28px 24px;
+      }}
+      h1 {{
+        margin: 0 0 12px;
+        font-size: 28px;
+      }}
+      p {{
+        margin: 0 0 14px;
+        line-height: 1.5;
+      }}
+      .button {{
+        display: block;
+        text-align: center;
+        text-decoration: none;
+        border-radius: 999px;
+        padding: 14px 18px;
+        font-weight: 700;
+        margin-top: 12px;
+      }}
+      .primary {{
+        background: #5d7b6f;
+        color: white;
+      }}
+      .secondary {{
+        border: 1px solid #cfd7d2;
+        color: #2d312f;
+      }}
+      .note {{
+        font-size: 13px;
+        color: #66726b;
+        margin-top: 18px;
+      }}
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Open your NestLedger invite</h1>
+      <p>We are opening NestLedger so you can accept this household invitation.</p>
+      <a class="button primary" href="{deep_link}">Open NestLedger</a>
+      <a class="button secondary" id="store-link" href="{android_store_url}">Install the app</a>
+      <p class="note">If nothing happens, install NestLedger and open this invite again.</p>
+      <script>
+        (function() {{
+          const deepLink = {deep_link!r};
+          const androidStore = {android_store_url!r};
+          const iosStore = {ios_store_url!r};
+          const ua = navigator.userAgent || '';
+          const isAndroid = /Android/i.test(ua);
+          const isIOS = /iPhone|iPad|iPod/i.test(ua);
+          const storeUrl = isIOS ? iosStore : androidStore;
+          const storeLink = document.getElementById('store-link');
+          if (storeLink && storeUrl) {{
+            storeLink.href = storeUrl;
+          }}
+          if (!isAndroid && !isIOS) {{
+            return;
+          }}
+          const startedAt = Date.now();
+          window.location.href = deepLink;
+          window.setTimeout(function() {{
+            if (Date.now() - startedAt < 2200 && storeUrl) {{
+              window.location.href = storeUrl;
+            }}
+          }}, 1400);
+        }})();
+      </script>
+    </main>
+  </body>
+</html>
+"""
 
 
 @api_router.get("/")
 def root():
     return {"message": "NestLedger backend online"}
+
+
+@app.get("/invite", response_class=HTMLResponse)
+def invite_landing(token: str | None = None):
+    if not token:
+        return HTMLResponse(
+            "<html><body><h1>Invalid invite</h1><p>This invitation link is missing its token.</p></body></html>",
+            status_code=400,
+        )
+    return HTMLResponse(build_invite_landing_html(token))
 
 
 @api_router.get("/health")
