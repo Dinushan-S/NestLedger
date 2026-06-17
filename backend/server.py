@@ -39,6 +39,7 @@ ANDROID_STORE_URL = os.getenv(
 )
 IOS_STORE_URL = os.getenv("IOS_STORE_URL", "")
 
+
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 

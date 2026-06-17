@@ -11,9 +11,10 @@ config.cacheStores = [
   new FileStore({ root: path.join(root, 'cache') }),
 ];
 
-// Exclude native platform code from node_modules to reduce bundle size
+// Exclude native platform code from node_modules and test files from the bundle
 config.resolver.blockList = [
   /node_modules\/.*\/(android|ios|windows|macos)\/.*$/,
+  /.*\.(test|spec)\.(js|jsx|ts|tsx)$/,
 ];
 
 // Reduce the number of workers to decrease resource usage
