@@ -52,7 +52,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 def get_allowed_origins() -> list[str]:
     configured = [origin.strip().rstrip("/") for origin in ALLOWED_ORIGINS.split(",")]
     origins = [origin for origin in configured if origin]
