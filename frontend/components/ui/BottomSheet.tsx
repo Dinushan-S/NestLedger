@@ -38,10 +38,13 @@ export function BottomSheet({
     <Pressable onPress={onClose} style={styles.sheetBackdrop}>
       <KeyboardAvoidingView
         behavior={Platform.select({ ios: 'padding', default: undefined })}
-        style={styles.sheetCard}
+        style={[styles.sheetCard, !scrollable && styles.sheetCardStatic]}
       >
         <View style={styles.sheetGrabber} />
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.sheetBody}>
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={[styles.sheetBody, !scrollable && styles.sheetBodyStatic]}
+        >
           {content}
         </Pressable>
       </KeyboardAvoidingView>
@@ -64,8 +67,14 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     width: '100%',
   },
+  sheetCardStatic: {
+    height: '88%',
+  },
   sheetBody: {
     maxHeight: '100%',
+  },
+  sheetBodyStatic: {
+    flex: 1,
   },
   sheetScroll: {
     flexGrow: 0,
@@ -75,6 +84,7 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   sheetContentStatic: {
+    flex: 1,
     gap: 14,
     paddingBottom: 32,
   },
