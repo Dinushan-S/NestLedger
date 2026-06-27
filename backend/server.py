@@ -2,7 +2,10 @@ import logging
 import os
 import re
 import smtplib
+import threading
+import time
 import uuid
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -11,8 +14,8 @@ from urllib.parse import quote
 
 import requests
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
@@ -39,6 +42,32 @@ ANDROID_STORE_URL = os.getenv(
     "https://play.google.com/store/apps/details?id=com.nestledger.app",
 )
 IOS_STORE_URL = os.getenv("IOS_STORE_URL", "")
+INVITE_RATE_LIMIT_MAX = int(os.getenv("INVITE_RATE_LIMIT_MAX", "10"))
+INVITE_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("INVITE_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+
+
+class InviteRateLimiter:
+    def __init__(self, max_calls: int, window_seconds: int) -> None:
+        self._max = max_calls
+        self._window = window_seconds
+        self._lock = threading.Lock()
+        self._history: dict[str, deque] = defaultdict(deque)
+
+    def check(self, user_id: str) -> int | None:
+        """Return None if allowed, or seconds-until-reset if over the limit."""
+        now = time.monotonic()
+        cutoff = now - self._window
+        with self._lock:
+            dq = self._history[user_id]
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+            if len(dq) >= self._max:
+                retry_after = int(dq[0] - cutoff) + 1
+                return retry_after
+            dq.append(now)
+            return None
+
+_invite_rate_limiter = InviteRateLimiter(INVITE_RATE_LIMIT_MAX, INVITE_RATE_LIMIT_WINDOW_SECONDS)
 
 
 app = FastAPI()
@@ -404,6 +433,33 @@ def send_invitation(
 ):
     user = get_current_user(authorization)
     ensure_profile_member(payload.profile_id, user["id"])
+
+    # per-user sliding-window rate limit
+    retry_after = _invite_rate_limiter.check(user["id"])
+    if retry_after is not None:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many invitations sent. Please wait before sending more."},
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # duplicate pending invite guard
+    existing = supabase_rest(
+        "GET",
+        "invitations",
+        params={
+            "profile_id": f"eq.{payload.profile_id}",
+            "invited_email": f"eq.{payload.invited_email}",
+            "status": "eq.pending",
+            "select": "id",
+            "limit": "1",
+        },
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="A pending invitation for this address already exists.",
+        )
 
     invite_token = str(uuid.uuid4())
     fallback_link = f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={invite_token}"
