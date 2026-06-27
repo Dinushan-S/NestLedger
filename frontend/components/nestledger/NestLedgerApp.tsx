@@ -11,6 +11,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -108,7 +109,7 @@ const ProfileSettingsModal = lazy(() =>
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldPlaySound: false,
+    shouldPlaySound: true,
     shouldSetBadge: false,
     shouldShowBanner: true,
     shouldShowList: true,
@@ -698,7 +699,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         'postgres_changes',
         { event: '*', filter: `user_id=eq.${sessionUserId}`, schema: 'public', table: 'notifications' },
         async (payload) => {
-          const nextPayload = payload as { eventType: string; new?: { id?: string; message?: string } };
+          const nextPayload = payload as {
+            eventType: string;
+            new?: { id?: string; message?: string; type?: string; profile_id?: string };
+          };
           const nextId = nextPayload.new?.id;
           const nextMessage = nextPayload.new?.message;
           const shouldNotify = nextPayload.eventType === 'INSERT' && nextId && !seenNotificationIds.current.has(nextId);
@@ -707,11 +711,17 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             seenNotificationIds.current.add(nextId);
           }
 
-          if (shouldNotify && nextMessage) {
+          // Only fire a local notification while foregrounded; when backgrounded or
+          // killed the remote push (fanout) delivers it, so this avoids double-notify.
+          if (shouldNotify && nextMessage && AppState.currentState === 'active') {
             await Notifications.scheduleNotificationAsync({
               content: {
                 body: nextMessage,
                 title: 'NestLedger update',
+                data: {
+                  type: nextPayload.new?.type,
+                  profile_id: nextPayload.new?.profile_id ?? activeProfileId,
+                },
               },
               trigger: null,
             }).catch(() => undefined);
@@ -781,6 +791,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     const register = async () => {
       try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('default', {
+            name: 'Default',
+            importance: Notifications.AndroidImportance.HIGH,
+            sound: 'default',
+          });
+        }
+
         const permissions = await Notifications.requestPermissionsAsync();
         if (permissions.status !== 'granted') {
           return;
@@ -801,6 +819,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     register();
   }, [session]);
+
+  // Route notification taps (foreground, background, and cold start) to the relevant screen.
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+  useEffect(() => {
+    const data = lastNotificationResponse?.notification.request.content.data as
+      | { type?: string; profile_id?: string }
+      | undefined;
+    if (!data) {
+      return;
+    }
+
+    if (data.profile_id && data.profile_id !== activeProfileId) {
+      setActiveProfileId(data.profile_id);
+    }
+
+    switch (data.type) {
+      case notificationTypes.shoppingAdded:
+      case notificationTypes.shoppingBought:
+        setActiveTab('shopping');
+        break;
+      case notificationTypes.expense:
+        setActiveTab('dashboard');
+        break;
+      case notificationTypes.join:
+        setActiveTab('dashboard');
+        setShowNotifications(true);
+        break;
+      default:
+        setShowNotifications(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastNotificationResponse]);
 
   const announce = useCallback((message: string) => {
     if (Platform.OS === 'web') {
