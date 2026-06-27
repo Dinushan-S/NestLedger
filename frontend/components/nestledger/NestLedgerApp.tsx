@@ -1064,13 +1064,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       return;
     }
 
-    await notificationApi.createForMembers(activeProfile.id, recipients, message, type);
-    await pushApi.fanOut(validateSession(session), {
-      exclude_user_id: session.user.id,
-      message,
-      profile_id: activeProfile.id,
-      type,
-    }).catch(() => undefined);
+    // Best-effort, fire-and-forget: notification delivery (the in-app write and
+    // the push-fanout backend round-trip) must never block or fail a user
+    // action like saving an expense. Callers may `await` this safely — it
+    // resolves immediately and does the work in the background.
+    void (async () => {
+      try {
+        await notificationApi.createForMembers(activeProfile.id, recipients, message, type);
+        await pushApi.fanOut(validateSession(session), {
+          exclude_user_id: session.user.id,
+          message,
+          profile_id: activeProfile.id,
+          type,
+        });
+      } catch {
+        // Swallow: a failed/slow notification should not surface to the user.
+      }
+    })();
   };
 
   const [showNewPlanComposer, setShowNewPlanComposer] = useState(false);
@@ -1226,45 +1236,76 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       name: item.name.trim(),
       price: Number(item.price),
     }));
+    const date = new Date(expenseForm.date).toISOString();
+    const description = expenseForm.description.trim() || null;
+    const paidBy = showContribution ? expenseForm.paidBy : null;
+    const usedBy = showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null;
 
-    await runAction(async () => {
-      try {
-        if (editingExpenseId) {
-          await expenseApi.updateExpense(
-            editingExpenseId,
-            {
-              category,
-              date: new Date(expenseForm.date).toISOString(),
-              description: expenseForm.description.trim() || null,
-              paid_by: showContribution ? expenseForm.paidBy : null,
-              used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
-            } as any,
-            items
-          );
-        } else {
-          await expenseApi.addExpense({
-            added_by: session.user.id,
-            category,
-            date: new Date(expenseForm.date).toISOString(),
-            description: expenseForm.description.trim() || null,
-            is_borrow: expenseForm.is_borrow,
-            items,
-            paid_by: showContribution ? expenseForm.paidBy : null,
-            plan_id: selectedPlan.id,
-            profile_id: selectedPlan.profile_id,
-            used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
-          });
-          const itemNames = items.map(i => i.name).join(', ');
-          await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
-        }
+    // Edit path keeps the simple awaited flow (with busy spinner): the entry
+    // already exists, so there is nothing to show optimistically.
+    if (editingExpenseId) {
+      await runAction(async () => {
+        await expenseApi.updateExpense(
+          editingExpenseId,
+          { category, date, description, paid_by: paidBy, used_by: usedBy } as any,
+          items
+        );
         setExpenseForm(defaultExpenseForm());
         setEditingExpenseId(null);
         setShowExpenseComposer(false);
         await refreshProfileData(activeProfile.id, true);
-      } catch (error) {
-        throw error;
-      }
-    });
+      });
+      return;
+    }
+
+    // Add path is optimistic: show the new entry and dismiss the composer
+    // immediately, then persist + reconcile in the background. This keeps the
+    // save feeling instant instead of waiting on the insert + full refresh.
+    const now = new Date().toISOString();
+    const tempId = `temp-${now}-${Math.random().toString(36).slice(2)}`;
+    const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
+    const expenseInput = {
+      added_by: session.user.id,
+      category,
+      date,
+      description,
+      is_borrow: expenseForm.is_borrow,
+      items,
+      paid_by: paidBy,
+      plan_id: selectedPlan.id,
+      profile_id: selectedPlan.profile_id,
+      used_by: usedBy,
+    };
+    const optimisticExpense: ExpenseWithItems = {
+      ...expenseInput,
+      id: tempId,
+      created_at: now,
+      price: totalPrice,
+      items: items.map((item, index) => ({
+        id: `${tempId}-item-${index}`,
+        expense_id: tempId,
+        created_at: now,
+        name: item.name,
+        price: item.price,
+      })),
+    };
+    const itemNames = items.map(i => i.name).join(', ');
+
+    setProfileExpenses(current => [optimisticExpense, ...current]);
+    setExpenseForm(defaultExpenseForm());
+    setEditingExpenseId(null);
+    setShowExpenseComposer(false);
+
+    try {
+      await expenseApi.addExpense(expenseInput);
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
+      // Reconcile: the refresh replaces the temp entry with the real persisted one.
+      await refreshProfileData(activeProfile.id, true);
+    } catch (error) {
+      // Roll back the optimistic entry and surface the failure.
+      setProfileExpenses(current => current.filter(e => e.id !== tempId));
+      announce(extractError(error));
+    }
   };
 
   const startEditBorrow = (expense: ExpenseWithItems) => {
