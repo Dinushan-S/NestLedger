@@ -101,19 +101,54 @@ jobs:
 
             cd /opt/NestLedger
             git fetch origin
+
+            # Remember the currently-deployed (known-good) commit so we can roll back.
+            PREV_SHA=$(git rev-parse HEAD)
+            echo "Previous (known-good) commit: $PREV_SHA"
+
+            # Reusable: install deps + restart the service for whatever code is checked out.
+            apply_release() {
+              cd /opt/NestLedger/backend
+              echo "$ENV_B64" | base64 -d > .env
+              source venv/bin/activate
+              pip install -r requirements.txt
+              sudo systemctl restart nestledger
+              cd /opt/NestLedger
+            }
+
+            # Reusable: poll the local health endpoint; return 0 if healthy within ~30s.
+            health_ok() {
+              for i in $(seq 1 15); do
+                if curl -fs http://127.0.0.1:8000/api/health > /dev/null; then
+                  return 0
+                fi
+                sleep 2
+              done
+              return 1
+            }
+
+            # Deploy the new code.
             git reset --hard origin/main
+            apply_release
 
-            cd backend
+            # Verify; if unhealthy, roll back to the previous commit and restart.
+            if health_ok; then
+              echo "Health check passed on new release."
+            else
+              echo "!! New release failed health check — rolling back to $PREV_SHA"
+              git reset --hard "$PREV_SHA"
+              apply_release
+              if health_ok; then
+                echo "Rolled back to previous release successfully."
+              else
+                echo "!! Rollback ALSO failed health check — manual intervention needed."
+              fi
+              sudo systemctl status nestledger --no-pager
+              exit 1
+            fi
 
-            echo "$ENV_B64" | base64 -d > .env
-
-            source venv/bin/activate
-            pip install -r requirements.txt
-
-            sudo systemctl restart nestledger
-            sleep 5
             sudo systemctl status nestledger --no-pager
-            
+
       - name: Health Check
         run: |
           sleep 15
