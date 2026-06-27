@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "671727818268",
-    "project_id": "nestledger-ef00c",
-    "storage_bucket": "nestledger-ef00c.firebasestorage.app"
+    "project_number": "337752197234",
+    "project_id": "nestledger-de24a",
+    "storage_bucket": "nestledger-de24a.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:671727818268:android:acedbb9d31d07579c4f1d9",
+        "mobilesdk_app_id": "1:337752197234:android:7b2ed726dc68073c4f1aeb",
         "android_client_info": {
-          "package_name": "com.grayline.nestledger"
+          "package_name": "com.nestledger.app"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyC0wqmY41AFekuV8k-lt6lbFPNS9wGA_xo"
+          "current_key": "AIzaSyBpDKKW5cpvIFNwOZ8pi53BAwTODuXL2ac"
         }
       ],
       "services": {
