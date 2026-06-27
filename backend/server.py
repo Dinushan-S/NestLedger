@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
+import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -44,6 +45,23 @@ ANDROID_STORE_URL = os.getenv(
 IOS_STORE_URL = os.getenv("IOS_STORE_URL", "")
 INVITE_RATE_LIMIT_MAX = int(os.getenv("INVITE_RATE_LIMIT_MAX", "10"))
 INVITE_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("INVITE_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+
+# Sentry error/performance monitoring. DSN is overridable via env; defaults to the
+# project DSN so it works out of the box. Set SENTRY_DSN="" to disable.
+SENTRY_DSN = os.getenv(
+    "SENTRY_DSN",
+    "https://67a09a56d3c8aeab56f73dcf9902ea34@o4509866554621952.ingest.de.sentry.io/4511639062773840",
+)
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))
+
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        # Capture request headers and user IP. Note: this sends PII to Sentry;
+        # set SENTRY_SEND_PII=false if you'd rather not for a finance app.
+        send_default_pii=os.getenv("SENTRY_SEND_PII", "true").lower() == "true",
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+    )
 
 
 class InviteRateLimiter:
