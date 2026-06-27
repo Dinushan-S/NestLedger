@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/nestledger';
@@ -24,19 +24,31 @@ export function ModalScaffold({
 
   return (
     <SafeAreaView style={[styles.modalScreen, { paddingTop: insets.top }]}>
-      <View style={styles.modalHeader}>
-        <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
-          <Ionicons color={theme.text} name="close-outline" size={28} />
-        </Pressable>
-        <Text style={styles.modalTitle}>{title}</Text>
-        <View style={styles.rightActionWrap}>{rightAction}</View>
-      </View>
-      <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>{children}</ScrollView>
+      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+        <View style={styles.modalHeader}>
+          <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
+            <Ionicons color={theme.text} name="close-outline" size={28} />
+          </Pressable>
+          <Text style={styles.modalTitle}>{title}</Text>
+          <View style={styles.rightActionWrap}>{rightAction}</View>
+        </View>
+        <ScrollView
+          contentContainerStyle={styles.modalContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   modalContent: {
     gap: 16,
     paddingBottom: 36,

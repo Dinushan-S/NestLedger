@@ -231,7 +231,7 @@ export function SavingsTracker({
       <Modal animationType="slide" transparent visible={showDeposit}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }}>
           <Pressable onPress={() => setShowDeposit(false)} style={s.sheetBackdrop}>
-            <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={s.sheetCard}>
+            <KeyboardAvoidingView behavior={'padding'} style={s.sheetCard}>
             <View style={s.sheetGrabber} />
             <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Pressable onPress={(e) => e.stopPropagation()}>
@@ -328,7 +328,7 @@ export function SavingsTracker({
       <Modal animationType="slide" transparent visible={showWithdraw}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }}>
           <Pressable onPress={() => setShowWithdraw(false)} style={s.sheetBackdrop}>
-          <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={s.sheetCard}>
+          <KeyboardAvoidingView behavior={'padding'} style={s.sheetCard}>
             <View style={s.sheetGrabber} />
             <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Pressable onPress={(e) => e.stopPropagation()}>
