@@ -378,6 +378,16 @@ begin
     alter publication supabase_realtime add table public.expense_items;
   exception when duplicate_object then null;
   end;
+
+  begin
+    alter publication supabase_realtime add table public.budget_plans;
+  exception when duplicate_object then null;
+  end;
+
+  begin
+    alter publication supabase_realtime add table public.profile_members;
+  exception when duplicate_object then null;
+  end;
 end $$;
 
 -- Migration: Rename title to description and migrate existing data

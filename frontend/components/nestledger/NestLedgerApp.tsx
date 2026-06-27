@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { Session } from '@supabase/supabase-js';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTheme as useAppTheme } from '../../lib/theme-context';
 import {
   ActivityIndicator,
   Alert,
@@ -269,6 +270,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width >= 720;
+  // Dynamic theme — reads from ThemeContext set up in the root layout
+  const { theme: activeTheme } = useAppTheme();
   const bentoWidth = isTablet ? (width - 72) / 2 : width - 40;
 
   const [booting, setBooting] = useState(true);
@@ -1917,10 +1920,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   }
 
   return (
-    <GestureHandlerRootView style={styles.screen}>
-      <SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
+    <GestureHandlerRootView style={[styles.screen, { backgroundColor: activeTheme.background }]}>
+      <SafeAreaView style={[styles.screen, { paddingTop: insets.top, backgroundColor: activeTheme.background }]}>
         <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.screen}>
-          <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom) }]}>
+          <View style={[styles.appShell, { paddingBottom: Math.max(16, insets.bottom), backgroundColor: activeTheme.background }]}>
             <View style={styles.topBar}>
               <Pressable hitSlop={10} onPress={() => setShowProfileSwitcher(true)} style={styles.profileSwitcherButton} testID="open-profile-switcher">
                 <Text style={styles.switcherEmoji}>{activeProfile.emoji_avatar ?? '🏡'}</Text>

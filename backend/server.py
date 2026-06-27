@@ -87,6 +87,13 @@ class InviteRateLimiter:
 
 _invite_rate_limiter = InviteRateLimiter(INVITE_RATE_LIMIT_MAX, INVITE_RATE_LIMIT_WINDOW_SECONDS)
 
+# Push fanout notifies every member of a space, so cap how often one user can trigger it.
+PUSH_FANOUT_RATE_LIMIT_MAX = int(os.getenv("PUSH_FANOUT_RATE_LIMIT_MAX", "30"))
+PUSH_FANOUT_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("PUSH_FANOUT_RATE_LIMIT_WINDOW_SECONDS", "60"))
+_push_fanout_rate_limiter = InviteRateLimiter(
+    PUSH_FANOUT_RATE_LIMIT_MAX, PUSH_FANOUT_RATE_LIMIT_WINDOW_SECONDS
+)
+
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -622,6 +629,15 @@ def push_fanout(
 ):
     user = get_current_user(authorization)
     ensure_profile_member(payload.profile_id, user["id"])
+
+    # per-user sliding-window rate limit (fanout notifies every member)
+    retry_after = _push_fanout_rate_limiter.check(user["id"])
+    if retry_after is not None:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many notifications. Please slow down."},
+            headers={"Retry-After": str(retry_after)},
+        )
 
     members = supabase_rest(
         "GET",

@@ -1,0 +1,77 @@
+# Codemagic CI/CD — iOS build + TestFlight/App Store for NestLedger
+# Android stays on the existing EAS flow in .github/workflows/deploy-all.yml.
+#
+# PREREQUISITES (one-time, in the Codemagic UI / Apple):
+#   1. Apple Developer Program membership.
+#   2. App Store Connect app record for bundle id `com.nestledger.app` → gives the ASC App ID.
+#   3. In Codemagic: Teams/App settings → Integrations → App Store Connect → add an
+#      App Store Connect API key (upload the .p8). Name it and put that name under
+#      `integrations.app_store_connect` below.
+#   4. Set EXPO_PUBLIC_BACKEND_URL (and any other EXPO_PUBLIC_* the app needs) as a
+#      Codemagic environment variable group named `nestledger_env` — frontend/.env is
+#      gitignored, so these must be provided at build time for Metro to inline them.
+#   5. Fill in APP_STORE_APPLE_ID below with your numeric ASC App ID.
+
+workflows:
+  ios-release:
+    name: NestLedger iOS Release
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: NestLedger ASC Key   # <-- name of the API key you added in Codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.nestledger.app
+      groups:
+        - nestledger_env                       # provides EXPO_PUBLIC_BACKEND_URL, etc.
+      vars:
+        XCODE_WORKSPACE: "NestLedger.xcworkspace"
+        XCODE_SCHEME: "NestLedger"
+        APP_STORE_APPLE_ID: 0000000000          # <-- your numeric ASC App ID
+        BUNDLE_ID: "com.nestledger.app"
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install JS dependencies
+        script: |
+          cd frontend
+          npm ci
+      - name: Expo prebuild (generate native ios/ project)
+        script: |
+          cd frontend
+          npx expo prebuild --platform ios --clean --non-interactive
+      - name: Install CocoaPods
+        script: |
+          cd frontend/ios
+          pod install
+      - name: Set up code signing (App Store profiles)
+        script: |
+          cd frontend
+          xcode-project use-profiles
+      - name: Set build number from Codemagic
+        script: |
+          cd frontend/ios
+          agvtool new-version -all "$BUILD_NUMBER"
+      - name: Build IPA
+        script: |
+          cd frontend
+          xcode-project build-ipa \
+            --workspace "ios/$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - frontend/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # Promote to public App Store only after TestFlight passes — keep manual,
+        # or set submit_to_app_store: true once you're ready to automate it.
+      email:
+        recipients:
+          - selvandinu18@gmail.com
+        notify:
+          success: true
+          failure: true

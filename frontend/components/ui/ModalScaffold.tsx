@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { theme } from '@/constants/nestledger';
+import { useTheme } from '@/lib/theme-context';
 
 type ModalScaffoldProps = {
   children: ReactNode;
@@ -21,15 +21,18 @@ export function ModalScaffold({
   title,
 }: ModalScaffoldProps) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
 
   return (
-    <SafeAreaView style={[styles.modalScreen, { paddingTop: insets.top }]}>
+    <SafeAreaView
+      style={[styles.flex, { backgroundColor: theme.background, paddingTop: insets.top, paddingHorizontal: 20 }]}
+    >
       <KeyboardAvoidingView behavior="padding" style={styles.flex}>
         <View style={styles.modalHeader}>
           <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
             <Ionicons color={theme.text} name="close-outline" size={28} />
           </Pressable>
-          <Text style={styles.modalTitle}>{title}</Text>
+          <Text style={[styles.modalTitle, { color: theme.text }]}>{title}</Text>
           <View style={styles.rightActionWrap}>{rightAction}</View>
         </View>
         <ScrollView
@@ -59,13 +62,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 18,
   },
-  modalScreen: {
-    backgroundColor: theme.background,
-    flex: 1,
-    paddingHorizontal: 20,
-  },
   modalTitle: {
-    color: theme.text,
     flex: 1,
     fontSize: 20,
     fontWeight: '700',
