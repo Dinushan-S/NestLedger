@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import smtplib
 import uuid
 from datetime import datetime, timezone
@@ -529,6 +530,7 @@ def register_push_token(
             "platform": payload.platform,
             "push_token": payload.push_token,
             "user_id": user["id"],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         },
         prefer="resolution=merge-duplicates,return=representation",
     )
@@ -574,6 +576,7 @@ def push_fanout(
             "title": "NestLedger",
             "body": payload.message,
             "sound": "default",
+            "data": {"type": payload.type, "profile_id": payload.profile_id},
         }
         for token in expo_tokens
     ]
@@ -587,7 +590,29 @@ def push_fanout(
         logger.error("Expo push error: %s", response.text)
         return {"sent": 0}
 
-    return {"sent": len(expo_tokens)}
+    # Expo returns one ticket per message, in the same order. Prune tokens whose
+    # ticket reports DeviceNotRegistered (uninstalled / reinstalled apps) so the
+    # device_tokens table doesn't accumulate dead entries.
+    tickets = response.json().get("data", [])
+    dead_tokens = [
+        expo_tokens[i]
+        for i, ticket in enumerate(tickets)
+        if i < len(expo_tokens)
+        and ticket.get("status") == "error"
+        and ticket.get("details", {}).get("error") == "DeviceNotRegistered"
+    ]
+    if dead_tokens:
+        joined_dead = ",".join(dead_tokens)
+        try:
+            supabase_rest(
+                "DELETE",
+                "device_tokens",
+                params={"push_token": f"in.({joined_dead})"},
+            )
+        except Exception:  # noqa: BLE001 - cleanup is best-effort
+            logger.exception("Failed to prune dead device tokens")
+
+    return {"sent": len(expo_tokens) - len(dead_tokens)}
 
 
 @api_router.post("/spaces/delete")
