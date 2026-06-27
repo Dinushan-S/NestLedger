@@ -91,4 +91,4 @@ deploy_key.pub
 deploy_key
 
 # Landing page is its own git repo, deployed separately via Vercel
-nestLedger-landingpage/
+# nestLedger-landingpage/

@@ -97,3 +97,55 @@ def test_invitation_send_and_accept_flow(
 
     accept_data = accept_response.json()
     assert accept_data["profile_id"] == primary_profile_id
+
+
+# ── New tests added by Task 2 ────────────────────────────────────────────────
+
+
+def test_invite_rate_limiter_blocks_after_max():
+    """Unit test: InviteRateLimiter blocks on the (max+1)-th call within the window."""
+    from server import InviteRateLimiter
+
+    limiter = InviteRateLimiter(max_calls=3, window_seconds=60)
+    assert limiter.check("u1") is None
+    assert limiter.check("u1") is None
+    assert limiter.check("u1") is None
+    retry_after = limiter.check("u1")
+    assert isinstance(retry_after, int) and retry_after > 0
+
+
+def test_invitation_send_duplicate_returns_409(
+    api_client,
+    base_url,
+    primary_access_token,
+    primary_profile_id,
+):
+    """Integration test: sending a second invite for the same (profile, email) returns 409."""
+    unique_email = f"nestledger.e2e.dup.{uuid.uuid4()}@example.org"
+    payload = {
+        "invited_email": unique_email,
+        "inviter_name": "Primary Tester",
+        "profile_id": primary_profile_id,
+        "profile_name": "TEST Household",
+    }
+    headers = {"Authorization": f"Bearer {primary_access_token}"}
+
+    # First invite — should succeed (200)
+    first_response = api_client.post(
+        f"{base_url}/api/invitations/send",
+        headers=headers,
+        json=payload,
+        timeout=40,
+    )
+    assert first_response.status_code == 200, f"First invite failed: {first_response.text}"
+
+    # Second invite — same address, same profile → duplicate pending → 409
+    second_response = api_client.post(
+        f"{base_url}/api/invitations/send",
+        headers=headers,
+        json=payload,
+        timeout=40,
+    )
+    assert second_response.status_code == 409, (
+        f"Expected 409 for duplicate invite, got {second_response.status_code}: {second_response.text}"
+    )

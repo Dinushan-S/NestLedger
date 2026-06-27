@@ -15,6 +15,24 @@ export const theme = {
   warning: '#E1B45C',
 };
 
+/** Dark-mode palette — hues stay consistent, values are shifted for dark backgrounds. */
+export const darkTheme = {
+  background: '#141716',
+  surface: '#1E2220',
+  surfaceMuted: '#242927',
+  primary: '#7BA898',
+  primarySoft: '#243530',
+  secondary: '#D99F89',
+  secondarySoft: '#3A2820',
+  text: '#EBE9E4',
+  textMuted: '#8E9590',
+  border: '#2E3430',
+  success: '#7AAB86',
+  danger: '#D67C7C',
+  dangerSoft: '#3A2222',
+  warning: '#E1B45C',
+};
+
 export const avatarChoices = ['🏡', '🪴', '🧺', '☕', '🧡', '🌿', '✨', '🐣'];
 
 export const shoppingCategories = [
