@@ -91,6 +91,12 @@ _invite_rate_limiter = InviteRateLimiter(INVITE_RATE_LIMIT_MAX, INVITE_RATE_LIMI
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+
+# TEMPORARY: Sentry verification route. Remove after confirming events arrive.
+@app.get("/sentry-debug")
+def sentry_debug():
+    1 / 0
+
 # Serve static files (privacy policy, etc.)
 static_dir = ROOT_DIR / "static"
 if static_dir.exists():
