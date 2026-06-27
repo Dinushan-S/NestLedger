@@ -517,11 +517,16 @@ def accept_invitation(
     return {"profile_id": invitation["profile_id"]}
 
 
+EXPO_PUSH_TOKEN_RE = re.compile(r"^Expo(nent)?PushToken\[[A-Za-z0-9._-]+\]$")
+
+
 @api_router.post("/push/register")
 def register_push_token(
     payload: PushRegisterRequest, authorization: str | None = Header(default=None)
 ):
     user = get_current_user(authorization)
+    if not EXPO_PUSH_TOKEN_RE.match(payload.push_token):
+        raise HTTPException(status_code=422, detail="Invalid push token format")
     supabase_rest(
         "POST",
         "device_tokens",
@@ -602,12 +607,17 @@ def push_fanout(
         and ticket.get("details", {}).get("error") == "DeviceNotRegistered"
     ]
     if dead_tokens:
-        joined_dead = ",".join(dead_tokens)
+        # Quote each value per PostgREST `in.()` rules to prevent filter injection,
+        # and scope the delete to this profile's recipients as defense in depth.
+        quoted = ",".join('"' + t.replace('"', '\\"') + '"' for t in dead_tokens)
         try:
             supabase_rest(
                 "DELETE",
                 "device_tokens",
-                params={"push_token": f"in.({joined_dead})"},
+                params={
+                    "push_token": f"in.({quoted})",
+                    "user_id": f"in.({joined_ids})",
+                },
             )
         except Exception:  # noqa: BLE001 - cleanup is best-effort
             logger.exception("Failed to prune dead device tokens")

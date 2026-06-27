@@ -303,7 +303,7 @@ export function BillTracker({
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }}>
           <Pressable onPress={() => setShowComposer(false)} style={s.sheetBackdrop}>
           <KeyboardAvoidingView
-            behavior={Platform.select({ ios: 'padding', default: undefined })}
+            behavior={'padding'}
             style={s.sheetCard}
           >
             <View style={s.sheetGrabber} />
@@ -442,7 +442,7 @@ export function BillTracker({
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }}>
           <Pressable onPress={() => { setShowPayment(false); setSelectedBill(null); }} style={s.sheetBackdrop}>
           <KeyboardAvoidingView
-            behavior={Platform.select({ ios: 'padding', default: undefined })}
+            behavior={'padding'}
             style={s.sheetCard}
           >
             <View style={s.sheetGrabber} />

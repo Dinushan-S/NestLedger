@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,16 +21,23 @@ export function BottomSheet({
   scrollable = true,
 }: BottomSheetProps) {
   return (
-    <Pressable onPress={onClose} style={styles.sheetBackdrop}>
-      <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheetCard}>
-        <KeyboardAvoidingView
-          behavior={Platform.select({ ios: 'padding', default: undefined })}
-        >
+    // KeyboardAvoidingView must be the outermost flex container so it can lift
+    // the bottom-anchored card above the keyboard. It also needs a real
+    // behavior on Android: this sheet renders inside a transparent <Modal>,
+    // whose window does NOT resize for the keyboard, so without this the lower
+    // text fields end up hidden behind the keyboard.
+    <KeyboardAvoidingView
+      behavior="padding"
+      style={styles.keyboardWrapper}
+    >
+      <Pressable onPress={onClose} style={styles.sheetBackdrop}>
+        <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheetCard}>
           <View style={styles.sheetGrabber} />
           {scrollable ? (
             <ScrollView
               contentContainerStyle={styles.sheetContent}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
               showsVerticalScrollIndicator={false}
             >
               {children}
@@ -39,13 +45,16 @@ export function BottomSheet({
           ) : (
             <View>{children}</View>
           )}
-        </KeyboardAvoidingView>
+        </Pressable>
       </Pressable>
-    </Pressable>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardWrapper: {
+    flex: 1,
+  },
   sheetBackdrop: {
     backgroundColor: 'rgba(45, 49, 47, 0.35)',
     flex: 1,

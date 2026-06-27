@@ -11,6 +11,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -108,7 +109,7 @@ const ProfileSettingsModal = lazy(() =>
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldPlaySound: false,
+    shouldPlaySound: true,
     shouldSetBadge: false,
     shouldShowBanner: true,
     shouldShowList: true,
@@ -698,7 +699,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         'postgres_changes',
         { event: '*', filter: `user_id=eq.${sessionUserId}`, schema: 'public', table: 'notifications' },
         async (payload) => {
-          const nextPayload = payload as { eventType: string; new?: { id?: string; message?: string } };
+          const nextPayload = payload as {
+            eventType: string;
+            new?: { id?: string; message?: string; type?: string; profile_id?: string };
+          };
           const nextId = nextPayload.new?.id;
           const nextMessage = nextPayload.new?.message;
           const shouldNotify = nextPayload.eventType === 'INSERT' && nextId && !seenNotificationIds.current.has(nextId);
@@ -707,11 +711,17 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             seenNotificationIds.current.add(nextId);
           }
 
-          if (shouldNotify && nextMessage) {
+          // Only fire a local notification while foregrounded; when backgrounded or
+          // killed the remote push (fanout) delivers it, so this avoids double-notify.
+          if (shouldNotify && nextMessage && AppState.currentState === 'active') {
             await Notifications.scheduleNotificationAsync({
               content: {
                 body: nextMessage,
                 title: 'NestLedger update',
+                data: {
+                  type: nextPayload.new?.type,
+                  profile_id: nextPayload.new?.profile_id ?? activeProfileId,
+                },
               },
               trigger: null,
             }).catch(() => undefined);
@@ -781,6 +791,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     const register = async () => {
       try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('default', {
+            name: 'Default',
+            importance: Notifications.AndroidImportance.HIGH,
+            sound: 'default',
+          });
+        }
+
         const permissions = await Notifications.requestPermissionsAsync();
         if (permissions.status !== 'granted') {
           return;
@@ -801,6 +819,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     register();
   }, [session]);
+
+  // Route notification taps (foreground, background, and cold start) to the relevant screen.
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+  useEffect(() => {
+    const data = lastNotificationResponse?.notification.request.content.data as
+      | { type?: string; profile_id?: string }
+      | undefined;
+    if (!data) {
+      return;
+    }
+
+    if (data.profile_id && data.profile_id !== activeProfileId) {
+      setActiveProfileId(data.profile_id);
+    }
+
+    switch (data.type) {
+      case notificationTypes.shoppingAdded:
+      case notificationTypes.shoppingBought:
+        setActiveTab('shopping');
+        break;
+      case notificationTypes.expense:
+        setActiveTab('dashboard');
+        break;
+      case notificationTypes.join:
+        setActiveTab('dashboard');
+        setShowNotifications(true);
+        break;
+      default:
+        setShowNotifications(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastNotificationResponse]);
 
   const announce = useCallback((message: string) => {
     if (Platform.OS === 'web') {
@@ -1014,13 +1064,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       return;
     }
 
-    await notificationApi.createForMembers(activeProfile.id, recipients, message, type);
-    await pushApi.fanOut(validateSession(session), {
-      exclude_user_id: session.user.id,
-      message,
-      profile_id: activeProfile.id,
-      type,
-    }).catch(() => undefined);
+    // Best-effort, fire-and-forget: notification delivery (the in-app write and
+    // the push-fanout backend round-trip) must never block or fail a user
+    // action like saving an expense. Callers may `await` this safely — it
+    // resolves immediately and does the work in the background.
+    void (async () => {
+      try {
+        await notificationApi.createForMembers(activeProfile.id, recipients, message, type);
+        await pushApi.fanOut(validateSession(session), {
+          exclude_user_id: session.user.id,
+          message,
+          profile_id: activeProfile.id,
+          type,
+        });
+      } catch {
+        // Swallow: a failed/slow notification should not surface to the user.
+      }
+    })();
   };
 
   const [showNewPlanComposer, setShowNewPlanComposer] = useState(false);
@@ -1176,45 +1236,76 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       name: item.name.trim(),
       price: Number(item.price),
     }));
+    const date = new Date(expenseForm.date).toISOString();
+    const description = expenseForm.description.trim() || null;
+    const paidBy = showContribution ? expenseForm.paidBy : null;
+    const usedBy = showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null;
 
-    await runAction(async () => {
-      try {
-        if (editingExpenseId) {
-          await expenseApi.updateExpense(
-            editingExpenseId,
-            {
-              category,
-              date: new Date(expenseForm.date).toISOString(),
-              description: expenseForm.description.trim() || null,
-              paid_by: showContribution ? expenseForm.paidBy : null,
-              used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
-            } as any,
-            items
-          );
-        } else {
-          await expenseApi.addExpense({
-            added_by: session.user.id,
-            category,
-            date: new Date(expenseForm.date).toISOString(),
-            description: expenseForm.description.trim() || null,
-            is_borrow: expenseForm.is_borrow,
-            items,
-            paid_by: showContribution ? expenseForm.paidBy : null,
-            plan_id: selectedPlan.id,
-            profile_id: selectedPlan.profile_id,
-            used_by: showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null,
-          });
-          const itemNames = items.map(i => i.name).join(', ');
-          await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
-        }
+    // Edit path keeps the simple awaited flow (with busy spinner): the entry
+    // already exists, so there is nothing to show optimistically.
+    if (editingExpenseId) {
+      await runAction(async () => {
+        await expenseApi.updateExpense(
+          editingExpenseId,
+          { category, date, description, paid_by: paidBy, used_by: usedBy } as any,
+          items
+        );
         setExpenseForm(defaultExpenseForm());
         setEditingExpenseId(null);
         setShowExpenseComposer(false);
         await refreshProfileData(activeProfile.id, true);
-      } catch (error) {
-        throw error;
-      }
-    });
+      });
+      return;
+    }
+
+    // Add path is optimistic: show the new entry and dismiss the composer
+    // immediately, then persist + reconcile in the background. This keeps the
+    // save feeling instant instead of waiting on the insert + full refresh.
+    const now = new Date().toISOString();
+    const tempId = `temp-${now}-${Math.random().toString(36).slice(2)}`;
+    const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
+    const expenseInput = {
+      added_by: session.user.id,
+      category,
+      date,
+      description,
+      is_borrow: expenseForm.is_borrow,
+      items,
+      paid_by: paidBy,
+      plan_id: selectedPlan.id,
+      profile_id: selectedPlan.profile_id,
+      used_by: usedBy,
+    };
+    const optimisticExpense: ExpenseWithItems = {
+      ...expenseInput,
+      id: tempId,
+      created_at: now,
+      price: totalPrice,
+      items: items.map((item, index) => ({
+        id: `${tempId}-item-${index}`,
+        expense_id: tempId,
+        created_at: now,
+        name: item.name,
+        price: item.price,
+      })),
+    };
+    const itemNames = items.map(i => i.name).join(', ');
+
+    setProfileExpenses(current => [optimisticExpense, ...current]);
+    setExpenseForm(defaultExpenseForm());
+    setEditingExpenseId(null);
+    setShowExpenseComposer(false);
+
+    try {
+      await expenseApi.addExpense(expenseInput);
+      await notifyOtherMembers(`${userProfile?.name ?? 'A member'} added ${itemNames} to ${selectedPlan.name}.`, notificationTypes.expense);
+      // Reconcile: the refresh replaces the temp entry with the real persisted one.
+      await refreshProfileData(activeProfile.id, true);
+    } catch (error) {
+      // Roll back the optimistic entry and surface the failure.
+      setProfileExpenses(current => current.filter(e => e.id !== tempId));
+      announce(extractError(error));
+    }
   };
 
   const startEditBorrow = (expense: ExpenseWithItems) => {
