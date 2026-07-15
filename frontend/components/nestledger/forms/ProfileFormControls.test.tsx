@@ -17,6 +17,7 @@ const profileForm = {
   familyEmoji: '🪴',
   familyName: 'Home',
   name: 'Selva',
+  spaceType: 'family',
 };
 
 describe('<ProfileFormFields />', () => {

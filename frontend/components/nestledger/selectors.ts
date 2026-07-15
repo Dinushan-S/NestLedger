@@ -9,7 +9,14 @@ import {
   SavingsTrackerMeta,
   ShoppingItem,
 } from '@/lib/nestledger';
-import { expenseFilters, getCycleStart, startOfMonth, startOfToday, startOfWeek } from '@/constants/nestledger';
+import {
+  expenseFilters,
+  getCycleCursorForDate,
+  getCycleStart,
+  startOfMonth,
+  startOfToday,
+  startOfWeek,
+} from '@/constants/nestledger';
 
 type ExpenseWindow = (typeof expenseFilters)[number];
 
@@ -101,13 +108,15 @@ export function buildAvailableViewMonths(
     return [];
   }
 
+  const anchorDay = new Date(selectedPlan.start_date).getDate();
+
   const months = new Set<number>();
   profileExpenses
     .filter((expense) => expense.plan_id === selectedPlan.id)
     .forEach((expense) => {
-      const date = new Date(expense.date);
-      if (date.getFullYear() === activeViewYear) {
-        months.add(date.getMonth() + 1);
+      const cursor = getCycleCursorForDate(new Date(expense.date), anchorDay);
+      if (cursor.year === activeViewYear) {
+        months.add(cursor.month + 1);
       }
     });
 
@@ -137,13 +146,15 @@ export function filterMonthExpenses({
     return null;
   }
 
+  const anchorDay = new Date(selectedPlan.start_date).getDate();
+
   return profileExpenses.filter((expense) => {
     if (expense.plan_id !== selectedPlan.id) {
       return false;
     }
 
-    const date = new Date(expense.date);
-    return date.getFullYear() === activeViewYear && date.getMonth() + 1 === activeViewMonth;
+    const cursor = getCycleCursorForDate(new Date(expense.date), anchorDay);
+    return cursor.year === activeViewYear && cursor.month + 1 === activeViewMonth;
   });
 }
 

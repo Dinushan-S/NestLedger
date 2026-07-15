@@ -10,6 +10,7 @@ export {
   SavingsEntry,
   SavingsTrackerMeta,
   ShoppingItem,
+  SpaceType,
   UserProfile,
   validateSession,
   authApi,

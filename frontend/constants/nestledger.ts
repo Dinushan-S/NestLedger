@@ -311,6 +311,38 @@ export const getCycleStart = (planStartDate: string): Date => {
   return cycleStart < planStart ? planStart : cycleStart;
 };
 
+/**
+ * Returns the {year, month} bucket (0-indexed month) that a given date's
+ * budget cycle belongs to, anchored to anchorDay (day-of-month).
+ * Same "day >= anchorDay ? this month : previous month" rule as getCycleStart,
+ * generalized to any date rather than just "now".
+ */
+export const getCycleCursorForDate = (
+  date: Date,
+  anchorDay: number,
+): { year: number; month: number } => {
+  const day = date.getDate();
+  if (day >= anchorDay) {
+    return { year: date.getFullYear(), month: date.getMonth() };
+  }
+  const prev = new Date(date.getFullYear(), date.getMonth() - 1, 1);
+  return { year: prev.getFullYear(), month: prev.getMonth() };
+};
+
+/**
+ * Returns the [start, end] Date range for a cycle cursor bucket, anchored to anchorDay.
+ */
+export const getCycleWindowForCursor = (
+  year: number,
+  month: number,
+  anchorDay: number,
+): { start: Date; end: Date } => {
+  const start = new Date(year, month, anchorDay, 0, 0, 0, 0);
+  const nextAnchor = new Date(year, month + 1, anchorDay, 0, 0, 0, 0);
+  const end = new Date(nextAnchor.getTime() - 1);
+  return { start, end };
+};
+
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export const getCurrentMonth = () => {
