@@ -112,8 +112,21 @@ jobs:
               echo "$ENV_B64" | base64 -d > .env
               source venv/bin/activate
               pip install -r requirements.txt
+              chmod +x scripts/keepalive.sh
               sudo systemctl restart nestledger
               cd /opt/NestLedger
+            }
+
+            # Reusable: (re)provision the Supabase keepalive timer. Idempotent —
+            # safe to run on every deploy so an already-provisioned VM picks it
+            # up too, and so script/schedule changes take effect automatically.
+            ensure_keepalive_timer() {
+              printf '[Unit]\nDescription=NestLedger Supabase Keepalive\n\n[Service]\nType=oneshot\nUser=root\nWorkingDirectory=/opt/NestLedger/backend\nEnvironmentFile=/opt/NestLedger/backend/.env\nEnvironment="TRIGGERED_BY=vm_cron"\nExecStart=/usr/bin/env bash /opt/NestLedger/backend/scripts/keepalive.sh\n' | sudo tee /etc/systemd/system/nestledger-keepalive.service > /dev/null
+
+              printf '[Unit]\nDescription=Run NestLedger Supabase Keepalive every 3 days\n\n[Timer]\nOnCalendar=*-*-2,5,8,11,14,17,20,23,26,29 20:00:00\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n' | sudo tee /etc/systemd/system/nestledger-keepalive.timer > /dev/null
+
+              sudo systemctl daemon-reload
+              sudo systemctl enable --now nestledger-keepalive.timer
             }
 
             # Reusable: poll the local health endpoint; return 0 if healthy within ~30s.
@@ -134,6 +147,7 @@ jobs:
             # Verify; if unhealthy, roll back to the previous commit and restart.
             if health_ok; then
               echo "Health check passed on new release."
+              ensure_keepalive_timer
             else
               echo "!! New release failed health check — rolling back to $PREV_SHA"
               git reset --hard "$PREV_SHA"

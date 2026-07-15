@@ -34,11 +34,10 @@ import {
   expenseFilters,
   formatCurrency,
   formatShortDate,
-  monthNames,
   shoppingCategories,
   shoppingFilters,
   getCycleStart,
-  startOfMonth,
+  getCycleWindowForCursor,
   theme,
 } from '../../constants/nestledger';
 import {
@@ -433,6 +432,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const selectedPlan = useMemo(
     () => plans.find((plan) => plan.id === selectedPlanId) ?? null,
     [plans, selectedPlanId],
+  );
+  const selectedPlanAnchorDay = useMemo(
+    () => (selectedPlan ? new Date(selectedPlan.start_date).getDate() : 1),
+    [selectedPlan],
   );
 
   // Derived space helpers
@@ -1720,13 +1723,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const latestActivities = notifications.slice(0, 4);
   const activeBudget = plans[0];
 
-  const monthlySpend = useMemo(() => {
-    const cycleStart = activeBudget ? getCycleStart(activeBudget.start_date) : startOfMonth();
-    return profileExpenses
-      .filter((item) => !item.is_borrow && new Date(item.date) >= cycleStart)
-      .reduce((total, item) => total + Number(item.price), 0);
-  }, [activeBudget, profileExpenses]);
-
   const currentMonthPlanStatsDashboard = useMemo(() => {
     if (!activeBudget) return { spent: 0, contributions: 0 };
     const planId = activeBudget.id;
@@ -2008,7 +2004,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     {migrationCardVisible ? (
                       <BentoCard>
                         <Text style={styles.inputLabel}>What kind of space is this?</Text>
-                        <Text style={styles.bodyMuted}>We've added space types so NestLedger shows only what's relevant for you. Tap your type below.</Text>
+                        <Text style={styles.bodyMuted}>We&apos;ve added space types so NestLedger shows only what&apos;s relevant for you. Tap your type below.</Text>
                         <View style={styles.spaceTypeGrid}>
                           {SPACE_TYPES.map((st) => {
                             const selected = migrationSpaceType === st.type;
@@ -2519,7 +2515,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     members={members}
                     onAddBill={(bill) => handleAddBillToTracker(selectedBillTrackerId, bill)}
                     onDeleteBill={handleDeleteBillFromTracker}
-                    onMarkPaid={(payment) => handleMarkBillPaid(selectedBillTrackerId, payment)}
+                    onMarkPaid={(payment, paymentName) => handleMarkBillPaid(selectedBillTrackerId, payment, paymentName)}
                     plans={plans}
                     profileId={activeProfile?.id ?? ''}
                     recurringBills={recurringBills}
@@ -2592,7 +2588,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                   <>
                     <View style={styles.archiveBadge}>
                       <Text style={styles.archiveBadgeText}>
-                        Viewing {monthNames[(activeViewMonth as number) - 1]} {activeViewYear}
+                        {(() => {
+                          const { start, end } = getCycleWindowForCursor(
+                            activeViewYear,
+                            (activeViewMonth as number) - 1,
+                            selectedPlanAnchorDay,
+                          );
+                          return `Viewing ${formatShortDate(start.toISOString())} – ${formatShortDate(end.toISOString())}`;
+                        })()}
                       </Text>
                     </View>
 
@@ -2697,6 +2700,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                               <Text style={styles.inputLabel}>Expenses</Text>
                               {mExpenses.map((expense) => {
                                 const items = expense.items ?? [];
+                                const expenseTitle = items.length > 0
+                                  ? items.map(i => i.name).join(', ')
+                                  : expense.description || 'Expense';
+                                const hasMultipleItems = items.length > 1;
                                 return (
                                   <BentoCard key={expense.id}>
                                     <View style={styles.expenseCardRow}>
@@ -2723,9 +2730,33 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                         </Text>
                                       </View>
                                       <View style={styles.expenseActions}>
-                                        {items.length > 1 ? (
+                                        {hasMultipleItems ? (
                                           <Text style={styles.totalAmount}>{c(expense.price)}</Text>
                                         ) : null}
+                                        <View style={styles.actionButtons}>
+                                          <Pressable
+                                            hitSlop={12}
+                                            onPress={(event) => {
+                                              event.stopPropagation();
+                                              startEditExpense(expense);
+                                            }}
+                                            style={styles.editButton}
+                                            testID={`expense-edit-${expense.id}`}
+                                          >
+                                            <Ionicons color={theme.primary} name="pencil" size={18} />
+                                          </Pressable>
+                                          <Pressable
+                                            hitSlop={12}
+                                            onPress={(event) => {
+                                              event.stopPropagation();
+                                              handleDeleteExpense(expense.id, expenseTitle);
+                                            }}
+                                            style={styles.editButton}
+                                            testID={`expense-delete-${expense.id}`}
+                                          >
+                                            <Ionicons color={theme.danger} name="trash" size={18} />
+                                          </Pressable>
+                                        </View>
                                       </View>
                                     </View>
                                   </BentoCard>
@@ -2783,9 +2814,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                                       </Pressable>
                                       {isExpanded ? data.records.map((record) => (
                                         <View key={record.id} style={styles.borrowRecordRow}>
-                                          <Text style={styles.listSubtitle}>
-                                            {`${record.price > 0 ? '↑ Borrowed' : '↓ Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}
-                                          </Text>
+                                          <View style={{ flex: 1 }}>
+                                            <Text style={styles.listSubtitle}>
+                                              {`${record.price > 0 ? '↑ Borrowed' : '↓ Repaid'} ${c(Math.abs(record.price))} · ${formatShortDate(record.date)}${record.description ? ` · ${record.description}` : ''}`}
+                                            </Text>
+                                          </View>
+                                          <View style={styles.actionButtons}>
+                                            <Pressable hitSlop={10} onPress={() => startEditBorrow(record)} style={styles.editButton}>
+                                              <Ionicons color={theme.primary} name="pencil" size={18} />
+                                            </Pressable>
+                                            <Pressable hitSlop={10} onPress={() => handleDeleteExpense(record.id, record.price > 0 ? 'Borrow' : 'Repayment')} style={styles.editButton}>
+                                              <Ionicons color={theme.danger} name="trash" size={18} />
+                                            </Pressable>
+                                          </View>
                                         </View>
                                       )) : null}
                                     </BentoCard>
