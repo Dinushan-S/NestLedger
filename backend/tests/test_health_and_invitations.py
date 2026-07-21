@@ -31,7 +31,9 @@ def test_invitation_send_requires_auth(api_client, base_url, primary_profile_id)
     assert response.status_code == 401
 
 
-def test_invitation_send_success(api_client, base_url, primary_access_token, primary_profile_id):
+def test_invitation_send_success(
+    api_client, base_url, primary_access_token, primary_profile_id, clear_member_pending_invitation
+):
     payload = {
         "invited_email": "nestledger.e2e.member@example.org",
         "inviter_name": "Primary Tester",
@@ -71,6 +73,7 @@ def test_invitation_send_and_accept_flow(
     primary_access_token,
     primary_profile_id,
     member_access_token,
+    clear_member_pending_invitation,
 ):
     send_payload = {
         "invited_email": "nestledger.e2e.member@example.org",
