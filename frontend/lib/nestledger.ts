@@ -465,19 +465,20 @@ export const expenseApi = {
   ) {
     if (items) {
       const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
-      const { error: expenseError } = await supabase
-        .from('expenses')
-        .update({ ...updates, price: totalPrice })
-        .eq('id', expenseId);
-      
-      if (expenseError) throw expenseError;
+      // The expense update and the old-items delete touch different tables,
+      // so they can share one network round trip.
+      const [{ error: expenseError }, { error: deleteError }] = await Promise.all([
+        supabase
+          .from('expenses')
+          .update({ ...updates, price: totalPrice })
+          .eq('id', expenseId),
+        supabase
+          .from('expense_items')
+          .delete()
+          .eq('expense_id', expenseId),
+      ]);
 
-      // Delete existing items
-      const { error: deleteError } = await supabase
-        .from('expense_items')
-        .delete()
-        .eq('expense_id', expenseId);
-      
+      if (expenseError) throw expenseError;
       if (deleteError) throw deleteError;
 
       // Insert new items
