@@ -984,15 +984,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     await runAction(async () => {
       if (editingPlanId) {
-        await budgetApi.updatePlan(editingPlanId, {
+        const updated = await budgetApi.updatePlan(editingPlanId, {
           end_date: budgetForm.endDate,
           name: budgetForm.name,
           start_date: budgetForm.startDate,
           total_amount: Number(budgetForm.totalAmount),
         });
+        setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
         setEditingPlanId(null);
       } else {
-        await budgetApi.createPlan({
+        const created = await budgetApi.createPlan({
           created_by: session.user.id,
           end_date: budgetForm.endDate,
           name: budgetForm.name,
@@ -1000,11 +1001,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           start_date: budgetForm.startDate,
           total_amount: Number(budgetForm.totalAmount),
         });
+        setPlans((prev) => [created, ...prev]);
       }
 
       setBudgetForm(defaultBudgetForm());
       setShowBudgetComposer(false);
-      await refreshProfileData(activeProfile.id, true);
+      // The write result is already applied locally; the full refetch is only
+      // reconciliation and must not hold the spinner (each round trip costs
+      // ~1-2s on far-from-region networks).
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1034,7 +1039,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           await budgetApi.deletePlan(planId);
           setSelectedPlanId(null);
           setPlans((prev) => prev.filter((p) => p.id !== planId));
-          await refreshProfileData(activeProfile.id, true);
+          setProfileExpenses((prev) => prev.filter((e) => e.plan_id !== planId));
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Budget Plan',
@@ -1053,7 +1059,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await expenseApi.clearPlanExpenses(planId);
-          await refreshProfileData(activeProfile.id, true);
+          setProfileExpenses((prev) => prev.filter((e) => e.plan_id !== planId));
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Reset Budget',
@@ -1101,13 +1108,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
     await runAction(async () => {
       if (newPlanType === 'bill') {
-        await billApi.createTracker({ created_by: session.user.id, name: newPlanName.trim(), profile_id: activeProfile.id });
+        const created = await billApi.createTracker({ created_by: session.user.id, name: newPlanName.trim(), profile_id: activeProfile.id });
+        setBillTrackers((prev) => [created, ...prev]);
       } else if (newPlanType === 'savings') {
-        await savingsApi.createTracker({ created_by: session.user.id, name: newPlanName.trim(), profile_id: activeProfile.id });
+        const created = await savingsApi.createTracker({ created_by: session.user.id, name: newPlanName.trim(), profile_id: activeProfile.id });
+        setSavingsTrackers((prev) => [created, ...prev]);
       }
       setNewPlanName('');
       setShowNewPlanComposer(false);
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1121,10 +1130,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         runAction(async () => {
           if (type === 'bill') {
             await billApi.deleteTracker(id);
+            setBillTrackers((prev) => prev.filter((t) => t.id !== id));
+            setRecurringBills((prev) => prev.filter((b) => b.tracker_id !== id));
+            setBillPayments((prev) => prev.filter((p) => p.tracker_id !== id));
           } else {
             await savingsApi.deleteTracker(id);
+            setSavingsTrackers((prev) => prev.filter((t) => t.id !== id));
+            setSavings((prev) => prev.filter((entry) => entry.tracker_id !== id));
           }
-          await refreshProfileData(activeProfile.id, true);
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Tracker',
@@ -1135,24 +1149,27 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     if (!activeProfile) return;
     await runAction(async () => {
       if (editingBillTrackerId) {
-        await billApi.updateTracker(editingBillTrackerId, editBillTrackerForm);
+        const updated = await billApi.updateTracker(editingBillTrackerId, editBillTrackerForm);
+        setBillTrackers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
         setEditingBillTrackerId(null);
         setEditBillTrackerForm({ name: '' });
       }
       if (editingSavingsTrackerId) {
-        await savingsApi.updateTracker(editingSavingsTrackerId, editSavingsTrackerForm);
+        const updated = await savingsApi.updateTracker(editingSavingsTrackerId, editSavingsTrackerForm);
+        setSavingsTrackers((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
         setEditingSavingsTrackerId(null);
         setEditSavingsTrackerForm({ name: '' });
       }
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
   const handleAddBillToTracker = (trackerId: string, bill: Omit<RecurringBill, 'created_at' | 'id'>) => {
     if (!activeProfile) return;
     runAction(async () => {
-      await billApi.createRecurringBill({ ...bill, tracker_id: trackerId });
-      await refreshProfileData(activeProfile.id, true);
+      const created = await billApi.createRecurringBill({ ...bill, tracker_id: trackerId });
+      setRecurringBills((prev) => [...prev, created]);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1165,7 +1182,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await billApi.deleteRecurringBill(billId);
-          await refreshProfileData(activeProfile.id, true);
+          setRecurringBills((prev) => prev.filter((b) => b.id !== billId));
+          setBillPayments((prev) => prev.filter((p) => p.bill_id !== billId));
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Bill',
@@ -1175,32 +1194,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const handleMarkBillPaid = async (trackerId: string, payment: Omit<BillPayment, 'created_at' | 'id' | 'name'>, paymentName: string | null) => {
     if (!activeProfile || !session?.user) return;
     await runAction(async () => {
-      await billApi.addPayment({ ...payment, tracker_id: trackerId });
-      if (payment.plan_id && payment.amount > 0) {
-        await expenseApi.addExpenseWithId({
-          plan_id: payment.plan_id,
-          profile_id: payment.profile_id,
-          description: paymentName ?? 'Bill payment',
-          category: 'Utilities',
-          date: payment.date ?? new Date().toISOString(),
-          added_by: payment.added_by,
-          paid_by: payment.added_by !== session.user.id ? payment.added_by : null,
-          is_borrow: false,
-          used_by: null,
-          items: [{ name: 'Bill payment', price: payment.amount }],
-        });
-      }
+      // The payment row and the linked budget expense are independent rows,
+      // so both writes can share one round trip.
+      const [savedPayment] = await Promise.all([
+        billApi.addPayment({ ...payment, tracker_id: trackerId }),
+        payment.plan_id && payment.amount > 0
+          ? expenseApi.addExpenseWithId({
+              plan_id: payment.plan_id,
+              profile_id: payment.profile_id,
+              description: paymentName ?? 'Bill payment',
+              category: 'Utilities',
+              date: payment.date ?? new Date().toISOString(),
+              added_by: payment.added_by,
+              paid_by: payment.added_by !== session.user.id ? payment.added_by : null,
+              is_borrow: false,
+              used_by: null,
+              items: [{ name: 'Bill payment', price: payment.amount }],
+            })
+          : Promise.resolve(null),
+      ]);
+      setBillPayments((prev) => [savedPayment, ...prev]);
       await notifyOtherMembers(`${userProfile?.name ?? 'A member'} paid a bill (${c(payment.amount)})`, notificationTypes.expense);
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
   const handleAddSaving = (trackerId: string, entry: Omit<SavingsEntry, 'created_at' | 'id'>) => {
     if (!activeProfile) return;
     runAction(async () => {
-      await savingsApi.addEntry({ ...entry, tracker_id: trackerId });
+      const saved = await savingsApi.addEntry({ ...entry, tracker_id: trackerId });
+      setSavings((prev) => [saved, ...prev]);
       await notifyOtherMembers(`${userProfile?.name ?? 'A member'} deposited ${c(entry.amount)} to savings`, notificationTypes.expense);
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1213,7 +1238,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await savingsApi.deleteEntry(entryId);
-          await refreshProfileData(activeProfile.id, true);
+          setSavings((prev) => prev.filter((entry) => entry.id !== entryId));
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Entry',
@@ -1247,20 +1273,47 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     const paidBy = showContribution ? expenseForm.paidBy : null;
     const usedBy = showContribution && expenseForm.paidBy === null ? expenseForm.usedBy : null;
 
-    // Edit path keeps the simple awaited flow (with busy spinner): the entry
-    // already exists, so there is nothing to show optimistically.
+    // Edit path is optimistic like the add path: apply the new values locally
+    // and dismiss immediately, then persist + reconcile in the background.
     if (editingExpenseId) {
-      await runAction(async () => {
+      const editingId = editingExpenseId;
+      const original = profileExpenses.find((e) => e.id === editingId);
+      const editedAt = new Date().toISOString();
+      const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
+      setProfileExpenses((current) => current.map((e) => e.id === editingId ? {
+        ...e,
+        category,
+        date,
+        description,
+        paid_by: paidBy,
+        used_by: usedBy,
+        price: totalPrice,
+        items: items.map((item, index) => ({
+          id: `${editingId}-item-${index}`,
+          expense_id: editingId,
+          created_at: editedAt,
+          name: item.name,
+          price: item.price,
+        })),
+      } : e));
+      setExpenseForm(defaultExpenseForm());
+      setEditingExpenseId(null);
+      setShowExpenseComposer(false);
+
+      try {
         await expenseApi.updateExpense(
-          editingExpenseId,
+          editingId,
           { category, date, description, paid_by: paidBy, used_by: usedBy } as any,
           items
         );
-        setExpenseForm(defaultExpenseForm());
-        setEditingExpenseId(null);
-        setShowExpenseComposer(false);
         await refreshProfileData(activeProfile.id, true);
-      });
+      } catch (error) {
+        // Roll back the optimistic edit and surface the failure.
+        if (original) {
+          setProfileExpenses((current) => current.map((e) => (e.id === editingId ? original : e)));
+        }
+        announce(extractError(error));
+      }
       return;
     }
 
@@ -1335,33 +1388,45 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     await runAction(async () => {
+      const borrowDate = new Date(borrowForm.date).toISOString();
+      const borrowDescription = borrowForm.description.trim() || null;
+      const borrowItem = { name: borrowForm.description.trim() || 'Borrowed from budget', price: amount };
       if (editingBorrowId) {
+        const editingId = editingBorrowId;
         await expenseApi.updateExpense(
-          editingBorrowId,
-          {
-            date: new Date(borrowForm.date).toISOString(),
-            description: borrowForm.description.trim() || null,
-          },
-          [{ name: borrowForm.description.trim() || 'Borrowed from budget', price: amount }]
+          editingId,
+          { date: borrowDate, description: borrowDescription },
+          [borrowItem]
         );
+        setProfileExpenses((prev) => prev.map((e) => e.id === editingId ? {
+          ...e,
+          date: borrowDate,
+          description: borrowDescription,
+          price: amount,
+          items: [{ id: `${editingId}-item-0`, expense_id: editingId, created_at: borrowDate, name: borrowItem.name, price: amount }],
+        } : e));
         setEditingBorrowId(null);
       } else {
-        await expenseApi.addExpense({
+        const saved = await expenseApi.addExpense({
           added_by: session.user.id,
           category: 'Borrow',
-          date: new Date(borrowForm.date).toISOString(),
-          description: borrowForm.description.trim() || null,
+          date: borrowDate,
+          description: borrowDescription,
           is_borrow: true,
-          items: [{ name: borrowForm.description.trim() || 'Borrowed from budget', price: amount }],
+          items: [borrowItem],
           paid_by: null,
           plan_id: selectedPlan.id,
           profile_id: selectedPlan.profile_id,
           used_by: session.user.id,
         });
+        setProfileExpenses((prev) => [{
+          ...saved,
+          items: [{ id: `${saved.id}-item-0`, expense_id: saved.id, created_at: saved.created_at, name: borrowItem.name, price: amount }],
+        }, ...prev]);
       }
       setBorrowForm({ amount: '', date: new Date().toISOString().slice(0, 10), description: '' });
       setShowBorrowComposer(false);
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1374,7 +1439,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     await runAction(async () => {
-      await expenseApi.addExpense({
+      const saved = await expenseApi.addExpense({
         added_by: session.user.id,
         category: 'Repay',
         date: repayForm.date,
@@ -1386,9 +1451,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
         profile_id: selectedPlan.profile_id,
         used_by: session.user.id,
       });
+      setProfileExpenses((prev) => [{
+        ...saved,
+        items: [{ id: `${saved.id}-item-0`, expense_id: saved.id, created_at: saved.created_at, name: 'Repayment to budget', price: -amount }],
+      }, ...prev]);
       setRepayForm({ amount: '', borrowId: '', date: new Date().toISOString().slice(0, 10) });
       setShowRepayComposer(false);
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1454,7 +1523,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await expenseApi.deleteExpense(expenseId);
-          await refreshProfileData(activeProfile.id, true);
+          setProfileExpenses((prev) => prev.filter((e) => e.id !== expenseId));
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Expense',
@@ -1472,13 +1542,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     await runAction(async () => {
-      await shoppingApi.addItem({
+      const created = await shoppingApi.addItem({
         added_by: session.user.id,
         category: shoppingForm.category || null,
         name: shoppingForm.name.trim(),
         profile_id: activeProfile.id,
         quantity: shoppingForm.quantity || null,
       });
+      setShoppingItems((prev) => [created, ...prev]);
 
       await notifyOtherMembers(
         `${userProfile?.name ?? 'A member'} added ${shoppingForm.name} to the shopping list.`,
@@ -1486,7 +1557,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       );
       setShoppingForm(defaultShoppingForm);
       setShowShoppingComposer(false);
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1499,9 +1570,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       await runAction(async () => {
         if (item.linked_expense_id) {
           await expenseApi.deleteExpense(item.linked_expense_id);
+          setProfileExpenses((prev) => prev.filter((e) => e.id !== item.linked_expense_id));
         }
-        await shoppingApi.markUnbought(item.id);
-        await refreshProfileData(activeProfile.id, true);
+        const updated = await shoppingApi.markUnbought(item.id);
+        setShoppingItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+        void refreshProfileData(activeProfile.id, true);
       });
     } else {
       setPendingBoughtItem(item);
@@ -1515,7 +1588,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
     await runAction(async () => {
       if (!boughtForm.planId) {
-        await shoppingApi.markBought(pendingBoughtItem.id, session.user.id);
+        const updated = await shoppingApi.markBought(pendingBoughtItem.id, session.user.id);
+        setShoppingItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
         await notifyOtherMembers(
           `${userProfile?.name ?? 'A member'} marked ${pendingBoughtItem.name} as bought.`,
           notificationTypes.shoppingBought,
@@ -1548,7 +1622,24 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           used_by: boughtForm.paidBy,
         });
 
-        await shoppingApi.markBought(pendingBoughtItem.id, session.user.id, newExpense.id);
+        const updated = await shoppingApi.markBought(pendingBoughtItem.id, session.user.id, newExpense.id);
+        setShoppingItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+        const boughtAt = new Date().toISOString();
+        setProfileExpenses((prev) => [{
+          id: newExpense.id,
+          plan_id: boughtForm.planId,
+          profile_id: activeProfile.id,
+          description: pendingBoughtItem.category || null,
+          category: pendingBoughtItem.category || 'Groceries',
+          price,
+          date: boughtAt,
+          created_at: boughtAt,
+          added_by: session.user.id,
+          paid_by: boughtForm.paidBy,
+          used_by: boughtForm.paidBy,
+          is_borrow: false,
+          items: [{ id: `${newExpense.id}-item-0`, expense_id: newExpense.id, created_at: boughtAt, name: itemDescription, price }],
+        }, ...prev]);
         await notifyOtherMembers(
           `${userProfile?.name ?? 'A member'} bought ${pendingBoughtItem.name} for ${c(price)} ✓`,
           notificationTypes.shoppingBought,
@@ -1558,7 +1649,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       setShowBoughtComposer(false);
       setPendingBoughtItem(null);
       setBoughtForm({ price: '', paidBy: null, planId: '' });
-      await refreshProfileData(activeProfile.id, true);
+      void refreshProfileData(activeProfile.id, true);
     });
   };
 
@@ -1575,7 +1666,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
       onConfirm: () => {
         runAction(async () => {
           await shoppingApi.deleteItem(itemId);
-          await refreshProfileData(activeProfile.id, true);
+          setShoppingItems((prev) => prev.filter((i) => i.id !== itemId));
+          void refreshProfileData(activeProfile.id, true);
         });
       },
       title: 'Delete Item',
@@ -1636,23 +1728,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
     }
 
     await runAction(async () => {
-      await profileApi.upsertUserProfile(session.user, {
-        avatarEmoji: profileForm.avatarEmoji,
-        currency: profileForm.currency,
-        name: profileForm.name,
-      });
-      await profileApi.updateHousehold(activeProfile.id, {
-        emoji_avatar: profileForm.familyEmoji,
-        name: profileForm.familyName,
-        space_type: (profileForm.spaceType as SpaceType) ?? 'personal',
-      });
-
-      const [nextUserProfile, nextProfiles] = await Promise.all([
-        profileApi.fetchUserProfile(session.user.id),
-        profileApi.fetchAccessibleProfiles(session.user.id),
+      // Both writes touch unrelated rows, so they share one round trip, and
+      // their returned rows replace the follow-up refetch pair.
+      const [nextUserProfile, updatedHousehold] = await Promise.all([
+        profileApi.upsertUserProfile(session.user, {
+          avatarEmoji: profileForm.avatarEmoji,
+          currency: profileForm.currency,
+          name: profileForm.name,
+        }),
+        profileApi.updateHousehold(activeProfile.id, {
+          emoji_avatar: profileForm.familyEmoji,
+          name: profileForm.familyName,
+          space_type: (profileForm.spaceType as SpaceType) ?? 'personal',
+        }),
       ]);
       setUserProfile(nextUserProfile);
-      setProfiles(nextProfiles);
+      setProfiles((prev) => prev.map((p) => (p.id === updatedHousehold.id ? { ...p, ...updatedHousehold } : p)));
       setShowProfileSettings(false);
     });
   };
@@ -2285,7 +2376,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                       ))}
                     </View>
 
-                    <Pressable hitSlop={10} onPress={() => runAction(async () => activeProfile && shoppingApi.clearBought(activeProfile.id).then(() => refreshProfileData(activeProfile.id)))}>
+                    <Pressable hitSlop={10} onPress={() => runAction(async () => { if (!activeProfile) return; await shoppingApi.clearBought(activeProfile.id); setShoppingItems((prev) => prev.filter((i) => !i.is_bought)); void refreshProfileData(activeProfile.id); })}>
                       <Text style={styles.linkText}>Clear all bought items</Text>
                     </Pressable>
 
@@ -2557,7 +2648,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                     members={members}
                     onAddDeposit={(entry) => handleAddSaving(selectedSavingsTrackerId, entry)}
                     onDeleteEntry={handleDeleteSavingEntry}
-                    onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); await refreshProfileData(activeProfile.id, true); }); }}
+                    onWithdraw={(entry) => { if (!activeProfile) return; runAction(async () => { const saved = await savingsApi.addEntry({ ...entry, tracker_id: selectedSavingsTrackerId }); setSavings((prev) => [saved, ...prev]); await notifyOtherMembers(`${userProfile?.name ?? 'A member'} withdrew ${c(Math.abs(entry.amount))} from savings`, notificationTypes.expense); void refreshProfileData(activeProfile.id, true); }); }}
                     plans={plans}
                     profileId={activeProfile?.id ?? ''}
                     savings={savings}
@@ -3343,7 +3434,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
             closeTestID="close-notifications-modal"
             onClose={() => setShowNotifications(false)}
             rightAction={
-              <Pressable hitSlop={10} onPress={() => activeProfile && session?.user && notificationApi.markAllRead(activeProfile.id, session.user.id).then(() => refreshProfileData(activeProfile.id))} testID="notifications-mark-all-read">
+              <Pressable hitSlop={10} onPress={() => activeProfile && session?.user && notificationApi.markAllRead(activeProfile.id, session.user.id).then(() => setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true }))))} testID="notifications-mark-all-read">
                 <Text style={styles.linkText}>Mark all read</Text>
               </Pressable>
             }
@@ -3351,7 +3442,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
           >
             {notifications.length > 0 ? (
               notifications.map((item) => (
-                <Pressable key={item.id} onPress={() => notificationApi.markRead(item.id).then(() => activeProfile && refreshProfileData(activeProfile.id))} testID={`notification-item-${item.id}`}>
+                <Pressable key={item.id} onPress={() => notificationApi.markRead(item.id).then(() => setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))))} testID={`notification-item-${item.id}`}>
                   <BentoCard tone={item.is_read ? 'default' : 'highlight'}>
                     <Text style={styles.listTitle}>{item.message}</Text>
                     <Text style={styles.listSubtitle}>{formatShortDate(item.created_at)}</Text>
