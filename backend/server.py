@@ -738,23 +738,10 @@ def delete_space(
     )
 
     if not remaining_members:
-        supabase_rest(
-            "DELETE", "expenses", params={"profile_id": f"eq.{payload.profile_id}"}
-        )
-        supabase_rest(
-            "DELETE",
-            "buy_list_items",
-            params={"profile_id": f"eq.{payload.profile_id}"},
-        )
-        supabase_rest(
-            "DELETE", "budget_plans", params={"profile_id": f"eq.{payload.profile_id}"}
-        )
-        supabase_rest(
-            "DELETE", "notifications", params={"profile_id": f"eq.{payload.profile_id}"}
-        )
-        supabase_rest(
-            "DELETE", "invitations", params={"profile_id": f"eq.{payload.profile_id}"}
-        )
+        # Every child table (expenses, expense_items, buy_list_items,
+        # budget_plans, notifications, invitations, bill/savings trackers,
+        # payments, savings) has ON DELETE CASCADE on profile_id, so deleting
+        # the profile row removes all space data in one call.
         supabase_rest("DELETE", "profiles", params={"id": f"eq.{payload.profile_id}"})
 
     return {"ok": True}

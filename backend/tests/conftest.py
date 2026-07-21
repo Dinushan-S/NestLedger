@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,16 @@ from dotenv import dotenv_values
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_ENV = REPO_ROOT / "frontend" / ".env"
 BACKEND_ENV = REPO_ROOT / "backend" / ".env"
+BACKEND_DIR = REPO_ROOT / "backend"
+
+# `server.py` lives in backend/, not backend/tests/. pytest only auto-adds a
+# test file's own directory to sys.path (no __init__.py chain here), so
+# `from server import ...` only works when pytest happens to be invoked with
+# cwd=backend/. CI runs `pytest backend/tests` from the repo root, where that
+# import fails with ModuleNotFoundError. Adding backend/ explicitly makes the
+# import work regardless of invocation directory.
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
@@ -47,6 +58,14 @@ def _load_supabase_anon_key() -> str:
     return str(value).strip().strip('"')
 
 
+def _load_supabase_service_role_key() -> str:
+    backend_env = dotenv_values(BACKEND_ENV)
+    value = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or backend_env.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not value:
+        raise RuntimeError("Missing SUPABASE_SERVICE_ROLE_KEY")
+    return str(value).strip().strip('"')
+
+
 @pytest.fixture(scope="session")
 def base_url() -> str:
     return _load_base_url()
@@ -72,6 +91,11 @@ def supabase_rest_url() -> str:
 @pytest.fixture(scope="session")
 def supabase_anon_key() -> str:
     return _load_supabase_anon_key()
+
+
+@pytest.fixture(scope="session")
+def supabase_service_role_key() -> str:
+    return _load_supabase_service_role_key()
 
 
 @pytest.fixture(scope="session")
@@ -164,5 +188,43 @@ def primary_profile_id(api_client, supabase_rest_url, supabase_anon_key, primary
     if not profile_id:
         pytest.fail("profile_id missing in profile membership")
     return profile_id
+
+
+@pytest.fixture
+def clear_member_pending_invitation(
+    api_client, supabase_rest_url, supabase_service_role_key, primary_profile_id, member_credentials
+):
+    """Delete any pending invite for the fixed e2e member address, before and
+    after the test runs.
+
+    /api/invitations/send 409s when a pending invitation already exists for a
+    given (profile_id, invited_email) pair. These tests reuse the same fixed
+    member_credentials email on every run against a persistent (not reset
+    between CI runs) Supabase project, and test_invitation_send_success never
+    accepts the invite it creates — so without this cleanup, each CI run left
+    one more permanently-pending row behind, and the very next run (or the
+    next test in the same session) 409ed immediately. Uses the service role
+    key so the delete bypasses RLS regardless of which policies exist on
+    `invitations`.
+    """
+
+    def _delete() -> None:
+        api_client.delete(
+            f"{supabase_rest_url}/invitations",
+            headers={
+                "apikey": supabase_service_role_key,
+                "Authorization": f"Bearer {supabase_service_role_key}",
+            },
+            params={
+                "profile_id": f"eq.{primary_profile_id}",
+                "invited_email": f"eq.{member_credentials['email']}",
+                "status": "eq.pending",
+            },
+            timeout=30,
+        )
+
+    _delete()
+    yield
+    _delete()
 
 #deploy to google try 6
