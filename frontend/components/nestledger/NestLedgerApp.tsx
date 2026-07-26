@@ -92,7 +92,6 @@ import {
   buildCurrentPlanExpenses,
   buildCurrentPlanMonthStats,
   buildMemberMap,
-  buildPersonalContributions,
   filterExpensesForView,
   filterMonthExpenses,
   filterShoppingItems,
@@ -470,10 +469,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
   const currentPlanExpenses = useMemo(
     () => buildCurrentPlanExpenses(plans, profileExpenses),
     [plans, profileExpenses],
-  );
-  const personalContributions = useMemo(
-    () => buildPersonalContributions(currentPlanExpenses, memberMap),
-    [currentPlanExpenses, memberMap],
   );
   const currentMonthStatsMap = useMemo(
     () => buildCurrentMonthStatsMap(plans, profileExpenses),
@@ -2871,13 +2866,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                               else borrowsByMember[userId].repaid += Math.abs(e.price);
                               borrowsByMember[userId].records.push(e);
                             });
-                            const unpaidEntries = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid - data.contributed, 0) > 0);
+                            const unpaidEntries = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid, 0) > 0);
                             if (unpaidEntries.length === 0) return null;
                             return (
                               <View style={styles.sectionGap}>
                                 <Text style={styles.inputLabel}>Borrowed from Budget</Text>
                                 {unpaidEntries.map(([userId, data]) => {
-                                  const owes = Math.max(data.borrowed - data.repaid - data.contributed, 0);
+                                  const owes = Math.max(data.borrowed - data.repaid, 0);
                                   const isExpanded = expandedBorrowUser === userId;
                                   return (
                                     <BentoCard key={userId}>
@@ -3107,18 +3102,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
                         else borrowsByMember[userId].repaid += Math.abs(e.price);
                         borrowsByMember[userId].records.push(e);
                       });
-                      Object.entries(personalContributions).forEach(([userId, data]) => {
-                        if (borrowsByMember[userId]) {
-                          borrowsByMember[userId].contributed = data.total;
-                        }
-                      });
-                      const unpaidBorrows = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid - data.contributed, 0) > 0);
+                      const unpaidBorrows = Object.entries(borrowsByMember).filter(([, data]) => Math.max(data.borrowed - data.repaid, 0) > 0);
                       if (unpaidBorrows.length === 0) return null;
                       return (
                         <View style={styles.sectionGap}>
                           <Text style={styles.inputLabel}>Borrowed from Budget</Text>
                           {unpaidBorrows.map(([userId, data]) => {
-                            const owes = Math.max(data.borrowed - data.repaid - data.contributed, 0);
+                            const owes = Math.max(data.borrowed - data.repaid, 0);
                             const isExpanded = expandedBorrowUser === userId;
                             return (
                               <BentoCard key={userId}>

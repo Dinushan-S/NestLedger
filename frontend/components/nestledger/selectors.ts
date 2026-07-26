@@ -419,7 +419,7 @@ export function buildCurrentPlanMonthStats(
     });
 
   Object.values(memberBalances).forEach((balance) => {
-    balance.owes = Math.max(balance.borrowed - balance.repaid - balance.contributed, 0);
+    balance.owes = Math.max(balance.borrowed - balance.repaid, 0);
   });
 
   return {
