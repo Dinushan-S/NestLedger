@@ -222,11 +222,24 @@ describe('buildCurrentPlanMonthStats — per-member balances & owes', () => {
     expect(u2.borrowed).toBe(100);
     expect(u2.repaid).toBe(30);
     expect(u2.contributed).toBe(20);
-    // owes = borrowed - repaid - contributed = 100 - 30 - 20 = 50
-    expect(u2.owes).toBe(50);
+    // owes = borrowed - repaid = 100 - 30 = 70 (contributions do NOT offset a borrow)
+    expect(u2.owes).toBe(70);
   });
 
-  it('floors owes at 0 when repayments + contributions exceed borrowing', () => {
+  it('does not let contributions reduce what a member owes on a borrow', () => {
+    const summary = buildCurrentPlanMonthStats(
+      [
+        expense({ used_by: 'u2', is_borrow: true, price: 100 }), // u2 borrows 100
+        expense({ paid_by: 'u2', price: 100 }), // u2 contributes 100, no repayment
+      ],
+      memberMap,
+      plan(),
+    );
+    // Borrow is only paid off via an explicit repay, never by contributions.
+    expect(summary.memberBalances.u2.owes).toBe(100);
+  });
+
+  it('floors owes at 0 when repayments exceed borrowing', () => {
     const summary = buildCurrentPlanMonthStats(
       [
         expense({ used_by: 'u3', is_borrow: true, price: 40 }),
