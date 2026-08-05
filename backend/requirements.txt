@@ -1,7 +1,9 @@
 # Runtime dependencies for the NestLedger FastAPI backend.
 # Dev/test/lint tools live in requirements-dev.txt.
-fastapi==0.110.1
-uvicorn==0.25.0
+# fastapi/starlette bumped 2026-08-05: 0.110.1 pulled starlette 0.37.2 with multiple CVEs
+# (CVE-2024-47874 DoS etc.). 0.115.14 pulls patched starlette 0.41.3.
+fastapi==0.115.14
+uvicorn==0.34.3
 pydantic>=2.6.4
 email-validator>=2.2.0   # required by pydantic EmailStr (InviteRequest.invited_email)
 python-dotenv>=1.0.1

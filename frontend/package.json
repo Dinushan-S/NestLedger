@@ -54,10 +54,10 @@
     "typescript": "~5.9.3"
   },
   "overrides": {
-    "postcss": "8.5.10"
+    "postcss": "8.5.25"
   },
   "resolutions": {
-    "postcss": "8.5.10"
+    "postcss": "8.5.25"
   },
   "jest": {
     "preset": "jest-expo",
