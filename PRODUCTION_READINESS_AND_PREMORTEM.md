@@ -1,108 +1,139 @@
 # NestLedger — Production Readiness Review & Premortem
 
-_Date: 2026-06-28 · Reviewed commit: `aea40b0` · Reviewer: automated code/config audit_
+_Date: 2026-07-06 · Reviewed commit: `336ed79` (origin/main tip; PR #31 merged) · Reviewer: automated code/config/security audit · Supersedes the 2026-06-28 review_
 
 ## Verdict
 
-**Not yet safe for a public production launch — but close, and ready for a closed beta now.**
+**Not safe for a public launch until the secret leak below is closed out. Still fine for the existing closed beta.**
 
-The product is functionally complete and a large share of the original hardening work has landed: backend abuse protection (rate limiting), dependency hygiene, a live + in-app-linked privacy policy, and operations (monitoring, error tracking, auto-rollback, snapshots, rebuild runbook). What still blocks a **public** launch is a short, mostly account/device-gated list: the iOS pipeline, validating release artifacts on real devices, data-integrity tests, and finishing the store-console paperwork.
+Since the June 28 review the code has improved (Sentry live, auto-rollback shipped, data-integrity tests now pass green, dark-theme work merged). But this pass surfaced one issue the previous review missed: **the GitHub repository is public and `backend/.env` — including the Supabase service-role key, database password, SMTP password and Brevo API key — was committed to git history.** The file was removed from the working tree on 2026-03-07, but the old commits remain fetchable by anyone. Current live keys appear to differ from the leaked ones (rotation likely happened), but that must be confirmed and the history scrubbed. Two dependency regressions also appeared (npm and starlette CVEs).
 
 | Area | Status |
 |------|--------|
+| **Repo secret hygiene** | 🔴 **NEW — `backend/.env` + `frontend/.env` in public git history** (service-role key, DB URL, SMTP + Brevo secrets). Removed from HEAD, still in history. Confirm rotation + scrub history |
 | Core product flows | ✅ Complete (auth, households, budgets, expenses, shopping, bills, savings, multi-currency, push wiring) |
-| Frontend static quality | ✅ tsc clean, eslint clean, expo-doctor 17/17, 0 npm vulns, no console.log in prod paths |
-| Backend security basics | ✅ token verification, CORS restricted via env, RLS in schema (77 policies), per-endpoint membership checks |
-| Backend abuse protection | ✅ per-user rate limits on invite + push **fanout** (429 + `Retry-After`), env-configurable |
-| Dependency hygiene | ✅ `requirements.txt` trimmed to 6 runtime deps; dev/test split into `requirements-dev.txt` |
-| Operations | ✅ beta-ready — UptimeRobot + email, Sentry, auto-rollback on failed deploy, GCP daily disk snapshots, rebuild runbook (`docs/SERVER_RECOVERY.md`). Single-VM SPOF accepted for beta |
-| Release pipeline control | ✅ by design — Android auto-submits to Play **alpha (closed testing)**; manual alpha→production promotion is the gate |
-| Store compliance | 🟡 privacy policy **live** + linked in-app; disclosures mapped. Remaining: legal review + enter in both consoles |
-| iOS | 🟡 in progress — build/submit via **Codemagic** (`codemagic.yaml`) scaffolded; needs Apple setup |
-| Test validation | 🟡 CI pytest workflow exists but needs a test Supabase project + secrets; real-device push/realtime unverified |
-| Data integrity (linked records) | 🟡 unit tests added (`selectors.dataintegrity.test.ts`) covering borrow/repay netting, member owes, bill paid/pending, savings, cycle scoping, decimal precision — run `npm test` to confirm green; realtime/cross-currency display still unverified |
+| Data integrity (linked records) | ✅ `selectors.dataintegrity.test.ts` **runs green — 13/13** (borrow/repay netting, member owes floored at 0, bill paid/pending, savings, cycle scoping, cent precision). Cross-currency display + realtime race still unverified |
+| Backend security basics | ✅ token verification, CORS restricted via env (fails closed), RLS in schema, per-endpoint membership checks, PostgREST `in.()` filter injection guarded in fanout cleanup |
+| Backend abuse protection | ✅ per-user sliding-window rate limits on invite + push fanout (429 + `Retry-After`), env-configurable; duplicate-invite 409 guard; Expo push-token regex validation |
+| Backend dependency hygiene | 🟡 `requirements.txt` trimmed to 7 runtime deps, BUT pinned **starlette 0.37.2 has ≥6 CVEs** (via `fastapi==0.110.1`) — bump fastapi/starlette |
+| Frontend dependency hygiene | 🟡 **24 npm vulns (1 critical `shell-quote`, 3 high incl. `form-data` CRLF)** — regression from "0 vulns" on June 28; most fixable via `npm audit fix` (dev/build-chain, not shipped runtime) |
+| Operations | ✅ UptimeRobot + email, Sentry (debug route removed), auto-rollback on failed deploy, GCP daily disk snapshots, rebuild runbook. Single-VM SPOF accepted for beta |
+| Release pipeline control | ✅ Android auto-submits to Play alpha (closed testing); manual alpha→production promotion is the gate; backend deploy auto-rolls-back on failed health check |
+| Store compliance | 🟡 privacy policy live + linked in-app; disclosures mapped. Remaining: legal review + enter in both consoles |
+| iOS | 🟡 build/submit via Codemagic (`codemagic.yaml`) scaffolded; needs Apple Developer + ASC setup |
+| Test validation (runtime) | 🟡 CI pytest workflow exists but needs a test Supabase project + secrets; real-device push/realtime still unverified |
 
-Legend: ✅ done · 🟡 in progress / partial · 🔴 open
+Legend: ✅ done · 🟡 in progress / partial · 🔴 open blocker
+
+---
+
+## 🔴 P0 — Secret leak in public git history (NEW, must fix before public launch)
+
+> **STATUS: PENDING — deferred on purpose (2026-08-05).** Local testing ongoing; repo is a public GitHub repo but release is gated behind the Play alpha (closed testing) track, so the leak is not yet exploitable in a public release. **Must be closed before promoting to production.** Do not forget this.
+>**What.** `Dinushan-S/NestLedger` is a **public** GitHub repo. `backend/.env` and `frontend/.env` were tracked and committed, then removed from tracking in commit `3eaefa7` (2026-03-07). Removal from HEAD does **not** remove them from history — anyone can run `git log`/`git show` on the old commits and read every value.
+
+**Exposed in `backend/.env` history:**
+
+- `SUPABASE_SERVICE_ROLE_KEY` — bypasses **all** RLS; full read/write to every household's data
+- `SUPABASE_DB_URL` — direct Postgres connection string (DB password)
+- `SMTP_PASSWORD` + `BREVO_API_KEY` — can send mail as your domain (phishing / quota burn)
+- `MONGO_URL` (legacy)
+
+**Exposed in `frontend/.env` history:** backend URL, Supabase URL + anon key (anon key is public-by-design, low risk).
+
+**Current state (checked this pass).** The values in the live `backend/.env` **differ** from the leaked ones for `SERVICE_ROLE_KEY`, `SMTP_PASSWORD`, `BREVO_API_KEY`, and `SUPABASE_DB_URL` — consistent with a rotation. The Supabase **project ref is unchanged** (`yrrshpkaqvphkdayzodh`), so the JWT-based keys were only truly invalidated if the project's JWT secret was rotated.
+
+**To close it out:**
+
+1. **Confirm invalidation.** In Supabase, verify the leaked service-role JWT no longer authenticates. If unsure, rotate the project JWT secret (invalidates all old JWTs) and reset the database password. Rotate the Brevo API key + SMTP credential if not already done.
+2. **Scrub history.** Use `git filter-repo` (or BFG) to purge `backend/.env` and `frontend/.env` from all commits, then force-push. Note this rewrites SHAs and breaks the deploy VM's `git reset --hard origin/main` on next pull — plan the re-clone.
+3. **Or** make the repo **private** as an immediate stopgap (blocks anonymous access while you scrub).
+4. **Prevent recurrence.** `.gitignore` now covers `*.env` (good). Add a pre-commit secret scanner (gitleaks) and enable GitHub secret-scanning/push-protection.
+
+Other secret-ish files in the repo tree — `deploy_key`, `nestledger_deploy_key` (SSH private keys), and `frontend/learn-488011-b6719fee46c1.json` (GCP service-account key) — are present on disk but are **gitignored and not tracked** (verified). Keep them that way; confirm the GCP JSON never bundles into an EAS build.
 
 ---
 
 ## Still needs fixing (before public launch)
 
-Ordered by importance. Most are gated on your accounts/devices, not code.
+Ordered by importance.
 
-1. **Data-integrity tests (highest risk).** 🟡 _Started._ Added `selectors.dataintegrity.test.ts` — covers borrow/repay netting, per-member owes (floored at 0), bill paid-vs-pending, savings deposits/withdrawals/balance, cycle-window + plan scoping, and decimal-cent precision. Assertions were cross-checked against the source formulas. **To do:** run `npm test` to confirm green in your environment (jest-expo wouldn't boot in the sandbox), and extend to cross-currency *display* and the realtime second-device path. _(See premortem #5.)_
+1. **Close the secret leak (P0) — PENDING (deferred, fix later).** See section above. This is the top blocker for public launch; not blocking local testing. `git filter-repo` scrub + credential rotation still outstanding.
 
-2. **Real-device + CI test validation.** Stand up a **test** Supabase project, seed the two users `conftest.py` expects, set the 3 GitHub Action secrets so `backend-tests.yml` runs green, then validate **push + realtime on real Android & iOS** (foreground/background/closed, reinstall, two devices). Steps in `TESTING.md`. _(Premortem #2, #6.)_
+2. **Dependency CVEs (P1) — ✅ FIXED 2026-08-05.**
+   - Backend: `fastapi==0.110.1` / `starlette 0.37.2` (multiple CVEs) → bumped to **`fastapi==0.115.14` + `starlette 0.46.2` + `uvicorn==0.34.3`**; app loads + tests green.
+   - Frontend: `npm audit` went from **24 vulns (2 critical, 6 high)** → **16 moderate, 0 critical, 0 high** via `npm audit fix` + `postcss` override bumped `8.5.10 → 8.5.25`. Remaining 16 moderate are all Expo build-chain/dev deps; fixing them needs the breaking `expo@57` upgrade (deferred). Frontend tests 33/33 green.
 
-3. **iOS pipeline — finish Apple/Codemagic setup.** `codemagic.yaml` is committed (native `expo prebuild` → IPA → TestFlight). Remaining (your action): Apple Developer membership, an App Store Connect record for `com.nestledger.app` (→ ASC App ID), add an ASC API key to Codemagic, set the `nestledger_env` var group, fill `APP_STORE_APPLE_ID`, then pass TestFlight. Details in `codemagic.yaml` + `docs/STORE_COMPLIANCE.md`.
+3. **Real-device + CI test validation — PENDING.** Stand up a **test** Supabase project, seed the two users `conftest.py` expects, set the 3 GitHub Action secrets so `backend-tests.yml` runs green, then validate **push + realtime on real Android & iOS** (foreground/background/closed, reinstall, two devices). Steps in `TESTING.md`. _(Premortem #2, #6.)_
 
-4. **Store-console paperwork.** Enter the privacy URL + Data Safety (Google) / App Privacy (Apple) answers from `docs/STORE_COMPLIANCE.md`, complete content/age ratings, and get the policy a legal review. Checklist: `docs/STORE_COMPLIANCE_TODO.md`.
+4. **iOS pipeline — finish Apple/Codemagic setup — PENDING.** `codemagic.yaml` is committed (native `expo prebuild` → IPA → TestFlight). Remaining: Apple Developer membership, an App Store Connect record for `com.nestledger.app`, an ASC API key in Codemagic, the `nestledger_env` var group, `APP_STORE_APPLE_ID`, then pass TestFlight.
 
-5. **Service-role key hardening (P1).** The full `.env` (Supabase **service-role** key, SMTP password) is base64'd through a GitHub secret onto the VM. The service-role key bypasses RLS, making that box a crown-jewel target. Rotate it, restrict server access, and confirm the `learn-488011-*.json` GCP key (gitignored) never bundles into a build. _(Premortem #4.)_
+5. **Store-console paperwork — PENDING.** Enter the privacy URL + Data Safety (Google) / App Privacy (Apple) answers, complete content/age ratings, and get the policy a legal review.
 
-6. **DIY backups (deferred by choice).** Free Supabase has no built-in backups — set up a daily `pg_dump` → Cloud Storage. Steps in `docs/OPERATIONS_TODO.md`. _(Premortem #7.)_
+6. **Expo 57 upgrade — PENDING (P2).** Clears the last 16 moderate npm vulns (build-chain only, not shipped runtime); breaking change — defer until after beta is stable.
 
-7. **`NestLedgerApp.tsx` is 4,485 lines (P1).** Maintainability/regression risk; split per the existing plan. Not a launch blocker.
+7. **`NestLedgerApp.tsx` split (P2).** ~~4,480 lines~~ → **3,323 lines (2026-08-05)**: styles → `nestledger.styles.ts` (953), helper components → `nestledger.ui.tsx` (186), types/constants → `nestledger.constants.ts` (155). Remaining: split the main component by tab (budget/shopping/savings) — riskier, defer until after device testing.
 
----
+## ✅ Done since the 2026-07-06 review
 
-## Done since the initial audit
+- ✅ **Realtime migration applied in prod** — `migration_realtime_fix.sql` (`budget_plans` + `profile_members` in `supabase_realtime` publication) confirmed applied on the live DB (2026-08-05). Remaining: two-device test (folded into #3).
+- ✅ **Backend CVEs fixed** — fastapi/starlette/uvicorn bumped (see #2).
+- ✅ **Frontend npm audit 24 → 16 (0 critical/high)** — see #2.
+- ✅ **DIY pg_dump backups shipped** — `backend/scripts/backup.sh` (daily, 7-day retention, optional GCS off-box upload) + `restore_backup.sh` + systemd timer `nestledger-backup.timer` provisioned by `deploy-all.yml`. Set `GCS_BACKUP_BUCKET` in the ENV secret for off-box storage. Remaining: one scratch-project restore test (folded into #3).
+- ✅ **Notification titles improved** — per-type push/local titles ("Budget updated", "New member joined", …) instead of generic "NestLedger"; "expo" title seen during local testing is Expo Go dev behavior (its Android label), not a code bug.
 
-- ✅ **Rate limiting** on invite + push fanout endpoints (429 + `Retry-After`, env-configurable).
-- ✅ **`requirements.txt` trimmed** from 26 pkgs to 6 runtime deps; dev/test split out; unused `File`/`UploadFile` import removed.
-- ✅ **Privacy policy** written, **live** at `nest-ledger-landingpage.vercel.app/static/privacy.html`, and **linked in-app** (Settings → About & legal).
-- ✅ **Uptime monitoring** (UptimeRobot on `/api/health`) + email alerts.
-- ✅ **Sentry** error/performance tracking on the backend (verified receiving events).
-- ✅ **Auto-rollback** in `deploy-all.yml` — captures the prior SHA and reverts on a failed health check.
-- ✅ **GCP daily disk snapshots** + a documented **rebuild runbook** (`docs/SERVER_RECOVERY.md`).
-- ✅ **iOS pipeline scaffolded** on Codemagic (`codemagic.yaml`).
-- ✅ **Release pipeline** confirmed acceptable — alpha closed-testing track with a manual production gate.
+- ✅ **Data-integrity tests pass green** — `selectors.dataintegrity.test.ts`, 13/13 (verified this pass, ~11s).
+- ✅ **Sentry** error/performance tracking live on backend; temporary Sentry verification/debug route added then **removed** (`af5bd87`).
+- ✅ **Auto-rollback** shipped in `deploy-all.yml` — captures prior SHA, polls `/api/health`, reverts on failure.
+- ✅ **Invite endpoint** hardened — rate limit + duplicate-invite 409 guard, with unit + integration tests (`4c4c043`, `bed6cdb`).
+- ✅ **Dark-theme support** merged (`theme-context.tsx`, `336ed79`).
+- ✅ **Landing page** de-nested from the repo (deployed separately via Vercel).
 
----
-
-## What's solid (baseline)
+## Still solid (baseline)
 
 - **Auth is real.** `get_current_user` verifies the bearer token against Supabase `/auth/v1/user`, not client claims.
 - **Authorization server-side.** Sensitive endpoints call `ensure_profile_member(...)` before acting.
-- **RLS present** (77 policy statements) — DB doesn't rely on the API layer alone.
-- **CORS** driven by `ALLOWED_ORIGINS` / `APP_PUBLIC_URL`, fails closed if unset.
-- **Logging cleaned** — no `console.log` in production paths.
+- **RLS present** — every table has `enable row level security` + member-scoped policies; all tables cascade-delete from `profiles`, so no orphan rows.
+- **CORS** driven by `ALLOWED_ORIGINS`/`APP_PUBLIC_URL`, fails closed (startup raises if unset).
+- **Injection-aware.** Fanout dead-token cleanup quotes each value per PostgREST `in.()` rules and scopes the delete to the profile's recipients.
 
 ---
 
-## Premortem (reviewed 2026-06-28)
+## Premortem (reviewed 2026-07-06)
 
 _It's three months after launch. NestLedger failed. Most likely autopsy, with current mitigation status._
 
-**1. A broken app build reached users.** 🟢 _Reduced._ App ships to the Play **alpha (closed testing)** track and promotion to production is manual, so a bad merge hits invited testers, not the public. Backend bad deploys now auto-rollback on a failed health check. _Residual: no staged rollout once you do promote to production._
+**1. The leaked service-role key was used before rotation was confirmed.** 🔴 _Open — highest risk._ The public git history exposed a service-role key that bypasses RLS. If it was never actually invalidated (project JWT secret unchanged), an attacker read or wiped every household's financial data, or sent phishing mail via the leaked Brevo/SMTP creds. _Fix: confirm invalidation + scrub history (still-needs-fixing #1). Until confirmed, treat the current data as potentially compromised._
 
-**2. Push notifications never actually worked in production.** 🟠 _Code verified, runtime unconfirmed._ Static audit of the push path passed: notification handler, Android HIGH-importance channel, permission request + `POST_NOTIFICATIONS`/iOS usage string, a present `extra.eas.projectId` (so token fetch won't silently bail), backend token registration, and tap-routing via `useLastNotificationResponse` are all correctly wired; `google-services.json` is present. The one common silent-failure cause (missing projectId) is **not** present here. _Residual: actual delivery still needs real-device validation across foreground/background/closed + reinstall (still-needs-fixing #2). Minor: registration errors are swallowed by a silent `catch {}` — consider surfacing them once frontend error reporting exists._
+**2. A broken app build reached users.** 🟢 _Reduced._ Ships to Play alpha (closed testing) with a manual production gate; backend bad deploys auto-rollback on failed health check. _Residual: no staged rollout once you promote to production._
 
-**3. The invite/email endpoint got abused.** 🟢 _Mitigated._ Invite + fanout now rate-limited (429 + `Retry-After`), so an abuser can't spam invites to burn the Brevo quota or flood members. _Residual: watch Brevo deliverability/bounce rates in production._
+**3. Push notifications never actually worked in production.** 🟠 _Code verified, runtime unconfirmed._ Static audit of the push path passes (handler, Android HIGH channel, permissions, `projectId` present, backend registration with token regex validation, tap-routing). _Residual: real-device delivery across foreground/background/closed + reinstall still unvalidated (still-needs-fixing #3)._
 
-**4. The service-role key leaked.** 🟠 _Partially open._ Sentry/monitoring now surface anomalies, but the key still lives on a single VM + CI and bypasses all RLS. _Fix: rotate + restrict + confirm no key bundling (still-needs-fixing #5)._
+**4. The invite/email endpoint got abused.** 🟢 _Mitigated._ Invite + fanout rate-limited (429 + `Retry-After`); duplicate-invite 409 guard. _Residual: watch Brevo deliverability/bounce; note the leaked Brevo key in #1 if not rotated._
 
-**5. Linked-record math corrupted budgets.** 🟠 _Partially addressed._ Unit tests now cover the core derived-ledger math (borrow/repay netting, member owes, bill paid/pending, savings, cycle scoping, decimal precision) in `selectors.dataintegrity.test.ts`. _Residual: run them green in CI, and cover the delete-original / second-device-race / cross-currency-display edges (still-needs-fixing #1)._
+**5. A dependency CVE got exploited.** 🟢 _Fixed 2026-08-05._ Backend starlette bumped 0.37.2 → 0.46.2 (via `fastapi==0.115.14`, `uvicorn==0.34.3`); frontend `npm audit` 24 → 16 (0 critical/high, `npm audit fix` + postcss override). _Residual: 16 moderate remain in the Expo build chain — needs the breaking `expo@57` upgrade (deferred)._
 
-**6. Shared state didn't sync across devices.** 🟠 _Bug found + fixed; runtime unconfirmed._ Audit showed the client **does** subscribe to realtime for 9 tables (incl. `bill_payments`, `savings`), and most were correctly added to the `supabase_realtime` publication — but **`budget_plans` and `profile_members` were missing from the publication**, so a second device got no live updates when a budget plan changed or a member joined/left. Fixed in `supabase_schema.sql` + standalone `backend/migration_realtime_fix.sql` (apply to the existing DB). _Residual: apply the migration in prod, then confirm with a two-device test (still-needs-fixing #2)._
+**6. Linked-record math corrupted budgets.** 🟢 _Addressed._ Derived-ledger math is now covered by 13 passing unit tests (borrow/repay netting, member owes, bill paid/pending, savings, cycle scoping, cent precision). _Residual: cross-currency *display* and the delete-original / second-device-race edges still uncovered._
 
-**7. The single backend box fell over.** 🟢 _Reduced._ Now: uptime monitoring + alerts, Sentry, auto-rollback, daily disk snapshots, and a rebuild runbook. Server is stateless (code in git, `.env` in the GitHub secret, data in Supabase), so VM loss = downtime, not data loss. _Residual: single-VM SPOF (accepted for beta) and no DB backups yet on free Supabase (still-needs-fixing #6)._
+**7. Shared state didn't sync across devices.** 🟢 _Migration applied in prod (2026-08-05)._ `budget_plans` and `profile_members` are in the `supabase_realtime` publication. _Residual: two-device realtime test still to run (folded into still-needs-fixing #3)._
 
-**8. Store rejection / stall.** 🟢 _Reduced._ Privacy policy is live + linked in-app, disclosures mapped, and the iOS pipeline is scaffolded on Codemagic. _Residual: finish console paperwork + complete the Apple setup (still-needs-fixing #3, #4)._
+**8. The single backend box fell over.** 🟢 _Reduced._ Uptime monitoring + alerts, Sentry, auto-rollback, daily disk snapshots, rebuild runbook, and now **daily `pg_dump` backups** (script + systemd timer + optional GCS off-box upload, 2026-08-05). Server is stateless (code in git, `.env` in a GitHub secret, data in Supabase). _Residual: single-VM SPOF (accepted for beta); one scratch-project restore test remains._
 
-**Net premortem read:** the operational and abuse risks that dominated the original audit are now largely controlled. The remaining failure modes that could actually sink a launch are **data-integrity bugs in linked records (#5)** and **unvalidated push/realtime (#2, #6)** — both fixable with the tests in still-needs-fixing #1–#2.
+**9. Store rejection / stall.** 🟢 _Reduced._ Privacy policy live + linked in-app, disclosures mapped, iOS pipeline scaffolded. _Residual: finish console paperwork + Apple setup (still-needs-fixing #4, #5)._
+
+**Net premortem read:** operational and abuse risks remain well-controlled, and the data-integrity risk that dominated the last review is now closed (tests green). The launch-blocking risk today is **the secret leak in public history (#1)** — nothing else should ship to the public until that's confirmed closed. Unvalidated push/realtime on real devices (#3, #7) is the next tier.
 
 ---
 
 ## Recommended path to launch
 
-1. Add data-integrity tests for linked-record + multi-currency paths. _(still-needs-fixing #1)_
-2. Stand up the test Supabase project + secrets; get `backend-tests.yml` green. _(#2)_
-3. Validate push + realtime on real Android & iOS (two devices). _(#2)_
-4. Finish the Codemagic/Apple iOS setup; pass TestFlight. _(#3)_
-5. Enter store-console disclosures + privacy URL; get a legal review. _(#4)_
-6. Rotate + lock down the service-role key. _(#5)_
-7. Ship to **closed beta**; go public only after 1–5 are green.
-8. _Soon after:_ DIY `pg_dump` backups (#6) and split `NestLedgerApp.tsx` (#7).
+1. **Close the secret leak — PENDING (deferred).** Confirm the leaked service-role/DB/SMTP/Brevo creds are invalidated, scrub `*.env` from git history (or make the repo private now), add gitleaks + push protection. _(#1)_
+2. ~~Bump fastapi/starlette; npm audit fix~~ — ✅ done 2026-08-05 (backend starlette 0.46.2, frontend 0 critical/high).
+3. Stand up the test Supabase project + secrets; get `backend-tests.yml` green. _(#3)_
+4. ~~Apply migration_realtime_fix.sql~~ — ✅ applied in prod 2026-08-05. Remaining: validate push + realtime on real Android & iOS (two devices). _(#3, #7)_
+5. Finish the Codemagic/Apple iOS setup; pass TestFlight. _(#4)_
+6. Enter store-console disclosures + privacy URL; get a legal review. _(#5)_
+7. Keep serving the **closed beta**; go public only after 1, 3–6 are green.
+8. _Soon after:_ set `GCS_BACKUP_BUCKET` for off-box backups + run one restore test (#8); `NestLedgerApp.tsx` further split by tab (started 2026-08-05 — styles/UI/constants extracted, 4,618 → 3,323 lines); `expo@57` upgrade to clear remaining moderate npm vulns.
 
-_Already done: rate limiting, dependency trim, live + in-app privacy policy, monitoring + Sentry, auto-rollback, snapshots + rebuild runbook, iOS pipeline scaffolding, release-pipeline review._
+_Already done: data-integrity tests green, rate limiting + duplicate guard, live + in-app privacy policy, monitoring + Sentry, auto-rollback, snapshots + rebuild runbook, iOS pipeline scaffolding, realtime publication fix (applied), dependency CVE fixes, DIY pg_dump backups, NestLedgerApp.tsx partial split._

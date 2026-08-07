@@ -29,9 +29,9 @@ describe('currency selector helpers', () => {
       'Popular',
       'All currencies',
     ]);
-    expect(sections[0].data.map((item) => item.code)).toEqual(['LKR']);
-    expect(sections[1].data.map((item) => item.code)).toEqual(['USD', 'EUR', 'GBP']);
-    expect(sections[2].data.some((item) => item.code === 'JPY')).toBe(true);
+    expect(sections[0]!.data.map((item) => item.code)).toEqual(['LKR']);
+    expect(sections[1]!.data.map((item) => item.code)).toEqual(['USD', 'EUR', 'GBP']);
+    expect(sections[2]!.data.some((item) => item.code === 'JPY')).toBe(true);
   });
 
   it('returns only matching results when the user searches', () => {
@@ -43,7 +43,7 @@ describe('currency selector helpers', () => {
     });
 
     expect(sections).toHaveLength(1);
-    expect(sections[0].title).toBe('Search results');
-    expect(sections[0].data.map((item) => item.code)).toEqual(['JPY']);
+    expect(sections[0]!.title).toBe('Search results');
+    expect(sections[0]!.data.map((item) => item.code)).toEqual(['JPY']);
   });
 });

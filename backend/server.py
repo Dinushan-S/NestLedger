@@ -665,10 +665,20 @@ def push_fanout(
     if not expo_tokens:
         return {"sent": 0}
 
+    # Per-type banner titles (the OS shows the app name separately, so a generic
+    # "NestLedger" title adds no info — use a short meaningful label instead).
+    NOTIFICATION_TITLES = {
+        "expense_added": "Budget updated",
+        "member_joined": "New member joined",
+        "shopping_item_added": "Shopping list updated",
+        "shopping_item_bought": "Shopping item bought",
+    }
+    title = NOTIFICATION_TITLES.get(payload.type, "NestLedger")
+
     messages = [
         {
             "to": token,
-            "title": "NestLedger",
+            "title": title,
             "body": payload.message,
             "sound": "default",
             "data": {"type": payload.type, "profile_id": payload.profile_id},

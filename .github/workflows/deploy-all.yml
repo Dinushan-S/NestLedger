@@ -66,7 +66,7 @@ jobs:
               sudo apt-get update -qq
 
               # Install standard python3 packages without the Deadsnakes PPA
-              sudo apt-get install -y -qq python3 python3-venv python3-dev python3-pip git nginx certbot python3-certbot-nginx
+              sudo apt-get install -y -qq python3 python3-venv python3-dev python3-pip git nginx certbot python3-certbot-nginx postgresql-client
               # sudo apt-get install -y -qq python3.11 python3.11-venv python3.11-dev python3-pip git nginx certbot python3-certbot-nginx
 
               sudo git clone https://github.com/Dinushan-S/NestLedger.git /opt/NestLedger
@@ -112,7 +112,7 @@ jobs:
               echo "$ENV_B64" | base64 -d > .env
               source venv/bin/activate
               pip install -r requirements.txt
-              chmod +x scripts/keepalive.sh
+              chmod +x scripts/keepalive.sh scripts/backup.sh scripts/restore_backup.sh
               sudo systemctl restart nestledger
               cd /opt/NestLedger
             }
@@ -127,6 +127,39 @@ jobs:
 
               sudo systemctl daemon-reload
               sudo systemctl enable --now nestledger-keepalive.timer
+            }
+
+            # Reusable: (re)provision the daily pg_dump backup timer. Idempotent,
+            # like ensure_keepalive_timer — runs 02:00 UTC (07:30 Sri Lanka).
+            # Set GCS_BACKUP_BUCKET in the ENV secret to also push dumps to Cloud
+            # Storage (recommended: a VM alone is not an off-box backup).
+            ensure_backup_timer() {
+              printf '[Unit]
+Description=NestLedger Supabase daily pg_dump backup
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/NestLedger/backend
+EnvironmentFile=/opt/NestLedger/backend/.env
+Environment="TRIGGERED_BY=vm_cron"
+ExecStart=/usr/bin/env bash /opt/NestLedger/backend/scripts/backup.sh
+' | sudo tee /etc/systemd/system/nestledger-backup.service > /dev/null
+
+              printf '[Unit]
+Description=Run NestLedger backup every day at 02:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
+' | sudo tee /etc/systemd/system/nestledger-backup.timer > /dev/null
+
+              sudo systemctl daemon-reload
+              sudo systemctl enable --now nestledger-backup.timer
             }
 
             # Reusable: poll the local health endpoint; return 0 if healthy within ~30s.
@@ -148,6 +181,7 @@ jobs:
             if health_ok; then
               echo "Health check passed on new release."
               ensure_keepalive_timer
+              ensure_backup_timer
             else
               echo "!! New release failed health check — rolling back to $PREV_SHA"
               git reset --hard "$PREV_SHA"
