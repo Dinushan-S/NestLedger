@@ -10,7 +10,7 @@ NestLedger is a shared family finance app with household profiles, budget plans,
 - Budget, expense, shopping, members, invite, and notifications flows implemented
 - Backend: FastAPI on a single GCP VM (`nestledger.dinushan.dev`), systemd-managed, nginx + certbot
 - Multi-currency support shipped; dark-theme support shipped
-- Frontend tests: 33/33 green (jest). Backend tests need `EXPO_BACKEND_URL`/frontend `.env` to run
+- Frontend tests: 34/34 green (jest). Backend tests need `EXPO_BACKEND_URL`/frontend `.env` to run
 - Data-integrity tests (`selectors.dataintegrity.test.ts`) cover borrow/repay netting, member owes, bill paid/pending, savings, cycle scoping, cent precision
 
 ## Dependencies & security (updated 2026-08-05)
@@ -35,11 +35,27 @@ NestLedger is a shared family finance app with household profiles, budget plans,
 
 ## Frontend structure (refactor 2026-08-05)
 
-- `NestLedgerApp.tsx` split: 4,618 → 3,323 lines
+- `NestLedgerApp.tsx` split: 4,618 → 3,323 lines (now ~3,209 after code-quality pass)
 - `frontend/components/nestledger/nestledger.styles.ts` (static StyleSheet, ~950 lines)
-- `frontend/components/nestledger/nestledger.ui.tsx` (8 presentational components)
+- `frontend/components/nestledger/nestledger.ui.tsx` (presentational components incl. shared `SafeWrap`)
 - `frontend/components/nestledger/nestledger.constants.ts` (form types, defaults, helpers, notification constants)
+- `frontend/components/nestledger/hooks/useRealtimeChannel.ts` (channel subscribe/unsubscribe + notifications)
 - Remaining: split main component by tab (P2, after device testing)
+
+## Code quality pass (2026-08-07) — review history
+
+Reviewed the NestLedger cleanup for correctness, clarity, architecture, tests. All changes behavior-preserving (token-level diff vs HEAD + string-value byte-equality + green suite).
+
+Fixed findings:
+
+- **Strict TS** — enabled `noUncheckedIndexedAccess`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `exactOptionalPropertyTypes` in `frontend/tsconfig.json`; fixed all 65 surfaced errors (guarded `!` where invariants hold, `| undefined` prop/param widenings, destructure defaults `[hours = 0, minutes = 0]`, fetch `body: null`, conditional-spread `onPress`)
+- **Complexity** — `buildCurrentPlanMonthStats` 18 → 12 decision points via `sumPrices` helper + `ensureBalance` closure + type-predicate filter; behavior pinned by `selectors.dataintegrity.test.ts`
+- **Re-render churn** — `period`/`priorRange` in `AnalyseScreen` wrapped in `useMemo([cycle])`; cleared 3 `react-hooks/exhaustive-deps` warnings
+- **Duplication removed** — shared `SafeWrap` (close outline+testID), `buildBorrowBalances` (borrow/repay netting), `tableCrud` factory (3 api crud × 3 methods); net −114 lines
+- **Error visibility** — two intentional `console.warn` guards (reminder settings load, space-type migration flag); kept in prod (babel strips only log/info)
+- **Sync test** — `nestledger.constants.test.ts` pins backend `NOTIFICATION_TITLES` contract
+
+Green: `tsc --noEmit`, 34/34 jest, eslint 0 errors, `expo export` (android) bundles clean.
 
 ## Important commands
 

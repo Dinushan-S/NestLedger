@@ -33,15 +33,17 @@ type Props = {
 	userId: string;
 	profileId: string;
 	actionBusy: boolean;
-	currencyCode?: string;
-	viewMonth?: number;
-	viewYear?: number;
-	stats?: {
-		balance: number;
-		deposits: number;
-		withdrawals: number;
-		net: number;
-	};
+	currencyCode?: string | undefined;
+	viewMonth?: number | undefined;
+	viewYear?: number | undefined;
+	stats?:
+		| {
+				balance: number;
+				deposits: number;
+				withdrawals: number;
+				net: number;
+		  }
+		| undefined;
 	onAddDeposit: (entry: Omit<SavingsEntry, "created_at" | "id">) => void;
 	onWithdraw: (entry: Omit<SavingsEntry, "created_at" | "id">) => void;
 	onDeleteEntry: (entryId: string) => void;
@@ -55,7 +57,6 @@ export function SavingsTracker({
 	trackerId,
 	savings,
 	plans,
-	members,
 	userId,
 	profileId,
 	actionBusy,
@@ -349,7 +350,7 @@ export function SavingsTracker({
 
 			{filteredSavings.length > 10 ? (
 				<Pressable
-					onPress={() => viewEntryDetail(filteredSavings[0])}
+					onPress={() => viewEntryDetail(filteredSavings[0]!)}
 					style={{ marginTop: 8 }}
 				>
 					<Text style={s.linkText}>

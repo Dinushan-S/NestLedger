@@ -207,7 +207,7 @@ const callBackend = async <T>(
 	body?: Record<string, unknown>,
 ) => {
 	const response = await fetch(`${backendUrl}${path}`, {
-		body: body ? JSON.stringify(body) : undefined,
+		body: body ? JSON.stringify(body) : null,
 		headers: {
 			Authorization: `Bearer ${accessToken}`,
 			"Content-Type": "application/json",
@@ -303,7 +303,11 @@ export const profileApi = {
 	},
 	async upsertUserProfile(
 		user: User,
-		values: { avatarEmoji: string; name: string; currency?: string },
+		values: {
+			avatarEmoji: string;
+			name: string;
+			currency?: string | undefined;
+		},
 	) {
 		const payload: Record<string, string> = {
 			avatar_emoji: values.avatarEmoji,

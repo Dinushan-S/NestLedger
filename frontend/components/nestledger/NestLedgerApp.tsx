@@ -154,7 +154,7 @@ Notifications.setNotificationHandler({
 });
 
 type Props = {
-	initialInviteToken?: string;
+	initialInviteToken?: string | undefined;
 };
 
 type TabKey = "dashboard" | "budget" | "shopping" | "profile";
@@ -528,7 +528,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const scheduleReminder = async (time: string) => {
 		if (!Device.isDevice) return;
 
-		const [hours, minutes] = time.split(":").map(Number);
+		const [hours = 0, minutes = 0] = time.split(":").map(Number);
 
 		await Notifications.cancelAllScheduledNotificationsAsync();
 
@@ -1834,9 +1834,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const primeSettingsForm = () => {
 		setProfileForm({
-			avatarEmoji: userProfile?.avatar_emoji ?? avatarChoices[0],
+			avatarEmoji: userProfile?.avatar_emoji ?? avatarChoices[0]!,
 			currency: userProfile?.currency ?? "USD",
-			familyEmoji: activeProfile?.emoji_avatar ?? avatarChoices[1],
+			familyEmoji: activeProfile?.emoji_avatar ?? avatarChoices[1]!,
 			familyName: activeProfile?.name ?? "",
 			name: userProfile?.name ?? "",
 			spaceType: activeProfile?.space_type ?? "personal",
@@ -3688,7 +3688,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 															owes: 0,
 															repaid: 0,
 														};
-													mMemberBalances[e.paid_by!].contributed += Number(
+													mMemberBalances[e.paid_by!]!.contributed += Number(
 														e.price ?? 0,
 													);
 												});

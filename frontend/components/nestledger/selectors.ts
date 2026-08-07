@@ -213,7 +213,7 @@ export function buildPersonalContributions(
 			contributions[expense.paid_by] = { member, total: 0 };
 		}
 
-		contributions[expense.paid_by].total += Number(expense.price ?? 0);
+		contributions[expense.paid_by]!.total += Number(expense.price ?? 0);
 	});
 
 	return contributions;
@@ -379,6 +379,10 @@ export function buildBorrowBalances(
 	return balances;
 }
 
+function sumPrices(expenses: ExpenseWithItems[]): number {
+	return expenses.reduce((sum, expense) => sum + Number(expense.price ?? 0), 0);
+}
+
 export function buildCurrentPlanMonthStats(
 	currentPlanExpenses: ExpenseWithItems[],
 	memberMap: Map<string, MemberSummary>,
@@ -389,44 +393,30 @@ export function buildCurrentPlanMonthStats(
 	}
 
 	const cycleStart = getCycleStart(selectedPlan.start_date);
-	const planExpenses = currentPlanExpenses.filter(
-		(expense) => expense.plan_id === selectedPlan.id,
+	const monthExpenses = currentPlanExpenses.filter(
+		(expense) =>
+			expense.plan_id === selectedPlan.id &&
+			new Date(expense.date) >= cycleStart,
 	);
-	const monthNonBorrow = planExpenses.filter(
-		(expense) => !expense.is_borrow && new Date(expense.date) >= cycleStart,
+	const monthNonBorrow = monthExpenses.filter((expense) => !expense.is_borrow);
+	const spent = sumPrices(monthNonBorrow.filter((expense) => !expense.paid_by));
+	const contributions = sumPrices(
+		monthNonBorrow.filter((expense) => expense.paid_by),
 	);
-	const spent = monthNonBorrow
-		.filter((expense) => !expense.paid_by)
-		.reduce((sum, expense) => sum + Number(expense.price ?? 0), 0);
-	const contributions = monthNonBorrow
-		.filter((expense) => expense.paid_by)
-		.reduce((sum, expense) => sum + Number(expense.price ?? 0), 0);
-	const borrowed = planExpenses
-		.filter(
-			(expense) =>
-				expense.is_borrow &&
-				expense.price > 0 &&
-				new Date(expense.date) >= cycleStart,
-		)
-		.reduce((sum, expense) => sum + Number(expense.price ?? 0), 0);
-	const repaid = planExpenses
-		.filter(
-			(expense) =>
-				expense.is_borrow &&
-				expense.price < 0 &&
-				new Date(expense.date) >= cycleStart,
-		)
-		.reduce((sum, expense) => sum + Math.abs(Number(expense.price ?? 0)), 0);
+	const borrowed = sumPrices(
+		monthExpenses.filter((expense) => expense.is_borrow && expense.price > 0),
+	);
+	const repaid = -sumPrices(
+		monthExpenses.filter((expense) => expense.is_borrow && expense.price < 0),
+	);
 	const totalSpent = spent + contributions + borrowed - repaid;
 	const allocated = selectedPlan.total_amount + contributions;
 	const memberBalances: Record<string, PlanMemberBalance> = {};
 
-	for (const [userId, balance] of buildBorrowBalances(
-		planExpenses.filter((expense) => new Date(expense.date) >= cycleStart),
-	)) {
+	const ensureBalance = (userId: string): PlanMemberBalance | null => {
 		const member = memberMap.get(userId);
 		if (!member) {
-			continue;
+			return null;
 		}
 
 		if (!memberBalances[userId]) {
@@ -439,31 +429,24 @@ export function buildCurrentPlanMonthStats(
 			};
 		}
 
-		memberBalances[userId].borrowed = balance.borrowed;
-		memberBalances[userId].repaid = balance.repaid;
+		return memberBalances[userId];
+	};
+
+	for (const [userId, balance] of buildBorrowBalances(monthExpenses)) {
+		const entry = ensureBalance(userId);
+		if (!entry) continue;
+		entry.borrowed = balance.borrowed;
+		entry.repaid = balance.repaid;
 	}
 
-	monthNonBorrow
-		.filter((expense) => expense.paid_by)
-		.forEach((expense) => {
-			const member = memberMap.get(expense.paid_by!);
-			if (!member) {
-				return;
-			}
-			if (!memberBalances[expense.paid_by!]) {
-				memberBalances[expense.paid_by!] = {
-					...member,
-					borrowed: 0,
-					contributed: 0,
-					owes: 0,
-					repaid: 0,
-				};
-			}
-
-			memberBalances[expense.paid_by!].contributed += Number(
-				expense.price ?? 0,
-			);
-		});
+	for (const expense of monthNonBorrow.filter(
+		(expense): expense is ExpenseWithItems & { paid_by: string } =>
+			Boolean(expense.paid_by),
+	)) {
+		const entry = ensureBalance(expense.paid_by);
+		if (!entry) continue;
+		entry.contributed += Number(expense.price ?? 0);
+	}
 
 	Object.values(memberBalances).forEach((balance) => {
 		balance.owes = Math.max(balance.borrowed - balance.repaid, 0);

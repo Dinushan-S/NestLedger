@@ -90,12 +90,11 @@ function pickDefaultPlan(plans: BudgetPlan[]): BudgetPlan | null {
 	return [...plans].sort(
 		(a, b) =>
 			new Date(b.start_date).getTime() - new Date(a.start_date).getTime(),
-	)[0];
+	)[0]!;
 }
 
 export default function AnalyseScreen({
 	visible,
-	profile,
 	expenses,
 	plans,
 	members,
@@ -232,12 +231,20 @@ export default function AnalyseScreen({
 		return { start, end, nextAnchor, prevAnchor };
 	}, [cursor, anchorDay]);
 
-	const period: AnalysisPeriod | null = cycle
-		? { start: cycle.start, end: cycle.end }
-		: null;
-	const priorRange = cycle
-		? { start: cycle.prevAnchor, end: new Date(cycle.start.getTime() - 1) }
-		: undefined;
+	const period = useMemo<AnalysisPeriod | null>(
+		() => (cycle ? { start: cycle.start, end: cycle.end } : null),
+		[cycle],
+	);
+	const priorRange = useMemo(
+		() =>
+			cycle
+				? {
+						start: cycle.prevAnchor,
+						end: new Date(cycle.start.getTime() - 1),
+					}
+				: undefined,
+		[cycle],
+	);
 
 	const analysis = useMemo(() => {
 		if (!period) return null;

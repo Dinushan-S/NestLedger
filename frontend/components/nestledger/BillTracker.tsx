@@ -40,16 +40,18 @@ type Props = {
 	userId: string;
 	profileId: string;
 	actionBusy: boolean;
-	currencyCode?: string;
-	viewMonth?: number;
-	viewYear?: number;
-	stats?: {
-		paid: number;
-		paidCount: number;
-		pending: number;
-		pendingCount: number;
-		totalCount: number;
-	};
+	currencyCode?: string | undefined;
+	viewMonth?: number | undefined;
+	viewYear?: number | undefined;
+	stats?:
+		| {
+				paid: number;
+				paidCount: number;
+				pending: number;
+				pendingCount: number;
+				totalCount: number;
+		  }
+		| undefined;
 	onAddBill: (bill: Omit<RecurringBill, "created_at" | "id">) => void;
 	onMarkPaid: (payment: BillPaymentDraft, paymentName: string | null) => void;
 	onDeleteBill: (billId: string) => void;
@@ -238,7 +240,7 @@ export function BillTracker({
 				: bill.default_units
 					? String(bill.default_units)
 					: "",
-			planId: existing?.plan_id ?? (plans.length > 0 ? plans[0].id : ""),
+			planId: existing?.plan_id ?? (plans.length > 0 ? plans[0]!.id : ""),
 			paidBy: null,
 			name: bill.name,
 		});

@@ -141,9 +141,9 @@ const savingsTracker = (id = 'st1'): SavingsTrackerMeta =>
 describe('buildCurrentMonthStatsMap — budget spent/remaining', () => {
   it('sums a plain family expense and leaves the rest as remaining', () => {
     const stats = buildCurrentMonthStatsMap([plan({ total_amount: 1000 })], [expense({ price: 200 })]);
-    expect(stats.plan1.spent).toBe(200);
-    expect(stats.plan1.allocated).toBe(1000);
-    expect(stats.plan1.remaining).toBe(800);
+    expect(stats.plan1!.spent).toBe(200);
+    expect(stats.plan1!.allocated).toBe(1000);
+    expect(stats.plan1!.remaining).toBe(800);
   });
 
   it('nets borrow against repay (borrow +100, repay -40 → spent 60)', () => {
@@ -154,8 +154,8 @@ describe('buildCurrentMonthStatsMap — budget spent/remaining', () => {
         expense({ is_borrow: true, price: -40 }),
       ],
     );
-    expect(stats.plan1.spent).toBe(60);
-    expect(stats.plan1.remaining).toBe(940);
+    expect(stats.plan1!.spent).toBe(60);
+    expect(stats.plan1!.remaining).toBe(940);
   });
 
   it('adds member contributions to both spend and allocation', () => {
@@ -163,9 +163,9 @@ describe('buildCurrentMonthStatsMap — budget spent/remaining', () => {
       [plan({ total_amount: 1000 })],
       [expense({ paid_by: 'u2', price: 50 })],
     );
-    expect(stats.plan1.spent).toBe(50);
-    expect(stats.plan1.allocated).toBe(1050); // total + contributions
-    expect(stats.plan1.remaining).toBe(1000);
+    expect(stats.plan1!.spent).toBe(50);
+    expect(stats.plan1!.allocated).toBe(1050); // total + contributions
+    expect(stats.plan1!.remaining).toBe(1000);
   });
 
   it('excludes expenses outside the current cycle and from other plans', () => {
@@ -177,13 +177,13 @@ describe('buildCurrentMonthStatsMap — budget spent/remaining', () => {
         expense({ price: 999, plan_id: 'other' }), // other plan → excluded
       ],
     );
-    expect(stats.plan1.spent).toBe(100);
+    expect(stats.plan1!.spent).toBe(100);
   });
 
   it('floors remaining at 0 when overspent (never shows negative budget)', () => {
     const stats = buildCurrentMonthStatsMap([plan({ total_amount: 100 })], [expense({ price: 250 })]);
-    expect(stats.plan1.spent).toBe(250);
-    expect(stats.plan1.remaining).toBe(0);
+    expect(stats.plan1!.spent).toBe(250);
+    expect(stats.plan1!.remaining).toBe(0);
   });
 
   it('keeps decimal amounts correct to cent precision', () => {
@@ -191,8 +191,8 @@ describe('buildCurrentMonthStatsMap — budget spent/remaining', () => {
       [plan({ total_amount: 100 })],
       [expense({ price: 10.1 }), expense({ price: 20.2 }), expense({ price: 5.05 })],
     );
-    expect(stats.plan1.spent).toBeCloseTo(35.35, 2);
-    expect(stats.plan1.remaining).toBeCloseTo(64.65, 2);
+    expect(stats.plan1!.spent).toBeCloseTo(35.35, 2);
+    expect(stats.plan1!.remaining).toBeCloseTo(64.65, 2);
   });
 });
 
@@ -219,11 +219,11 @@ describe('buildCurrentPlanMonthStats — per-member balances & owes', () => {
       plan(),
     );
     const u2 = summary.memberBalances.u2;
-    expect(u2.borrowed).toBe(100);
-    expect(u2.repaid).toBe(30);
-    expect(u2.contributed).toBe(20);
+    expect(u2!.borrowed).toBe(100);
+    expect(u2!.repaid).toBe(30);
+    expect(u2!.contributed).toBe(20);
     // owes = borrowed - repaid = 100 - 30 = 70 (contributions do NOT offset a borrow)
-    expect(u2.owes).toBe(70);
+    expect(u2!.owes).toBe(70);
   });
 
   it('does not let contributions reduce what a member owes on a borrow', () => {
@@ -236,7 +236,7 @@ describe('buildCurrentPlanMonthStats — per-member balances & owes', () => {
       plan(),
     );
     // Borrow is only paid off via an explicit repay, never by contributions.
-    expect(summary.memberBalances.u2.owes).toBe(100);
+    expect(summary.memberBalances.u2!.owes).toBe(100);
   });
 
   it('floors owes at 0 when repayments exceed borrowing', () => {
@@ -248,7 +248,7 @@ describe('buildCurrentPlanMonthStats — per-member balances & owes', () => {
       memberMap,
       plan(),
     );
-    expect(summary.memberBalances.u3.owes).toBe(0);
+    expect(summary.memberBalances.u3!.owes).toBe(0);
   });
 
   it('computes totalSpent as spent + contributions + borrowed - repaid', () => {
@@ -277,11 +277,11 @@ describe('buildCurrentMonthBillStatsMap — bill paid vs pending', () => {
         recurringBill({ id: 'b2', default_amount: 80 }), // still pending
       ],
     );
-    expect(stats.t1.paid).toBe(120);
-    expect(stats.t1.paidCount).toBe(1);
-    expect(stats.t1.pending).toBe(80);
-    expect(stats.t1.pendingCount).toBe(1);
-    expect(stats.t1.totalCount).toBe(2);
+    expect(stats.t1!.paid).toBe(120);
+    expect(stats.t1!.paidCount).toBe(1);
+    expect(stats.t1!.pending).toBe(80);
+    expect(stats.t1!.pendingCount).toBe(1);
+    expect(stats.t1!.totalCount).toBe(2);
   });
 
   it('ignores payments from other months (bill stays pending)', () => {
@@ -290,10 +290,10 @@ describe('buildCurrentMonthBillStatsMap — bill paid vs pending', () => {
       [billTracker('t1')],
       [recurringBill({ id: 'b1', default_amount: 120 })],
     );
-    expect(stats.t1.paid).toBe(0);
-    expect(stats.t1.paidCount).toBe(0);
-    expect(stats.t1.pending).toBe(120);
-    expect(stats.t1.pendingCount).toBe(1);
+    expect(stats.t1!.paid).toBe(0);
+    expect(stats.t1!.paidCount).toBe(0);
+    expect(stats.t1!.pending).toBe(120);
+    expect(stats.t1!.pendingCount).toBe(1);
   });
 });
 
@@ -307,9 +307,9 @@ describe('buildCurrentMonthSavingsStatsMap — deposits/withdrawals/balance', ()
       ],
       [savingsTracker('st1')],
     );
-    expect(stats.st1.balance).toBe(620); // 500 + 200 - 80, all-time
-    expect(stats.st1.deposits).toBe(200); // this month only
-    expect(stats.st1.withdrawals).toBe(80); // abs, this month only
-    expect(stats.st1.net).toBe(120); // 200 - 80
+    expect(stats.st1!.balance).toBe(620); // 500 + 200 - 80, all-time
+    expect(stats.st1!.deposits).toBe(200); // this month only
+    expect(stats.st1!.withdrawals).toBe(80); // abs, this month only
+    expect(stats.st1!.net).toBe(120); // 200 - 80
   });
 });
