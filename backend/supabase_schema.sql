@@ -423,6 +423,55 @@ begin
   end if;
 end $$;
 
+-- Scheduled expense templates. Each occurrence is confirmed in the app and
+-- becomes a normal row in expenses; templates never create charges themselves.
+create table if not exists public.recurring_expenses (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  name text not null,
+  category text not null,
+  description text,
+  items jsonb not null default '[]'::jsonb,
+  frequency text not null check (frequency in ('daily', 'weekly', 'monthly', 'yearly')),
+  next_due_date date not null,
+  reminder_time time not null default '09:00',
+  is_active boolean not null default true,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_recurring_expenses_profile_due
+  on public.recurring_expenses(profile_id, is_active, next_due_date);
+
+alter table public.recurring_expenses enable row level security;
+
+drop policy if exists "recurring expenses member select" on public.recurring_expenses;
+create policy "recurring expenses member select" on public.recurring_expenses
+for select using (public.is_profile_member(profile_id));
+
+drop policy if exists "recurring expenses member insert" on public.recurring_expenses;
+create policy "recurring expenses member insert" on public.recurring_expenses
+for insert with check (
+  created_by = auth.uid() and public.is_profile_member(profile_id)
+);
+
+drop policy if exists "recurring expenses member update" on public.recurring_expenses;
+create policy "recurring expenses member update" on public.recurring_expenses
+for update using (public.is_profile_member(profile_id));
+
+drop policy if exists "recurring expenses member delete" on public.recurring_expenses;
+create policy "recurring expenses member delete" on public.recurring_expenses
+for delete using (public.is_profile_member(profile_id));
+
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.recurring_expenses;
+  exception when duplicate_object then null;
+  end;
+end $$;
+
 -- Migration: Add used_by index (if missing from migration above)
 do $$
 begin

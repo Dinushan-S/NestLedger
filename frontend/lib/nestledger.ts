@@ -117,6 +117,27 @@ export type RecurringBill = {
 	created_at: string;
 };
 
+export type RecurringExpenseItem = {
+	name: string;
+	price: number;
+};
+
+export type RecurringExpense = {
+	category: string;
+	created_at: string;
+	created_by: string;
+	description: string | null;
+	frequency: "daily" | "weekly" | "monthly" | "yearly";
+	id: string;
+	is_active: boolean;
+	items: RecurringExpenseItem[];
+	name: string;
+	next_due_date: string;
+	profile_id: string;
+	reminder_time: string;
+	updated_at: string;
+};
+
 export type BillPayment = {
 	id: string;
 	profile_id: string;
@@ -920,6 +941,41 @@ export const billApi = {
 		return data as BillPayment;
 	},
 	deletePayment: paymentCrud.remove,
+};
+
+export const recurringExpenseApi = {
+	async fetch(profileId: string) {
+		const { data, error } = await supabase
+			.from("recurring_expenses")
+			.select("*")
+			.eq("profile_id", profileId)
+			.order("next_due_date", { ascending: true });
+		if (error) throw error;
+		return (data ?? []) as RecurringExpense[];
+	},
+	async create(input: Omit<RecurringExpense, "created_at" | "id" | "updated_at">) {
+		const { data, error } = await supabase
+			.from("recurring_expenses")
+			.insert({ ...input, created_at: nowIso(), updated_at: nowIso() })
+			.select("*")
+			.single();
+		if (error) throw error;
+		return data as RecurringExpense;
+	},
+	async update(id: string, updates: Partial<Omit<RecurringExpense, "created_at" | "id" | "profile_id" | "created_by">>) {
+		const { data, error } = await supabase
+			.from("recurring_expenses")
+			.update({ ...updates, updated_at: nowIso() })
+			.eq("id", id)
+			.select("*")
+			.single();
+		if (error) throw error;
+		return data as RecurringExpense;
+	},
+	async remove(id: string) {
+		const { error } = await supabase.from("recurring_expenses").delete().eq("id", id);
+		if (error) throw error;
+	},
 };
 
 export const savingsApi = {

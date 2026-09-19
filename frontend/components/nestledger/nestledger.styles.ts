@@ -410,6 +410,45 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  suggestionHint: {
+    color: theme.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  suggestionList: {
+    gap: 8,
+    marginTop: 10,
+  },
+  suggestionButton: {
+    alignItems: 'center',
+    backgroundColor: theme.surfaceMuted,
+    borderColor: theme.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  suggestionContent: {
+    flex: 1,
+    gap: 2,
+  },
+  suggestionTitle: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  suggestionMeta: {
+    color: theme.textMuted,
+    fontSize: 12,
+  },
+  suggestionAmount: {
+    color: theme.primary,
+    fontSize: 14,
+    fontWeight: '800',
+  },
   expenseCardRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
