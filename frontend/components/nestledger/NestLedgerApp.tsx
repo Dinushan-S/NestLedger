@@ -12,11 +12,13 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
 import { useTheme as useAppTheme } from "../../lib/theme-context";
 import {
 	ActivityIndicator,
+	AppState,
 	Alert,
 	KeyboardAvoidingView,
 	Modal,
@@ -108,6 +110,7 @@ import {
 	filterShoppingItems,
 } from "./selectors";
 import { deriveExpenseSuggestions } from "./expenseSuggestions";
+import { cancelExpenseReminders, localDate, nextRecurringDueDate, requireNotificationPermission, restoreDailyReminder, syncRecurringReminders, updateDailyReminder } from "./reminders";
 
 import { BillTracker as BillTrackerComponent } from "./BillTracker";
 import { SavingsTracker as SavingsTrackerComponent } from "./SavingsTracker";
@@ -162,28 +165,6 @@ type Props = {
 };
 
 type TabKey = "dashboard" | "budget" | "shopping" | "profile";
-
-const nextRecurringDueDate = (
-	dueDate: string,
-	frequency: RecurringExpense["frequency"],
-) => {
-	const date = new Date(`${dueDate}T12:00:00`);
-	if (frequency === "daily") date.setDate(date.getDate() + 1);
-	if (frequency === "weekly") date.setDate(date.getDate() + 7);
-	if (frequency === "monthly" || frequency === "yearly") {
-		const day = date.getDate();
-		date.setDate(1);
-		if (frequency === "monthly") date.setMonth(date.getMonth() + 1);
-		if (frequency === "yearly") date.setFullYear(date.getFullYear() + 1);
-		const lastDay = new Date(
-			date.getFullYear(),
-			date.getMonth() + 1,
-			0,
-		).getDate();
-		date.setDate(Math.min(day, lastDay));
-	}
-	return date.toISOString().slice(0, 10);
-};
 
 export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const router = useRouter();
@@ -291,6 +272,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const [reminderEnabled, setReminderEnabled] = useState(false);
 	const [reminderTime, setReminderTime] = useState("20:00"); // Default 8 PM
+	const [reminderBusy, setReminderBusy] = useState(false);
+	const [pendingDailyReminder, setPendingDailyReminder] = useState(false);
 
 	const [confirmModal, setConfirmModal] = useState<{
 		body: string;
@@ -369,6 +352,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	);
 
 	const resetSessionState = useCallback(() => {
+		void cancelExpenseReminders().catch(() => undefined);
 		setProfiles([]);
 		setActiveProfileId(null);
 		setUserProfile(null);
@@ -382,6 +366,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setSavingsTrackers([]);
 		setRecurringBills([]);
 		setRecurringExpenses([]);
+		setSelectedPlanId(null);
+		setPendingDailyReminder(false);
+		setPendingRecurringExpenseId(null);
 		setBillPayments([]);
 		setSavings([]);
 	}, []);
@@ -540,82 +527,46 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		};
 	}, [onboardingStorageKey, sessionUserId]);
 
-	// Load reminder settings
+	// Repair saved reminders at login and when returning from phone settings.
 	useEffect(() => {
-		const loadReminderSettings = async () => {
+		if (!sessionUserId || Platform.OS === "web") return;
+		let active = true;
+		const restore = async () => {
 			try {
-				const savedEnabled = await AsyncStorage.getItem(
-					"nestledger-reminder-enabled",
-				);
-				const savedTime = await AsyncStorage.getItem(
-					"nestledger-reminder-time",
-				);
-				if (savedEnabled !== null) {
-					setReminderEnabled(savedEnabled === "true");
-				}
-				if (savedTime !== null) {
-					setReminderTime(savedTime);
-				}
+				if (!active) return;
+				const { enabled, time } = await restoreDailyReminder();
+				if (active) { setReminderEnabled(enabled); setReminderTime(time); }
 			} catch (error) {
-				console.warn("Failed to load reminder settings:", error);
+				if (active) { setReminderEnabled(false); Alert.alert("Reminder needs attention", extractError(error)); }
 			}
 		};
-		loadReminderSettings();
-	}, []);
-
-	const scheduleReminder = async (time: string) => {
-		if (!Device.isDevice) return;
-
-		const [hours = 0, minutes = 0] = time.split(":").map(Number);
-		const storageKey = "nestledger-daily-reminder-notification";
-		const previousId = await AsyncStorage.getItem(storageKey);
-		if (previousId) {
-			await Notifications.cancelScheduledNotificationAsync(previousId).catch(
-				() => undefined,
-			);
-		}
-
-		if (reminderEnabled) {
-			const notificationId = await Notifications.scheduleNotificationAsync({
-				content: {
-					title: "NestLedger Reminder",
-					body: "Don't forget to add your expenses for today!",
-				},
-				trigger: {
-					type: Notifications.SchedulableTriggerInputTypes.DAILY,
-					hour: hours,
-					minute: minutes,
-				},
-			});
-			await AsyncStorage.setItem(storageKey, notificationId);
-		}
-	};
+		void restore();
+		const subscription = AppState.addEventListener("change", (state) => {
+			if (state === "active") void restore();
+		});
+		return () => { active = false; subscription.remove(); };
+	}, [sessionUserId]);
 
 	const toggleReminder = async (enabled: boolean) => {
-		setReminderEnabled(enabled);
-		await AsyncStorage.setItem("nestledger-reminder-enabled", String(enabled));
-
-		if (enabled) {
-			await scheduleReminder(reminderTime);
-		} else {
-			const storageKey = "nestledger-daily-reminder-notification";
-			const notificationId = await AsyncStorage.getItem(storageKey);
-			if (notificationId) {
-				await Notifications.cancelScheduledNotificationAsync(notificationId).catch(
-					() => undefined,
-				);
-			}
-			await AsyncStorage.removeItem(storageKey);
-		}
+		if (reminderBusy) return;
+		setReminderBusy(true);
+		try {
+			await updateDailyReminder(enabled, reminderTime);
+			setReminderEnabled(enabled);
+		} catch (error) {
+			announce(extractError(error));
+		} finally { setReminderBusy(false); }
 	};
 
-	const updateReminderTime = async (time: string) => {
-		setReminderTime(time);
-		await AsyncStorage.setItem("nestledger-reminder-time", time);
-
-		if (reminderEnabled) {
-			await scheduleReminder(time);
-		}
+	const updateReminderTime = async () => {
+		if (reminderBusy) return;
+		setReminderBusy(true);
+		try {
+			await updateDailyReminder(reminderEnabled, reminderTime);
+		} catch (error) {
+			setReminderTime(await AsyncStorage.getItem("nestledger-reminder-time") || "20:00");
+			announce(extractError(error));
+		} finally { setReminderBusy(false); }
 	};
 
 	useEffect(() => {
@@ -765,19 +716,32 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	// Route notification taps (foreground, background, and cold start) to the relevant screen.
 	const lastNotificationResponse = Notifications.useLastNotificationResponse();
+	const handledNotification = useRef<string | null>(null);
 	useEffect(() => {
+		if (!sessionUserId || !profileLoaded || !lastNotificationResponse) return;
+		const responseKey = `${lastNotificationResponse.notification.request.identifier}:${lastNotificationResponse.notification.date}`;
+		if (handledNotification.current === responseKey) return;
 		const data = lastNotificationResponse?.notification.request.content.data as
 			| { type?: string; profile_id?: string; recurring_expense_id?: string }
 			| undefined;
 		if (!data) {
 			return;
 		}
+		if (data.profile_id && !profiles.some((profile) => profile.id === data.profile_id)) return;
+		handledNotification.current = responseKey;
+		void Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
 
 		if (data.profile_id && data.profile_id !== activeProfileId) {
+			setSelectedPlanId(null);
 			setActiveProfileId(data.profile_id);
 		}
 
 		switch (data.type) {
+			case "daily_expense_reminder":
+				setActiveTab("dashboard");
+				setPendingDailyReminder(true);
+				if (!selectedPlan) Alert.alert("Add an expense", "Choose a budget plan to continue adding your expense.");
+				break;
 			case notificationTypes.shoppingAdded:
 			case notificationTypes.shoppingBought:
 				setActiveTab("shopping");
@@ -788,6 +752,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			case "recurring_expense_due":
 				setActiveTab("dashboard");
 				setPendingRecurringExpenseId(data.recurring_expense_id ?? null);
+				if (!selectedPlan || selectedPlan.profile_id !== data.profile_id) Alert.alert("Review scheduled expense", "Choose a budget plan to review and save this expense.");
 				break;
 			case notificationTypes.join:
 				setActiveTab("dashboard");
@@ -797,7 +762,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				setShowNotifications(true);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [lastNotificationResponse]);
+	}, [lastNotificationResponse, sessionUserId, profileLoaded, profiles]);
+
+	useEffect(() => {
+		if (!pendingDailyReminder || !sessionUserId || !selectedPlan || selectedPlan.profile_id !== activeProfileId) return;
+		setPendingDailyReminder(false);
+		setEditingExpenseId(null);
+		setConfirmingRecurringExpense(null);
+		setExpenseForm({ ...defaultExpenseForm(), date: localDate(new Date()) });
+		setShowExpenseComposer(true);
+	}, [pendingDailyReminder, selectedPlan, sessionUserId, activeProfileId]);
 
 	const announce = useCallback((message: string) => {
 		if (Platform.OS === "web") {
@@ -1405,9 +1379,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							item.id === updated.id ? updated : item,
 						),
 					);
-					void scheduleRecurringExpenseReminder(updated);
+					await syncRecurringReminders(updated.profile_id, recurringExpenses.map((item) => item.id === updated.id ? updated : item));
 				} catch {
-					announce("Expense saved, but its next scheduled date could not be updated.");
+					announce("Expense saved, but its next date or reminder could not be updated. Open scheduled expenses to review it.");
 				} finally {
 					setConfirmingRecurringExpense(null);
 				}
@@ -1630,7 +1604,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		});
 	};
 
-	const useExpenseSuggestion = (expense: ExpenseWithItems) => {
+	const applyExpenseSuggestion = (expense: ExpenseWithItems) => {
 		setConfirmingRecurringExpense(null);
 		setExpenseForm({
 			category:
@@ -1665,7 +1639,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			customCategory: expenseCategories.find((c) => c.key === expense.category)
 				? ""
 				: expense.category,
-			date: new Date().toISOString().slice(0, 10),
+			date: localDate(new Date()),
 			description: expense.description ?? "",
 			items: expense.items.map((item) => ({
 				name: item.name,
@@ -1679,59 +1653,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setShowExpenseComposer(true);
 	};
 
-	const recurringNotificationKey = (expenseId: string) =>
-		`nestledger-recurring-expense-notification-${expenseId}`;
-
-	const scheduleRecurringExpenseReminder = async (expense: RecurringExpense) => {
-		if (!Device.isDevice || !expense.is_active) return;
-		const triggerAt = new Date(
-			`${expense.next_due_date}T${expense.reminder_time || "09:00"}:00`,
-		);
-		if (!Number.isFinite(triggerAt.getTime()) || triggerAt <= new Date()) return;
-
-		const storageKey = recurringNotificationKey(expense.id);
-		const previousId = await AsyncStorage.getItem(storageKey);
-		if (previousId) {
-			await Notifications.cancelScheduledNotificationAsync(previousId).catch(
-				() => undefined,
-			);
-		}
-		const notificationId = await Notifications.scheduleNotificationAsync({
-			content: {
-				body: `Review ${expense.name} and save it when you are ready.`,
-				data: {
-					profile_id: expense.profile_id,
-					recurring_expense_id: expense.id,
-					type: "recurring_expense_due",
-				},
-				title: "Scheduled expense due",
-			},
-			trigger: {
-				date: triggerAt,
-				type: Notifications.SchedulableTriggerInputTypes.DATE,
-			},
-		});
-		await AsyncStorage.setItem(storageKey, notificationId);
-	};
-
-	const cancelRecurringExpenseReminder = async (expenseId: string) => {
-		const storageKey = recurringNotificationKey(expenseId);
-		const notificationId = await AsyncStorage.getItem(storageKey);
-		if (notificationId) {
-			await Notifications.cancelScheduledNotificationAsync(notificationId).catch(
-				() => undefined,
-			);
-		}
-		await AsyncStorage.removeItem(storageKey);
-	};
 
 	const handleCreateRecurringExpense = (
 		input: Omit<RecurringExpense, "created_at" | "id" | "updated_at">,
 	) => {
 		runAction(async () => {
+			if (Platform.OS !== "web") await requireNotificationPermission();
 			const created = await recurringExpenseApi.create(input);
 			setRecurringExpenses((current) => [...current, created]);
-			await scheduleRecurringExpenseReminder(created);
+			await syncRecurringReminders(input.profile_id, [...recurringExpenses, created]);
+			await refreshProfileData(input.profile_id, true);
 		});
 	};
 
@@ -1743,10 +1674,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			onConfirm: () => {
 				runAction(async () => {
 					await recurringExpenseApi.remove(expense.id);
-					await cancelRecurringExpenseReminder(expense.id);
 					setRecurringExpenses((current) =>
 						current.filter((item) => item.id !== expense.id),
 					);
+					await syncRecurringReminders(expense.profile_id, recurringExpenses.filter((item) => item.id !== expense.id));
 				});
 			},
 			title: "Remove schedule",
@@ -1759,9 +1690,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			(item) => item.id === pendingRecurringExpenseId,
 		);
 		if (!expense) return;
+		if (!selectedPlan || selectedPlan.profile_id !== expense.profile_id) return;
 		setPendingRecurringExpenseId(null);
 		openRecurringExpense(expense);
-	}, [pendingRecurringExpenseId, recurringExpenses]);
+	// The draft opens once both the target profile and a budget plan are ready.
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [pendingRecurringExpenseId, recurringExpenses, selectedPlan]);
 
 	const handleDeleteExpense = async (
 		expenseId: string,
@@ -3309,6 +3243,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 													</View>
 													<Pressable
 														hitSlop={10}
+														disabled={reminderBusy}
 														onPress={() => toggleReminder(!reminderEnabled)}
 														style={[
 															styles.toggleButton,
@@ -3328,10 +3263,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 													<View style={styles.timePickerRow}>
 														<Text style={styles.inputLabel}>Reminder time</Text>
 														<TextInput
-															keyboardType="numeric"
-															onChangeText={(value) =>
-																updateReminderTime(value)
-															}
+															keyboardType="numbers-and-punctuation"
+															editable={!reminderBusy}
+															onChangeText={setReminderTime}
+															onEndEditing={() => void updateReminderTime()}
 															placeholder="20:00"
 															style={styles.timeInput}
 															value={reminderTime}
@@ -4855,7 +4790,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										return (
 											<Pressable
 												key={expense.id}
-												onPress={() => useExpenseSuggestion(expense)}
+												onPress={() => applyExpenseSuggestion(expense)}
 												style={styles.suggestionButton}
 												testID={`expense-suggestion-${expense.id}`}
 											>

@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
+import { syncRecurringReminders } from '../reminders';
 
 import {
   BillPayment,
@@ -59,6 +60,10 @@ export function useProfileDataController({
 }: UseProfileDataControllerOptions) {
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const lastRefreshRef = useRef(0);
+  const currentUser = useRef(sessionUserId);
+  currentUser.current = sessionUserId;
+  const latestRequest = useRef(0);
+  const reminderError = useRef<string | null>(null);
 
   const refreshProfileData = useCallback(
     async (profileId: string, force?: boolean) => {
@@ -71,6 +76,7 @@ export function useProfileDataController({
         return;
       }
       lastRefreshRef.current = now;
+      const request = ++latestRequest.current;
 
       try {
         const [
@@ -99,6 +105,8 @@ export function useProfileDataController({
           savingsApi.fetchSavings(profileId),
         ]);
 
+        if (currentUser.current !== sessionUserId || request !== latestRequest.current) return;
+
         setMembers(nextMembers);
         setPlans(nextPlans);
         setProfileExpenses(nextExpenses);
@@ -108,6 +116,14 @@ export function useProfileDataController({
         setSavingsTrackers(nextSavingsTrackers);
         setRecurringBills(nextBills);
 		setRecurringExpenses(nextRecurringExpenses);
+        // Reconcile from a successful server snapshot, including changes made on other devices.
+        void syncRecurringReminders(profileId, nextRecurringExpenses)
+          .then(() => { reminderError.current = null; })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : 'Could not restore scheduled reminders.';
+            if (reminderError.current !== message) onError(message);
+            reminderError.current = message;
+          });
         setBillPayments(nextPayments);
         setSavings(nextSavings);
         nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
