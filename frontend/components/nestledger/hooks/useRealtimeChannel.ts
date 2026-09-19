@@ -21,6 +21,7 @@ const PROFILE_TABLES: { filter?: boolean; table: string }[] = [
 	{ table: "expense_items" },
 	{ filter: true, table: "buy_list_items" },
 	{ filter: true, table: "recurring_bills" },
+	{ filter: true, table: "recurring_expenses" },
 	{ filter: true, table: "bill_payments" },
 	{ filter: true, table: "savings" },
 	{ filter: true, table: "profile_members" },

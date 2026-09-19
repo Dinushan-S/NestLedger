@@ -58,6 +58,7 @@ import {
 	HouseholdProfile,
 	Member,
 	RecurringBill,
+	RecurringExpense,
 	SavingsEntry,
 	SavingsTrackerMeta,
 	ShoppingItem,
@@ -71,6 +72,7 @@ import {
 	notificationApi,
 	profileApi,
 	pushApi,
+	recurringExpenseApi,
 	savingsApi,
 	shoppingApi,
 	validateSession,
@@ -105,10 +107,12 @@ import {
 	filterMonthExpenses,
 	filterShoppingItems,
 } from "./selectors";
+import { deriveExpenseSuggestions } from "./expenseSuggestions";
 
 import { BillTracker as BillTrackerComponent } from "./BillTracker";
 import { SavingsTracker as SavingsTrackerComponent } from "./SavingsTracker";
 import AnalyseScreen from "./AnalyseScreen";
+import { RecurringExpensesSheet } from "./RecurringExpensesSheet";
 import {
 	BorrowForm,
 	BudgetForm,
@@ -159,6 +163,28 @@ type Props = {
 
 type TabKey = "dashboard" | "budget" | "shopping" | "profile";
 
+const nextRecurringDueDate = (
+	dueDate: string,
+	frequency: RecurringExpense["frequency"],
+) => {
+	const date = new Date(`${dueDate}T12:00:00`);
+	if (frequency === "daily") date.setDate(date.getDate() + 1);
+	if (frequency === "weekly") date.setDate(date.getDate() + 7);
+	if (frequency === "monthly" || frequency === "yearly") {
+		const day = date.getDate();
+		date.setDate(1);
+		if (frequency === "monthly") date.setMonth(date.getMonth() + 1);
+		if (frequency === "yearly") date.setFullYear(date.getFullYear() + 1);
+		const lastDay = new Date(
+			date.getFullYear(),
+			date.getMonth() + 1,
+			0,
+		).getDate();
+		date.setDate(Math.min(day, lastDay));
+	}
+	return date.toISOString().slice(0, 10);
+};
+
 export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
@@ -200,6 +226,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[],
 	);
 	const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
+	const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
 	const [billPayments, setBillPayments] = useState<BillPayment[]>([]);
 	const [savings, setSavings] = useState<SavingsEntry[]>([]);
 
@@ -207,6 +234,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [showCreateProfile, setShowCreateProfile] = useState(false);
 	const [showBudgetComposer, setShowBudgetComposer] = useState(false);
 	const [showExpenseComposer, setShowExpenseComposer] = useState(false);
+	const [showRecurringExpenses, setShowRecurringExpenses] = useState(false);
 	const [showExpenseFilters, setShowExpenseFilters] = useState(false);
 	const [showBorrowComposer, setShowBorrowComposer] = useState(false);
 	const [showRepayComposer, setShowRepayComposer] = useState(false);
@@ -294,6 +322,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		new Set(),
 	);
 	const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+	const [confirmingRecurringExpense, setConfirmingRecurringExpense] =
+		useState<RecurringExpense | null>(null);
+	const [pendingRecurringExpenseId, setPendingRecurringExpenseId] =
+		useState<string | null>(null);
 	const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
 	const [budgetEditMode, setBudgetEditMode] = useState(false);
 	const [editingBillTrackerId, setEditingBillTrackerId] = useState<
@@ -349,6 +381,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setBillTrackers([]);
 		setSavingsTrackers([]);
 		setRecurringBills([]);
+		setRecurringExpenses([]);
 		setBillPayments([]);
 		setSavings([]);
 	}, []);
@@ -379,6 +412,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setPlans,
 		setProfileExpenses,
 		setRecurringBills,
+		setRecurringExpenses,
 		setSavings,
 		setSavingsTrackers,
 		setSelectedPlanId,
@@ -464,6 +498,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			}),
 		[expenseCategoryFilter, expenseView, profileExpenses, selectedPlan],
 	);
+	const expenseSuggestions = useMemo(
+		() => deriveExpenseSuggestions(profileExpenses),
+		[profileExpenses],
+	);
 
 	const unreadCount = notifications.filter((item) => !item.is_read).length;
 	const shoppingBadgeCount = notifications.filter(
@@ -529,11 +567,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!Device.isDevice) return;
 
 		const [hours = 0, minutes = 0] = time.split(":").map(Number);
-
-		await Notifications.cancelAllScheduledNotificationsAsync();
+		const storageKey = "nestledger-daily-reminder-notification";
+		const previousId = await AsyncStorage.getItem(storageKey);
+		if (previousId) {
+			await Notifications.cancelScheduledNotificationAsync(previousId).catch(
+				() => undefined,
+			);
+		}
 
 		if (reminderEnabled) {
-			await Notifications.scheduleNotificationAsync({
+			const notificationId = await Notifications.scheduleNotificationAsync({
 				content: {
 					title: "NestLedger Reminder",
 					body: "Don't forget to add your expenses for today!",
@@ -544,6 +587,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					minute: minutes,
 				},
 			});
+			await AsyncStorage.setItem(storageKey, notificationId);
 		}
 	};
 
@@ -554,7 +598,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (enabled) {
 			await scheduleReminder(reminderTime);
 		} else {
-			await Notifications.cancelAllScheduledNotificationsAsync();
+			const storageKey = "nestledger-daily-reminder-notification";
+			const notificationId = await AsyncStorage.getItem(storageKey);
+			if (notificationId) {
+				await Notifications.cancelScheduledNotificationAsync(notificationId).catch(
+					() => undefined,
+				);
+			}
+			await AsyncStorage.removeItem(storageKey);
 		}
 	};
 
@@ -716,7 +767,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const lastNotificationResponse = Notifications.useLastNotificationResponse();
 	useEffect(() => {
 		const data = lastNotificationResponse?.notification.request.content.data as
-			| { type?: string; profile_id?: string }
+			| { type?: string; profile_id?: string; recurring_expense_id?: string }
 			| undefined;
 		if (!data) {
 			return;
@@ -733,6 +784,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				break;
 			case notificationTypes.expense:
 				setActiveTab("dashboard");
+				break;
+			case "recurring_expense_due":
+				setActiveTab("dashboard");
+				setPendingRecurringExpenseId(data.recurring_expense_id ?? null);
 				break;
 			case notificationTypes.join:
 				setActiveTab("dashboard");
@@ -1335,6 +1390,28 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 		try {
 			await expenseApi.addExpense(expenseInput);
+			if (confirmingRecurringExpense) {
+				try {
+					const next_due_date = nextRecurringDueDate(
+						confirmingRecurringExpense.next_due_date,
+						confirmingRecurringExpense.frequency,
+					);
+					const updated = await recurringExpenseApi.update(
+						confirmingRecurringExpense.id,
+						{ next_due_date },
+					);
+					setRecurringExpenses((current) =>
+						current.map((item) =>
+							item.id === updated.id ? updated : item,
+						),
+					);
+					void scheduleRecurringExpenseReminder(updated);
+				} catch {
+					announce("Expense saved, but its next scheduled date could not be updated.");
+				} finally {
+					setConfirmingRecurringExpense(null);
+				}
+			}
 			await notifyOtherMembers(
 				`${userProfile?.name ?? "A member"} added ${itemNames} to ${selectedPlan.name}.`,
 				notificationTypes.expense,
@@ -1552,6 +1629,139 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			setShowExpenseComposer(true);
 		});
 	};
+
+	const useExpenseSuggestion = (expense: ExpenseWithItems) => {
+		setConfirmingRecurringExpense(null);
+		setExpenseForm({
+			category:
+				expenseCategories.find((c) => c.key === expense.category)?.key ??
+				"Other",
+			customCategory: expenseCategories.find((c) => c.key === expense.category)
+				? ""
+				: expense.category,
+			date: new Date().toISOString().slice(0, 10),
+			description: expense.description || "",
+			items: expense.items.map((item) => ({
+				name: item.name,
+				price: String(item.price),
+			})),
+			is_borrow: false,
+			paidBy: expense.paid_by,
+			usedBy: expense.used_by,
+		});
+	};
+
+	const openRecurringExpense = (expense: RecurringExpense) => {
+		if (!selectedPlan) {
+			announce("Choose a budget plan before confirming a scheduled expense.");
+			return;
+		}
+		setConfirmingRecurringExpense(expense);
+		setEditingExpenseId(null);
+		setExpenseForm({
+			category:
+				expenseCategories.find((c) => c.key === expense.category)?.key ??
+				"Other",
+			customCategory: expenseCategories.find((c) => c.key === expense.category)
+				? ""
+				: expense.category,
+			date: new Date().toISOString().slice(0, 10),
+			description: expense.description ?? "",
+			items: expense.items.map((item) => ({
+				name: item.name,
+				price: String(item.price),
+			})),
+			is_borrow: false,
+			paidBy: null,
+			usedBy: null,
+		});
+		setShowRecurringExpenses(false);
+		setShowExpenseComposer(true);
+	};
+
+	const recurringNotificationKey = (expenseId: string) =>
+		`nestledger-recurring-expense-notification-${expenseId}`;
+
+	const scheduleRecurringExpenseReminder = async (expense: RecurringExpense) => {
+		if (!Device.isDevice || !expense.is_active) return;
+		const triggerAt = new Date(
+			`${expense.next_due_date}T${expense.reminder_time || "09:00"}:00`,
+		);
+		if (!Number.isFinite(triggerAt.getTime()) || triggerAt <= new Date()) return;
+
+		const storageKey = recurringNotificationKey(expense.id);
+		const previousId = await AsyncStorage.getItem(storageKey);
+		if (previousId) {
+			await Notifications.cancelScheduledNotificationAsync(previousId).catch(
+				() => undefined,
+			);
+		}
+		const notificationId = await Notifications.scheduleNotificationAsync({
+			content: {
+				body: `Review ${expense.name} and save it when you are ready.`,
+				data: {
+					profile_id: expense.profile_id,
+					recurring_expense_id: expense.id,
+					type: "recurring_expense_due",
+				},
+				title: "Scheduled expense due",
+			},
+			trigger: {
+				date: triggerAt,
+				type: Notifications.SchedulableTriggerInputTypes.DATE,
+			},
+		});
+		await AsyncStorage.setItem(storageKey, notificationId);
+	};
+
+	const cancelRecurringExpenseReminder = async (expenseId: string) => {
+		const storageKey = recurringNotificationKey(expenseId);
+		const notificationId = await AsyncStorage.getItem(storageKey);
+		if (notificationId) {
+			await Notifications.cancelScheduledNotificationAsync(notificationId).catch(
+				() => undefined,
+			);
+		}
+		await AsyncStorage.removeItem(storageKey);
+	};
+
+	const handleCreateRecurringExpense = (
+		input: Omit<RecurringExpense, "created_at" | "id" | "updated_at">,
+	) => {
+		runAction(async () => {
+			const created = await recurringExpenseApi.create(input);
+			setRecurringExpenses((current) => [...current, created]);
+			await scheduleRecurringExpenseReminder(created);
+		});
+	};
+
+	const handleDeleteRecurringExpense = (expense: RecurringExpense) => {
+		showConfirm({
+			body: `Remove the ${expense.name} schedule?`,
+			confirmText: "Remove",
+			destructive: true,
+			onConfirm: () => {
+				runAction(async () => {
+					await recurringExpenseApi.remove(expense.id);
+					await cancelRecurringExpenseReminder(expense.id);
+					setRecurringExpenses((current) =>
+						current.filter((item) => item.id !== expense.id),
+					);
+				});
+			},
+			title: "Remove schedule",
+		});
+	};
+
+	useEffect(() => {
+		if (!pendingRecurringExpenseId) return;
+		const expense = recurringExpenses.find(
+			(item) => item.id === pendingRecurringExpenseId,
+		);
+		if (!expense) return;
+		setPendingRecurringExpenseId(null);
+		openRecurringExpense(expense);
+	}, [pendingRecurringExpenseId, recurringExpenses]);
 
 	const handleDeleteExpense = async (
 		expenseId: string,
@@ -4269,9 +4479,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										<View style={styles.dualActions}>
 											<ModernButton
 												icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
-												onPress={() => setShowExpenseComposer(true)}
+												onPress={() => {
+													setConfirmingRecurringExpense(null);
+													setShowExpenseComposer(true);
+												}}
 												testID="open-add-expense"
 												text="Add expense"
+											/>
+											<ModernButton
+												icon={<Ionicons color={theme.primary} name="calendar-outline" size={18} />}
+												onPress={() => setShowRecurringExpenses(true)}
+												secondary
+												testID="open-scheduled-expenses"
+												text="Scheduled"
 											/>
 											<ModernButton
 												icon={
@@ -4596,17 +4816,64 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</ModalScaffold>
 				</Modal>
 
+				{session?.user && activeProfile ? (
+					<RecurringExpensesSheet
+						actionBusy={actionBusy}
+						currencyCode={userCurrency}
+						expenses={recurringExpenses}
+						onClose={() => setShowRecurringExpenses(false)}
+						onCreate={handleCreateRecurringExpense}
+						onDelete={handleDeleteRecurringExpense}
+						onUse={openRecurringExpense}
+						profileId={activeProfile.id}
+						userId={session.user.id}
+						visible={showRecurringExpenses}
+					/>
+				) : null}
+
 				<Modal animationType="slide" transparent visible={showExpenseComposer}>
 					<BottomSheet
 						onClose={() => {
 							setShowExpenseComposer(false);
 							setEditingExpenseId(null);
+							setConfirmingRecurringExpense(null);
 							setExpenseForm(defaultExpenseForm());
 						}}
 					>
 						<Text style={styles.sectionTitle}>
 							{editingExpenseId ? "Edit Expense" : "Add Expense"}
 						</Text>
+						{!editingExpenseId && expenseSuggestions.length > 0 ? (
+							<View style={styles.fieldSection}>
+								<Text style={styles.inputLabel}>Use a previous expense</Text>
+								<Text style={styles.suggestionHint}>
+									Choose one to pre-fill this expense. You can edit everything before saving.
+								</Text>
+								<View style={styles.suggestionList}>
+									{expenseSuggestions.map((expense) => {
+										const itemNames = expense.items.map((item) => item.name).join(", ");
+										return (
+											<Pressable
+												key={expense.id}
+												onPress={() => useExpenseSuggestion(expense)}
+												style={styles.suggestionButton}
+												testID={`expense-suggestion-${expense.id}`}
+											>
+												<View style={styles.suggestionContent}>
+													<Text numberOfLines={1} style={styles.suggestionTitle}>
+														{itemNames}
+													</Text>
+													<Text style={styles.suggestionMeta}>
+														{expense.category} · {formatShortDate(expense.date)}
+													</Text>
+												</View>
+												<Text style={styles.suggestionAmount}>{c(expense.price)}</Text>
+											</Pressable>
+										);
+									})}
+								</View>
+							</View>
+						) : null}
 
 						<View style={styles.fieldSection}>
 							<View style={styles.rowBetween}>

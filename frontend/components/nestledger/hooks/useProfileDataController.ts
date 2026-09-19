@@ -7,6 +7,7 @@ import {
   ExpenseWithItems,
   Member,
   RecurringBill,
+	RecurringExpense,
   SavingsEntry,
   SavingsTrackerMeta,
   ShoppingItem,
@@ -15,6 +16,7 @@ import {
   expenseApi,
   notificationApi,
   profileApi,
+	 recurringExpenseApi,
   savingsApi,
   shoppingApi,
   type AppNotification,
@@ -31,6 +33,7 @@ type UseProfileDataControllerOptions = {
   setPlans: Dispatch<SetStateAction<BudgetPlan[]>>;
   setProfileExpenses: Dispatch<SetStateAction<ExpenseWithItems[]>>;
   setRecurringBills: Dispatch<SetStateAction<RecurringBill[]>>;
+	setRecurringExpenses: Dispatch<SetStateAction<RecurringExpense[]>>;
   setSavings: Dispatch<SetStateAction<SavingsEntry[]>>;
   setSavingsTrackers: Dispatch<SetStateAction<SavingsTrackerMeta[]>>;
   setSelectedPlanId: Dispatch<SetStateAction<string | null>>;
@@ -48,6 +51,7 @@ export function useProfileDataController({
   setPlans,
   setProfileExpenses,
   setRecurringBills,
+	setRecurringExpenses,
   setSavings,
   setSavingsTrackers,
   setSelectedPlanId,
@@ -78,6 +82,7 @@ export function useProfileDataController({
           nextBillTrackers,
           nextSavingsTrackers,
           nextBills,
+		  nextRecurringExpenses,
           nextPayments,
           nextSavings,
         ] = await Promise.all([
@@ -89,6 +94,7 @@ export function useProfileDataController({
           billApi.fetchTrackers(profileId),
           savingsApi.fetchTrackers(profileId),
           billApi.fetchRecurringBills(profileId),
+		  recurringExpenseApi.fetch(profileId),
           billApi.fetchPayments(profileId),
           savingsApi.fetchSavings(profileId),
         ]);
@@ -101,6 +107,7 @@ export function useProfileDataController({
         setBillTrackers(nextBillTrackers);
         setSavingsTrackers(nextSavingsTrackers);
         setRecurringBills(nextBills);
+		setRecurringExpenses(nextRecurringExpenses);
         setBillPayments(nextPayments);
         setSavings(nextSavings);
         nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
@@ -124,6 +131,7 @@ export function useProfileDataController({
       setPlans,
       setProfileExpenses,
       setRecurringBills,
+		setRecurringExpenses,
       setSavings,
       setSavingsTrackers,
       setSelectedPlanId,
