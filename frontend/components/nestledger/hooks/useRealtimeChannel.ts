@@ -1,10 +1,8 @@
-import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
 import { AppState } from "react-native";
 
 import { supabase } from "@/lib/supabase";
 
-import { notificationTitles } from "../nestledger.constants";
 
 type UseRealtimeChannelOptions = {
 	activeProfileId: string | null;
@@ -75,44 +73,19 @@ export function useRealtimeChannel({
 						};
 					};
 					const nextId = nextPayload.new?.id;
-					const nextMessage = nextPayload.new?.message;
-					const shouldNotify =
-						nextPayload.eventType === "INSERT" &&
-						nextId &&
-						!seenNotificationIds.current.has(nextId);
-
-					if (nextId) {
-						seenNotificationIds.current.add(nextId);
-					}
-
-					// Only fire a local notification while foregrounded; when backgrounded or
-					// killed the remote push (fanout) delivers it, so this avoids double-notify.
-					if (
-						shouldNotify &&
-						nextMessage &&
-						AppState.currentState === "active"
-					) {
-						await Notifications.scheduleNotificationAsync({
-							content: {
-								body: nextMessage,
-								title:
-									notificationTitles[nextPayload.new?.type ?? ""] ??
-									"NestLedger update",
-								data: {
-									type: nextPayload.new?.type,
-									profile_id: nextPayload.new?.profile_id ?? activeProfileId,
-								},
-							},
-							trigger: null,
-						}).catch(() => undefined);
-					}
-
+					if (nextId) seenNotificationIds.current.add(nextId);
+					// Remote push owns OS alerts in every app state. Realtime only refreshes
+					// the inbox, avoiding a second local banner for the same event.
 					refreshProfileData(activeProfileId);
 				},
 			)
 			.subscribe();
+		const subscription = AppState.addEventListener("change", (state) => {
+			if (state === "active") void refreshProfileData(activeProfileId, true);
+		});
 
 		return () => {
+			subscription.remove();
 			supabase.removeChannel(channel);
 		};
 	}, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
