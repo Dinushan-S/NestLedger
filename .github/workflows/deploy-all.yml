@@ -135,28 +135,28 @@ jobs:
             # Storage (recommended: a VM alone is not an off-box backup).
             ensure_backup_timer() {
               printf '[Unit]
-Description=NestLedger Supabase daily pg_dump backup
+              Description=NestLedger Supabase daily pg_dump backup
 
-[Service]
-Type=oneshot
-User=root
-WorkingDirectory=/opt/NestLedger/backend
-EnvironmentFile=/opt/NestLedger/backend/.env
-Environment="TRIGGERED_BY=vm_cron"
-ExecStart=/usr/bin/env bash /opt/NestLedger/backend/scripts/backup.sh
-' | sudo tee /etc/systemd/system/nestledger-backup.service > /dev/null
+              [Service]
+              Type=oneshot
+              User=root
+              WorkingDirectory=/opt/NestLedger/backend
+              EnvironmentFile=/opt/NestLedger/backend/.env
+              Environment="TRIGGERED_BY=vm_cron"
+              ExecStart=/usr/bin/env bash /opt/NestLedger/backend/scripts/backup.sh
+              ' | sudo tee /etc/systemd/system/nestledger-backup.service > /dev/null
 
               printf '[Unit]
-Description=Run NestLedger backup every day at 02:00 UTC
+              Description=Run NestLedger backup every day at 02:00 UTC
 
-[Timer]
-OnCalendar=*-*-* 02:00:00
-Persistent=true
-RandomizedDelaySec=600
+              [Timer]
+              OnCalendar=*-*-* 02:00:00
+              Persistent=true
+              RandomizedDelaySec=600
 
-[Install]
-WantedBy=timers.target
-' | sudo tee /etc/systemd/system/nestledger-backup.timer > /dev/null
+              [Install]
+              WantedBy=timers.target
+              ' | sudo tee /etc/systemd/system/nestledger-backup.timer > /dev/null
 
               sudo systemctl daemon-reload
               sudo systemctl enable --now nestledger-backup.timer
