@@ -406,28 +406,31 @@ export function BillTracker({
 			<Modal animationType="slide" transparent visible={showComposer}>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
+						accessibilityLabel="Close bill sheet"
+						accessibilityRole="button"
 						onPress={() => setShowComposer(false)}
-						style={s.sheetBackdrop}
-					>
+						style={StyleSheet.absoluteFill}
+					/>
+					<View pointerEvents="box-none" style={s.sheetBackdrop}>
 						<KeyboardAvoidingView behavior={"padding"} style={s.sheetCard}>
 							<View style={s.sheetGrabber} />
 							<ScrollView
 								contentContainerStyle={s.sheetContent}
 								keyboardShouldPersistTaps="handled"
+								nestedScrollEnabled
 								showsVerticalScrollIndicator={false}
 							>
-								<Pressable onPress={(e) => e.stopPropagation()}>
-									<Text style={s.sectionTitle}>New Bill</Text>
+								<Text style={s.sectionTitle}>New Bill</Text>
 
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
-										<TextInput
-											keyboardType="numeric"
-											onChangeText={(v) =>
-												setBillForm((f) => ({ ...f, amount: v }))
-											}
-											placeholder="e.g. 2500"
-											placeholderTextColor={theme.textMuted}
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
+									<TextInput
+										keyboardType="numeric"
+										onChangeText={(v) =>
+											setBillForm((f) => ({ ...f, amount: v }))
+										}
+										placeholder="e.g. 2500"
+										placeholderTextColor={theme.textMuted}
 											style={s.input}
 											testID="bill-amount-input"
 											value={billForm.amount}
@@ -568,52 +571,54 @@ export function BillTracker({
 										testID="bill-save-button"
 										text="Save Bill"
 									/>
-								</Pressable>
 							</ScrollView>
 						</KeyboardAvoidingView>
-					</Pressable>
+					</View>
 				</View>
 			</Modal>
 
 			<Modal animationType="slide" transparent visible={showPayment}>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
+						accessibilityLabel="Close payment sheet"
+						accessibilityRole="button"
 						onPress={() => {
 							setShowPayment(false);
 							setSelectedBill(null);
 						}}
-						style={s.sheetBackdrop}
-					>
+						style={StyleSheet.absoluteFill}
+					/>
+					<View pointerEvents="box-none" style={s.sheetBackdrop}>
 						<KeyboardAvoidingView behavior={"padding"} style={s.sheetCard}>
 							<View style={s.sheetGrabber} />
 							<ScrollView
 								contentContainerStyle={s.sheetContent}
 								keyboardShouldPersistTaps="handled"
+								nestedScrollEnabled
 								showsVerticalScrollIndicator={false}
 							>
-								<Pressable onPress={(e) => e.stopPropagation()}>
-									<Text style={s.sectionTitle}>
-										{selectedBill ? `Pay ${selectedBill.name}` : "Mark as Paid"}
-									</Text>
+								<Text style={s.sectionTitle}>
+									{selectedBill ? `Pay ${selectedBill.name}` : "Mark as Paid"}
+								</Text>
 
-									{selectedBill ? (
-										<View style={s.paymentInfoRow}>
-											<View style={s.billIconWrap}>
-												<Ionicons
-													color={theme.primary}
-													name={getCategoryIcon(selectedBill.category)}
-													size={22}
-												/>
-											</View>
-											<View>
-												<Text style={s.billName}>{selectedBill.name}</Text>
-												<Text style={s.billMeta}>
-													{selectedBill.category} &middot; Due day{" "}
-													{selectedBill.due_day}
-												</Text>
-											</View>
+								{selectedBill ? (
+									<View style={s.paymentInfoRow}>
+										<View style={s.billIconWrap}>
+											<Ionicons
+												color={theme.primary}
+												name={getCategoryIcon(selectedBill.category)}
+												size={22}
+											/>
 										</View>
-									) : null}
+										<View>
+											<Text style={s.billName}>{selectedBill.name}</Text>
+											<Text style={s.billMeta}>
+												{selectedBill.category} &middot; Due day{" "}
+												{selectedBill.due_day}
+											</Text>
+										</View>
+									</View>
+								) : null}
 
 									<View style={s.inputGroup}>
 										<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
@@ -711,10 +716,9 @@ export function BillTracker({
 										testID="bill-payment-confirm"
 										text="Mark as Paid"
 									/>
-								</Pressable>
 							</ScrollView>
 						</KeyboardAvoidingView>
-					</Pressable>
+					</View>
 				</View>
 			</Modal>
 

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ReactNode } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/lib/theme-context';
@@ -27,7 +27,7 @@ export function ModalScaffold({
     <SafeAreaView
       style={[styles.flex, { backgroundColor: theme.background, paddingTop: insets.top, paddingHorizontal: 20 }]}
     >
-      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <View style={styles.modalHeader}>
           <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
             <Ionicons color={theme.text} name="close-outline" size={28} />
@@ -37,8 +37,9 @@ export function ModalScaffold({
         </View>
         <ScrollView
           contentContainerStyle={styles.modalContent}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
+          nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
           {children}

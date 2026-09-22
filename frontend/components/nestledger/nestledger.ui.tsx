@@ -198,11 +198,14 @@ export function ConfirmModal({
 
 	return (
 		<Modal animationType="fade" transparent visible={visible}>
-			<Pressable onPress={onClose} style={styles.confirmBackdrop}>
+			<View style={styles.confirmBackdrop}>
 				<Pressable
-					onPress={(e) => e.stopPropagation()}
-					style={styles.confirmCard}
-				>
+					accessibilityLabel="Close confirmation"
+					accessibilityRole="button"
+					onPress={onClose}
+					style={StyleSheet.absoluteFill}
+				/>
+				<View style={styles.confirmCard}>
 					<View style={styles.confirmIconWrap}>
 						<Ionicons
 							color={destructive ? theme.danger : theme.warning}
@@ -238,8 +241,8 @@ export function ConfirmModal({
 							</Text>
 						</Pressable>
 					</View>
-				</Pressable>
-			</Pressable>
+				</View>
+			</View>
 		</Modal>
 	);
 }
@@ -266,6 +269,8 @@ export function SafeWrap({
 			</View>
 			<ScrollView
 				contentContainerStyle={safeWrapStyles.content}
+				keyboardShouldPersistTaps="handled"
+				nestedScrollEnabled
 				showsVerticalScrollIndicator={false}
 			>
 				{children}

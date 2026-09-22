@@ -3,6 +3,7 @@ import 'react-native-url-polyfill/auto';
 
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeProvider, useTheme } from '@/lib/theme-context';
@@ -14,15 +15,17 @@ function AppStatusBar() {
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AppStatusBar />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="confirm-email" />
-          <Stack.Screen name="index" />
-          <Stack.Screen name="invite" />
-        </Stack>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AppStatusBar />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="confirm-email" />
+            <Stack.Screen name="index" />
+            <Stack.Screen name="invite" />
+          </Stack>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

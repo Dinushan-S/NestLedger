@@ -371,10 +371,16 @@ export default function AnalyseScreen({
 						</Text>
 					</View>
 				) : (
-					<ScrollView contentContainerStyle={styles.body}>
+					<ScrollView
+						contentContainerStyle={styles.body}
+						keyboardShouldPersistTaps="handled"
+						nestedScrollEnabled
+						showsVerticalScrollIndicator={false}
+					>
 						{sortedPlans.length > 1 && (
 							<ScrollView
 								horizontal
+								nestedScrollEnabled
 								showsHorizontalScrollIndicator={false}
 								contentContainerStyle={styles.planRow}
 							>
@@ -586,11 +592,14 @@ export default function AnalyseScreen({
 					visible={detailCategory != null}
 					onRequestClose={() => setDetailCategory(null)}
 				>
-					<Pressable
-						style={styles.backdrop}
-						onPress={() => setDetailCategory(null)}
-					>
-						<Pressable style={styles.popup} onPress={() => undefined}>
+					<View style={styles.backdrop}>
+						<Pressable
+							accessibilityLabel="Close category detail"
+							accessibilityRole="button"
+							onPress={() => setDetailCategory(null)}
+							style={StyleSheet.absoluteFill}
+						/>
+						<View style={styles.popup}>
 							<View style={styles.popupHeader}>
 								<Text style={styles.popupTitle} numberOfLines={1}>
 									{detailCategory ?? ""}
@@ -604,7 +613,7 @@ export default function AnalyseScreen({
 									No items in this category this cycle.
 								</Text>
 							) : (
-								<ScrollView style={styles.popupScroll}>
+								<ScrollView nestedScrollEnabled style={styles.popupScroll}>
 									{detailRows.map((x) => {
 										const isRepay = x.is_borrow && Number(x.price) < 0;
 										const who = x.is_borrow
@@ -640,8 +649,8 @@ export default function AnalyseScreen({
 									})}
 								</ScrollView>
 							)}
-						</Pressable>
-					</Pressable>
+						</View>
+					</View>
 				</Modal>
 
 				{/* Who owes popup */}
@@ -651,11 +660,14 @@ export default function AnalyseScreen({
 					visible={showWhoOwes}
 					onRequestClose={() => setShowWhoOwes(false)}
 				>
-					<Pressable
-						style={styles.backdrop}
-						onPress={() => setShowWhoOwes(false)}
-					>
-						<Pressable style={styles.popup} onPress={() => undefined}>
+					<View style={styles.backdrop}>
+						<Pressable
+							accessibilityLabel="Close who owes"
+							accessibilityRole="button"
+							onPress={() => setShowWhoOwes(false)}
+							style={StyleSheet.absoluteFill}
+						/>
+						<View style={styles.popup}>
 							<View style={styles.popupHeader}>
 								<Text style={styles.popupTitle}>Who owes</Text>
 								<Pressable hitSlop={10} onPress={() => setShowWhoOwes(false)}>
@@ -667,7 +679,7 @@ export default function AnalyseScreen({
 									Nothing outstanding this cycle.
 								</Text>
 							) : (
-								<ScrollView style={styles.popupScroll}>
+								<ScrollView nestedScrollEnabled style={styles.popupScroll}>
 									{whoOwes.map((r) => (
 										<View key={r.uid} style={styles.detailRow}>
 											<Text style={styles.detailName}>{nameOf(r.uid)}</Text>
@@ -676,8 +688,8 @@ export default function AnalyseScreen({
 									))}
 								</ScrollView>
 							)}
-						</Pressable>
-					</Pressable>
+						</View>
+					</View>
 				</Modal>
 			</View>
 		</Modal>
