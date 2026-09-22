@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 import re
@@ -17,7 +18,7 @@ import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
@@ -45,6 +46,7 @@ ANDROID_STORE_URL = os.getenv(
 IOS_STORE_URL = os.getenv("IOS_STORE_URL", "")
 INVITE_RATE_LIMIT_MAX = int(os.getenv("INVITE_RATE_LIMIT_MAX", "10"))
 INVITE_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("INVITE_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Sentry error/performance monitoring. DSN is overridable via env; defaults to the
 # project DSN so it works out of the box. Set SENTRY_DSN="" to disable.
@@ -169,6 +171,33 @@ class PushFanoutRequest(BaseModel):
 
 class DeleteSpaceRequest(BaseModel):
     profile_id: str
+
+
+class ReceiptExtractRequest(BaseModel):
+    image_base64: str
+    mime_type: str = "image/jpeg"
+
+
+class ReceiptExtractedItem(BaseModel):
+    name: str = Field(description="Item name or description")
+    code: str | None = Field(default=None, description="Item product or SKU code")
+    quantity: float = Field(default=1.0, description="Quantity purchased")
+    unit_price: float = Field(description="Unit price per item")
+    discount: float | None = Field(default=None, description="Discount amount applied to item")
+    total_price: float = Field(description="Net line total price after discount")
+
+
+class ReceiptExtractionResult(BaseModel):
+    vendor: str | None = Field(default=None, description="Store or merchant name")
+    branch: str | None = Field(default=None, description="Branch or location")
+    date: str | None = Field(default=None, description="Date on receipt in YYYY-MM-DD or printed format")
+    time: str | None = Field(default=None, description="Time on receipt")
+    currency: str | None = Field(default=None, description="Currency symbol or code (e.g. LKR)")
+    subtotal: float | None = Field(default=None, description="Subtotal before tax or rounding")
+    rounding_off: float | None = Field(default=None, description="Rounding off adjustment")
+    total: float | None = Field(default=None, description="Grand total payable")
+    items: list[ReceiptExtractedItem] = Field(default_factory=list, description="Extracted line items")
+    warnings: list[str] = Field(default_factory=list, description="Any warnings or discrepancies")
 
 
 def ensure_backend_config() -> None:
@@ -755,6 +784,87 @@ def delete_space(
         supabase_rest("DELETE", "profiles", params={"id": f"eq.{payload.profile_id}"})
 
     return {"ok": True}
+
+
+@api_router.post("/receipts/extract")
+def extract_receipt(
+    payload: ReceiptExtractRequest,
+    authorization: str | None = Header(default=None),
+):
+    user = get_current_user(authorization)
+    if not GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=500, detail="Gemini API key is not configured on the backend."
+        )
+
+    try:
+        image_bytes = base64.b64decode(payload.image_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data.")
+
+    prompt = (
+        "You are an expert financial auditor AI. Extract all information accurately from this receipt/bill image. "
+        "Pay special attention to merchant/vendor name, branch, date, time, currency, itemized line items with "
+        "product names, codes/SKUs, quantities, unit prices, discounts, line totals, subtotal, rounding off, "
+        "and net total. Ignore loyalty points and promotional footer notices. "
+        "Ensure all item total prices sum up reasonably to the printed total."
+    )
+
+    models_to_try = ["gemini-3.8-flash", "gemini-2.5-flash"]
+    last_error: Exception | None = None
+
+    for model_name in models_to_try:
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    prompt,
+                    types.Part.from_bytes(data=image_bytes, mime_type=payload.mime_type),
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ReceiptExtractionResult,
+                    temperature=0.1,
+                ),
+            )
+
+            parsed = ReceiptExtractionResult.model_validate_json(response.text)
+
+            # Map to frontend ParsedReceipt shape expected by ReceiptScannerSheet
+            return {
+                "vendor": parsed.vendor,
+                "date": parsed.date,
+                "subtotal": parsed.subtotal,
+                "total": parsed.total,
+                "items": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": item.name,
+                        "quantity": item.quantity,
+                        "unitPrice": item.unit_price,
+                        "totalPrice": item.total_price,
+                        "confidence": "high",
+                        "rawText": item.name,
+                    }
+                    for item in parsed.items
+                ],
+                "warnings": parsed.warnings,
+                "rawText": "",
+            }
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Gemini extraction with %s failed: %s", model_name, exc)
+            continue
+
+    logger.exception("All Gemini receipt extraction models failed: %s", last_error)
+    sentry_sdk.capture_exception(last_error)
+    raise HTTPException(
+        status_code=500, detail=f"Bill extraction failed: {last_error}"
+    )
 
 
 app.include_router(api_router)

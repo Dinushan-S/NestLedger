@@ -25,6 +25,7 @@ jobs:
       APP_PUBLIC_URL: http://127.0.0.1:8001
       ALLOWED_ORIGINS: http://127.0.0.1:8001
       INVITE_EMAIL_DELIVERY: disabled
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - name: Checkout
