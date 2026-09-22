@@ -191,5 +191,10 @@ export const spaceTypeName = (type?: string | null): string => {
 	}
 };
 
+// The profile row is the source of truth so this decision follows the user
+// across phones. Device-local flags make a completed choice appear unfinished
+// after signing in on a new device.
+export const needsSpaceTypeMigration = (spaceType?: string | null) => !spaceType;
+
 export const isSplitSpace = (type?: string | null) =>
 	type === "trip_friends" || type === "shared_living";

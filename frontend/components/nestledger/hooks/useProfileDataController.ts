@@ -1,5 +1,4 @@
 import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
-import { syncRecurringReminders } from '../reminders';
 
 import {
   BillPayment,
@@ -8,7 +7,6 @@ import {
   ExpenseWithItems,
   Member,
   RecurringBill,
-	RecurringExpense,
   SavingsEntry,
   SavingsTrackerMeta,
   ShoppingItem,
@@ -17,7 +15,6 @@ import {
   expenseApi,
   notificationApi,
   profileApi,
-	 recurringExpenseApi,
   savingsApi,
   shoppingApi,
   type AppNotification,
@@ -34,7 +31,6 @@ type UseProfileDataControllerOptions = {
   setPlans: Dispatch<SetStateAction<BudgetPlan[]>>;
   setProfileExpenses: Dispatch<SetStateAction<ExpenseWithItems[]>>;
   setRecurringBills: Dispatch<SetStateAction<RecurringBill[]>>;
-	setRecurringExpenses: Dispatch<SetStateAction<RecurringExpense[]>>;
   setSavings: Dispatch<SetStateAction<SavingsEntry[]>>;
   setSavingsTrackers: Dispatch<SetStateAction<SavingsTrackerMeta[]>>;
   setSelectedPlanId: Dispatch<SetStateAction<string | null>>;
@@ -52,7 +48,6 @@ export function useProfileDataController({
   setPlans,
   setProfileExpenses,
   setRecurringBills,
-	setRecurringExpenses,
   setSavings,
   setSavingsTrackers,
   setSelectedPlanId,
@@ -63,7 +58,6 @@ export function useProfileDataController({
   const currentUser = useRef(sessionUserId);
   currentUser.current = sessionUserId;
   const latestRequest = useRef(0);
-  const reminderError = useRef<string | null>(null);
 
   const refreshProfileData = useCallback(
     async (profileId: string, force?: boolean) => {
@@ -88,7 +82,6 @@ export function useProfileDataController({
           nextBillTrackers,
           nextSavingsTrackers,
           nextBills,
-		  nextRecurringExpenses,
           nextPayments,
           nextSavings,
         ] = await Promise.all([
@@ -100,7 +93,6 @@ export function useProfileDataController({
           billApi.fetchTrackers(profileId),
           savingsApi.fetchTrackers(profileId),
           billApi.fetchRecurringBills(profileId),
-		  recurringExpenseApi.fetch(profileId),
           billApi.fetchPayments(profileId),
           savingsApi.fetchSavings(profileId),
         ]);
@@ -115,15 +107,6 @@ export function useProfileDataController({
         setBillTrackers(nextBillTrackers);
         setSavingsTrackers(nextSavingsTrackers);
         setRecurringBills(nextBills);
-		setRecurringExpenses(nextRecurringExpenses);
-        // Reconcile from a successful server snapshot, including changes made on other devices.
-        void syncRecurringReminders(profileId, nextRecurringExpenses)
-          .then(() => { reminderError.current = null; })
-          .catch((error) => {
-            const message = error instanceof Error ? error.message : 'Could not restore scheduled reminders.';
-            if (reminderError.current !== message) onError(message);
-            reminderError.current = message;
-          });
         setBillPayments(nextPayments);
         setSavings(nextSavings);
         nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
@@ -147,7 +130,6 @@ export function useProfileDataController({
       setPlans,
       setProfileExpenses,
       setRecurringBills,
-		setRecurringExpenses,
       setSavings,
       setSavingsTrackers,
       setSelectedPlanId,
