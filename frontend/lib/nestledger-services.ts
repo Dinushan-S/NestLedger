@@ -21,7 +21,6 @@ export {
   notificationApi,
   profileApi,
 	pushApi,
-  receiptApi,
   savingsApi,
   shoppingApi,
 } from './nestledger';
