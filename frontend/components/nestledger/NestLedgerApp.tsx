@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { isRunningInExpoGo } from "expo";
 import Constants from "expo-constants";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import { useRouter } from "expo-router";
-import * as Notifications from "expo-notifications";
 import { Session } from "@supabase/supabase-js";
 import {
 	lazy,
@@ -60,7 +60,6 @@ import {
 	HouseholdProfile,
 	Member,
 	RecurringBill,
-	RecurringExpense,
 	SavingsEntry,
 	SavingsTrackerMeta,
 	ShoppingItem,
@@ -74,12 +73,12 @@ import {
 	notificationApi,
 	profileApi,
 	pushApi,
-	recurringExpenseApi,
 	savingsApi,
 	shoppingApi,
 	validateSession,
 } from "../../lib/nestledger-services";
 import { isConfigReady } from "../../lib/config";
+import * as Notifications from "../../lib/notifications";
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
@@ -91,6 +90,7 @@ import OnboardingCarousel from "./OnboardingCarousel";
 import {
 	CreateProfileForm,
 	LabeledInput,
+	PasswordInput,
 	ProfileFormFields,
 } from "./forms/ProfileFormControls";
 import { useNestLedgerBootstrap } from "./hooks/useNestLedgerBootstrap";
@@ -109,13 +109,23 @@ import {
 	filterMonthExpenses,
 	filterShoppingItems,
 } from "./selectors";
-import { deriveExpenseSuggestions } from "./expenseSuggestions";
-import { cancelExpenseReminders, localDate, nextRecurringDueDate, requireNotificationPermission, restoreDailyReminder, syncRecurringReminders, updateDailyReminder } from "./reminders";
+import {
+	deriveRecentExpenseItemSuggestions,
+	applyRecentItemSuggestionToExpenseForm,
+	type RecentExpenseItemSuggestion,
+} from "./expenseSuggestions";
+import { ReceiptScannerSheet } from "./ReceiptScannerSheet";
+import {
+	categoryForReceiptVendor,
+	formatReceiptItemName,
+	type ParsedReceipt,
+} from "./receiptParser";
+import { registerRemotePushWhenSupported } from "./pushNotificationSupport";
+import { cancelExpenseReminders, localDate, restoreDailyReminder, updateDailyReminder } from "./reminders";
 
 import { BillTracker as BillTrackerComponent } from "./BillTracker";
 import { SavingsTracker as SavingsTrackerComponent } from "./SavingsTracker";
 import AnalyseScreen from "./AnalyseScreen";
-import { RecurringExpensesSheet } from "./RecurringExpensesSheet";
 import {
 	BorrowForm,
 	BudgetForm,
@@ -127,12 +137,13 @@ import {
 	defaultBudgetView,
 	defaultCreateProfileForm,
 	defaultExpenseForm,
-	defaultShoppingForm,
-	extractError,
-	isSchemaMissing,
-	isSplitSpace,
-	notificationTypes,
-	spaceTypeName,
+		defaultShoppingForm,
+		extractError,
+		isSchemaMissing,
+		isSplitSpace,
+		needsSpaceTypeMigration,
+		notificationTypes,
+		spaceTypeName,
 } from "./nestledger.constants";
 import { styles } from "./nestledger.styles";
 import {
@@ -207,7 +218,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[],
 	);
 	const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
-	const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
 	const [billPayments, setBillPayments] = useState<BillPayment[]>([]);
 	const [savings, setSavings] = useState<SavingsEntry[]>([]);
 
@@ -215,7 +225,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [showCreateProfile, setShowCreateProfile] = useState(false);
 	const [showBudgetComposer, setShowBudgetComposer] = useState(false);
 	const [showExpenseComposer, setShowExpenseComposer] = useState(false);
-	const [showRecurringExpenses, setShowRecurringExpenses] = useState(false);
+	const [activeExpenseItemSuggestionIndex, setActiveExpenseItemSuggestionIndex] =
+		useState<number | null>(null);
+	const [showReceiptScanner, setShowReceiptScanner] = useState(false);
 	const [showExpenseFilters, setShowExpenseFilters] = useState(false);
 	const [showBorrowComposer, setShowBorrowComposer] = useState(false);
 	const [showRepayComposer, setShowRepayComposer] = useState(false);
@@ -305,10 +317,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		new Set(),
 	);
 	const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
-	const [confirmingRecurringExpense, setConfirmingRecurringExpense] =
-		useState<RecurringExpense | null>(null);
-	const [pendingRecurringExpenseId, setPendingRecurringExpenseId] =
-		useState<string | null>(null);
 	const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
 	const [budgetEditMode, setBudgetEditMode] = useState(false);
 	const [editingBillTrackerId, setEditingBillTrackerId] = useState<
@@ -365,10 +373,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setBillTrackers([]);
 		setSavingsTrackers([]);
 		setRecurringBills([]);
-		setRecurringExpenses([]);
 		setSelectedPlanId(null);
 		setPendingDailyReminder(false);
-		setPendingRecurringExpenseId(null);
 		setBillPayments([]);
 		setSavings([]);
 	}, []);
@@ -399,7 +405,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setPlans,
 		setProfileExpenses,
 		setRecurringBills,
-		setRecurringExpenses,
 		setSavings,
 		setSavingsTrackers,
 		setSelectedPlanId,
@@ -485,10 +490,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			}),
 		[expenseCategoryFilter, expenseView, profileExpenses, selectedPlan],
 	);
-	const expenseSuggestions = useMemo(
-		() => deriveExpenseSuggestions(profileExpenses),
-		[profileExpenses],
-	);
+	const recentItemSuggestions = useMemo(() => {
+		if (activeExpenseItemSuggestionIndex === null) {
+			return [];
+		}
+
+		return deriveRecentExpenseItemSuggestions(
+			profileExpenses,
+			expenseForm.items[activeExpenseItemSuggestionIndex]?.name ?? "",
+		);
+	}, [activeExpenseItemSuggestionIndex, expenseForm.items, profileExpenses]);
 
 	const unreadCount = notifications.filter((item) => !item.is_read).length;
 	const shoppingBadgeCount = notifications.filter(
@@ -598,23 +609,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		);
 	}, [activeProfileId, contributionEnabled]);
 
-	// Show migration card for existing users who haven't set their space type yet
+	// Show migration card only when the persisted profile value is missing.
+	// Do not use AsyncStorage here: a completed choice must follow the profile
+	// when the user signs in on another phone.
 	useEffect(() => {
-		if (!activeProfileId || !activeProfile) return;
-		const key = `nestledger-space-type-set-${activeProfileId}`;
-		AsyncStorage.getItem(key)
-			.then((val) => {
-				if (!val) {
-					setMigrationSpaceType(
-						(activeProfile.space_type as SpaceType) ?? "family",
-					);
-					setMigrationCardVisible(true);
-				}
-			})
-			.catch((error) => {
-				console.warn("Failed to read space-type migration flag:", error);
-			});
-	}, [activeProfileId, activeProfile]);
+		if (!activeProfileId || !activeProfile) {
+			setMigrationCardVisible(false);
+			return;
+		}
+
+		if (!needsSpaceTypeMigration(activeProfile.space_type)) {
+			setMigrationCardVisible(false);
+			return;
+		}
+
+		setMigrationSpaceType((activeProfile.space_type as SpaceType) ?? "family");
+		setMigrationCardVisible(true);
+	}, [activeProfile, activeProfileId]);
 
 	useRealtimeChannel({
 		activeProfileId,
@@ -671,7 +682,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	}, [activeProfileId, refreshProfileData, selectedSavingsTrackerId]);
 
 	useEffect(() => {
-		if (!session || !Device.isDevice) {
+		if (!session) {
 			return;
 		}
 
@@ -711,7 +722,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			}
 		};
 
-		register();
+		void registerRemotePushWhenSupported(
+			{
+				isPhysicalDevice: Device.isDevice,
+				platform: Platform.OS,
+				isExpoGo: isRunningInExpoGo(),
+			},
+			register,
+		);
 	}, [session]);
 
 	// Route notification taps (foreground, background, and cold start) to the relevant screen.
@@ -722,7 +740,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		const responseKey = `${lastNotificationResponse.notification.request.identifier}:${lastNotificationResponse.notification.date}`;
 		if (handledNotification.current === responseKey) return;
 		const data = lastNotificationResponse?.notification.request.content.data as
-			| { type?: string; profile_id?: string; recurring_expense_id?: string }
+			| { type?: string; profile_id?: string }
 			| undefined;
 		if (!data) {
 			return;
@@ -749,11 +767,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			case notificationTypes.expense:
 				setActiveTab("dashboard");
 				break;
-			case "recurring_expense_due":
-				setActiveTab("dashboard");
-				setPendingRecurringExpenseId(data.recurring_expense_id ?? null);
-				if (!selectedPlan || selectedPlan.profile_id !== data.profile_id) Alert.alert("Review scheduled expense", "Choose a budget plan to review and save this expense.");
-				break;
 			case notificationTypes.join:
 				setActiveTab("dashboard");
 				setShowNotifications(true);
@@ -768,7 +781,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!pendingDailyReminder || !sessionUserId || !selectedPlan || selectedPlan.profile_id !== activeProfileId) return;
 		setPendingDailyReminder(false);
 		setEditingExpenseId(null);
-		setConfirmingRecurringExpense(null);
 		setExpenseForm({ ...defaultExpenseForm(), date: localDate(new Date()) });
 		setShowExpenseComposer(true);
 	}, [pendingDailyReminder, selectedPlan, sessionUserId, activeProfileId]);
@@ -1364,28 +1376,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 		try {
 			await expenseApi.addExpense(expenseInput);
-			if (confirmingRecurringExpense) {
-				try {
-					const next_due_date = nextRecurringDueDate(
-						confirmingRecurringExpense.next_due_date,
-						confirmingRecurringExpense.frequency,
-					);
-					const updated = await recurringExpenseApi.update(
-						confirmingRecurringExpense.id,
-						{ next_due_date },
-					);
-					setRecurringExpenses((current) =>
-						current.map((item) =>
-							item.id === updated.id ? updated : item,
-						),
-					);
-					await syncRecurringReminders(updated.profile_id, recurringExpenses.map((item) => item.id === updated.id ? updated : item));
-				} catch {
-					announce("Expense saved, but its next date or reminder could not be updated. Open scheduled expenses to review it.");
-				} finally {
-					setConfirmingRecurringExpense(null);
-				}
-			}
 			await notifyOtherMembers(
 				`${userProfile?.name ?? "A member"} added ${itemNames} to ${selectedPlan.name}.`,
 				notificationTypes.expense,
@@ -1397,6 +1387,35 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			setProfileExpenses((current) => current.filter((e) => e.id !== tempId));
 			announce(extractError(error));
 		}
+	};
+
+	const handleReceiptScanConfirm = (receipt: ParsedReceipt) => {
+		if (!selectedPlan) {
+			announce("Choose a budget plan before scanning a bill.");
+			return;
+		}
+		const mappedCategory = categoryForReceiptVendor(receipt.vendor);
+		const isKnownCategory = expenseCategories.some(
+			(category) => category.key === mappedCategory && category.key !== "Other",
+		);
+		const itemDrafts = receipt.items.map((item) => ({
+			name: formatReceiptItemName(item),
+			price: String(item.totalPrice),
+		}));
+		setEditingExpenseId(null);
+		setExpenseForm({
+			...defaultExpenseForm(),
+			category: isKnownCategory ? mappedCategory : "Other",
+			customCategory: isKnownCategory
+				? ""
+				: receipt.vendor ?? "Scanned receipt",
+			date: receipt.date ?? localDate(new Date()),
+			description: receipt.vendor ? `Receipt · ${receipt.vendor}` : "Scanned receipt",
+			items: itemDrafts.length > 0 ? itemDrafts : [{ name: "", price: "" }],
+		});
+		setShowReceiptScanner(false);
+		// Let the scanner modal close before showing the normal expense composer.
+		requestAnimationFrame(() => setShowExpenseComposer(true));
 	};
 
 	const startEditBorrow = (expense: ExpenseWithItems) => {
@@ -1544,6 +1563,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	};
 
 	const addExpenseItem = () => {
+		setActiveExpenseItemSuggestionIndex(null);
 		setExpenseForm((current) => ({
 			...current,
 			items: [...current.items, { name: "", price: "" }],
@@ -1552,6 +1572,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const removeExpenseItem = (index: number) => {
 		if (expenseForm.items.length > 1) {
+			setActiveExpenseItemSuggestionIndex(null);
 			setExpenseForm((current) => ({
 				...current,
 				items: current.items.filter((_, i) => i !== index),
@@ -1564,6 +1585,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		field: "name" | "price",
 		value: string,
 	) => {
+		setActiveExpenseItemSuggestionIndex(
+			field === "name" && value.trim() ? index : null,
+		);
 		setExpenseForm((current) => ({
 			...current,
 			items: current.items.map((item, i) =>
@@ -1604,98 +1628,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		});
 	};
 
-	const applyExpenseSuggestion = (expense: ExpenseWithItems) => {
-		setConfirmingRecurringExpense(null);
-		setExpenseForm({
-			category:
-				expenseCategories.find((c) => c.key === expense.category)?.key ??
-				"Other",
-			customCategory: expenseCategories.find((c) => c.key === expense.category)
-				? ""
-				: expense.category,
-			date: new Date().toISOString().slice(0, 10),
-			description: expense.description || "",
-			items: expense.items.map((item) => ({
-				name: item.name,
-				price: String(item.price),
-			})),
-			is_borrow: false,
-			paidBy: expense.paid_by,
-			usedBy: expense.used_by,
-		});
-	};
-
-	const openRecurringExpense = (expense: RecurringExpense) => {
-		if (!selectedPlan) {
-			announce("Choose a budget plan before confirming a scheduled expense.");
-			return;
-		}
-		setConfirmingRecurringExpense(expense);
-		setEditingExpenseId(null);
-		setExpenseForm({
-			category:
-				expenseCategories.find((c) => c.key === expense.category)?.key ??
-				"Other",
-			customCategory: expenseCategories.find((c) => c.key === expense.category)
-				? ""
-				: expense.category,
-			date: localDate(new Date()),
-			description: expense.description ?? "",
-			items: expense.items.map((item) => ({
-				name: item.name,
-				price: String(item.price),
-			})),
-			is_borrow: false,
-			paidBy: null,
-			usedBy: null,
-		});
-		setShowRecurringExpenses(false);
-		setShowExpenseComposer(true);
-	};
-
-
-	const handleCreateRecurringExpense = (
-		input: Omit<RecurringExpense, "created_at" | "id" | "updated_at">,
+	const applyRecentItemSuggestion = (
+		index: number,
+		suggestion: RecentExpenseItemSuggestion,
 	) => {
-		runAction(async () => {
-			if (Platform.OS !== "web") await requireNotificationPermission();
-			const created = await recurringExpenseApi.create(input);
-			setRecurringExpenses((current) => [...current, created]);
-			await syncRecurringReminders(input.profile_id, [...recurringExpenses, created]);
-			await refreshProfileData(input.profile_id, true);
-		});
-	};
-
-	const handleDeleteRecurringExpense = (expense: RecurringExpense) => {
-		showConfirm({
-			body: `Remove the ${expense.name} schedule?`,
-			confirmText: "Remove",
-			destructive: true,
-			onConfirm: () => {
-				runAction(async () => {
-					await recurringExpenseApi.remove(expense.id);
-					setRecurringExpenses((current) =>
-						current.filter((item) => item.id !== expense.id),
-					);
-					await syncRecurringReminders(expense.profile_id, recurringExpenses.filter((item) => item.id !== expense.id));
-				});
-			},
-			title: "Remove schedule",
-		});
-	};
-
-	useEffect(() => {
-		if (!pendingRecurringExpenseId) return;
-		const expense = recurringExpenses.find(
-			(item) => item.id === pendingRecurringExpenseId,
+		setActiveExpenseItemSuggestionIndex(null);
+		setExpenseForm((current) =>
+			applyRecentItemSuggestionToExpenseForm(current, index, suggestion),
 		);
-		if (!expense) return;
-		if (!selectedPlan || selectedPlan.profile_id !== expense.profile_id) return;
-		setPendingRecurringExpenseId(null);
-		openRecurringExpense(expense);
-	// The draft opens once both the target profile and a budget plan are ready.
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [pendingRecurringExpenseId, recurringExpenses, selectedPlan]);
+	};
 
 	const handleDeleteExpense = async (
 		expenseId: string,
@@ -2115,13 +2056,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							testID="auth-email-input"
 							value={authForm.email}
 						/>
-						<LabeledInput
+						<PasswordInput
 							label="Password"
 							onChangeText={(value) =>
 								setAuthForm((current) => ({ ...current, password: value }))
 							}
-							secureTextEntry
 							testID="auth-password-input"
+							toggleTestID="auth-password-visibility-toggle"
 							value={authForm.password}
 						/>
 
@@ -2565,32 +2506,28 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 													})}
 												</View>
 												<View style={styles.spacer12} />
-												<ModernButton
-													loading={actionBusy}
-													onPress={async () => {
-														if (!activeProfileId) return;
-														await runAction(async () => {
-															await profileApi.updateHousehold(
-																activeProfileId,
-																{ space_type: migrationSpaceType },
-															);
-															await AsyncStorage.setItem(
-																`nestledger-space-type-set-${activeProfileId}`,
-																"true",
-															);
-															setProfiles((prev) =>
-																prev.map((p) =>
-																	p.id === activeProfileId
-																		? { ...p, space_type: migrationSpaceType }
-																		: p,
-																),
-															);
-															setMigrationCardVisible(false);
-														});
-													}}
-													testID="migration-card-save"
-													text="Save space type"
-												/>
+													<ModernButton
+														loading={actionBusy}
+														onPress={async () => {
+															if (!activeProfileId) return;
+															await runAction(async () => {
+																const updatedHousehold = await profileApi.updateHousehold(
+																	activeProfileId,
+																	{ space_type: migrationSpaceType },
+																);
+																setProfiles((prev) =>
+																	prev.map((p) =>
+																		p.id === activeProfileId
+																			? { ...p, ...updatedHousehold }
+																			: p,
+																	),
+																);
+																setMigrationCardVisible(false);
+															});
+														}}
+														testID="migration-card-save"
+														text="Save space type"
+														/>
 												<ModernButton
 													onPress={() => setMigrationCardVisible(false)}
 													secondary
@@ -4415,18 +4352,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 											<ModernButton
 												icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
 												onPress={() => {
-													setConfirmingRecurringExpense(null);
 													setShowExpenseComposer(true);
 												}}
 												testID="open-add-expense"
 												text="Add expense"
-											/>
-											<ModernButton
-												icon={<Ionicons color={theme.primary} name="calendar-outline" size={18} />}
-												onPress={() => setShowRecurringExpenses(true)}
-												secondary
-												testID="open-scheduled-expenses"
-												text="Scheduled"
 											/>
 											<ModernButton
 												icon={
@@ -4442,6 +4371,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 												text="Borrow"
 											/>
 										</View>
+										<ModernButton
+											icon={<Ionicons color={theme.primary} name="camera-outline" size={18} />}
+											onPress={() => setShowReceiptScanner(true)}
+											secondary
+											testID="open-receipt-scanner"
+											text="Scan bill to add items"
+										/>
 
 										{filteredExpenses.length > 0 ? (
 											filteredExpenses.map((expense) => {
@@ -4751,64 +4687,27 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</ModalScaffold>
 				</Modal>
 
-				{session?.user && activeProfile ? (
-					<RecurringExpensesSheet
-						actionBusy={actionBusy}
-						currencyCode={userCurrency}
-						expenses={recurringExpenses}
-						onClose={() => setShowRecurringExpenses(false)}
-						onCreate={handleCreateRecurringExpense}
-						onDelete={handleDeleteRecurringExpense}
-						onUse={openRecurringExpense}
-						profileId={activeProfile.id}
-						userId={session.user.id}
-						visible={showRecurringExpenses}
+				<Modal animationType="slide" transparent visible={showReceiptScanner}>
+					<ReceiptScannerSheet
+						currency={userCurrency}
+						onClose={() => setShowReceiptScanner(false)}
+						onConfirm={handleReceiptScanConfirm}
+						visible={showReceiptScanner}
 					/>
-				) : null}
+				</Modal>
 
 				<Modal animationType="slide" transparent visible={showExpenseComposer}>
 					<BottomSheet
 						onClose={() => {
 							setShowExpenseComposer(false);
+							setActiveExpenseItemSuggestionIndex(null);
 							setEditingExpenseId(null);
-							setConfirmingRecurringExpense(null);
 							setExpenseForm(defaultExpenseForm());
 						}}
 					>
 						<Text style={styles.sectionTitle}>
 							{editingExpenseId ? "Edit Expense" : "Add Expense"}
 						</Text>
-						{!editingExpenseId && expenseSuggestions.length > 0 ? (
-							<View style={styles.fieldSection}>
-								<Text style={styles.inputLabel}>Use a previous expense</Text>
-								<Text style={styles.suggestionHint}>
-									Choose one to pre-fill this expense. You can edit everything before saving.
-								</Text>
-								<View style={styles.suggestionList}>
-									{expenseSuggestions.map((expense) => {
-										const itemNames = expense.items.map((item) => item.name).join(", ");
-										return (
-											<Pressable
-												key={expense.id}
-												onPress={() => applyExpenseSuggestion(expense)}
-												style={styles.suggestionButton}
-												testID={`expense-suggestion-${expense.id}`}
-											>
-												<View style={styles.suggestionContent}>
-													<Text numberOfLines={1} style={styles.suggestionTitle}>
-														{itemNames}
-													</Text>
-													<Text style={styles.suggestionMeta}>
-														{expense.category} · {formatShortDate(expense.date)}
-													</Text>
-												</View>
-												<Text style={styles.suggestionAmount}>{c(expense.price)}</Text>
-											</Pressable>
-										);
-									})}
-								</View>
-							</View>
-						) : null}
 
 						<View style={styles.fieldSection}>
 							<View style={styles.rowBetween}>
@@ -4817,10 +4716,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</View>
 
 							{expenseForm.items.map((item, index) => (
-								<View key={index} style={styles.itemInputRow}>
+								<View key={index}>
+									<View style={styles.itemInputRow}>
 									<TextInput
 										onChangeText={(value) =>
 											updateExpenseItem(index, "name", value)
+										}
+										onFocus={() =>
+											setActiveExpenseItemSuggestionIndex(
+												item.name.trim() ? index : null,
+											)
 										}
 										placeholder="Item name"
 										style={[styles.textInput, styles.itemNameInput]}
@@ -4831,6 +4736,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										onChangeText={(value) =>
 											updateExpenseItem(index, "price", value)
 										}
+										onFocus={() => setActiveExpenseItemSuggestionIndex(null)}
 										placeholder={userCurrency}
 										style={[styles.textInput, styles.itemPriceInput]}
 										value={item.price}
@@ -4847,6 +4753,34 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 												size={24}
 											/>
 										</Pressable>
+									) : null}
+									</View>
+									{activeExpenseItemSuggestionIndex === index &&
+									recentItemSuggestions.length > 0 ? (
+										<View
+											style={styles.itemSuggestionList}
+											testID={`expense-item-suggestions-${index}`}
+										>
+											<Text style={styles.itemSuggestionLabel}>Recent matches</Text>
+											{recentItemSuggestions.map((suggestion) => (
+												<Pressable
+													key={`${suggestion.name}-${suggestion.price}`}
+													onPress={() => applyRecentItemSuggestion(index, suggestion)}
+													style={styles.itemSuggestionButton}
+													testID={`expense-item-suggestion-${index}-${suggestion.name}`}
+												>
+													<View style={styles.itemSuggestionCopy}>
+														<Text numberOfLines={1} style={styles.itemSuggestionTitle}>
+															{suggestion.name}
+														</Text>
+														<Text style={styles.itemSuggestionMeta}>
+															Last price {c(suggestion.price)} · {suggestion.category}
+														</Text>
+													</View>
+													<Ionicons color={theme.primary} name="arrow-forward" size={18} />
+												</Pressable>
+											))}
+										</View>
 									) : null}
 								</View>
 							))}

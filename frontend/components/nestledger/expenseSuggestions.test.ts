@@ -1,5 +1,9 @@
-import { deriveExpenseSuggestions } from "./expenseSuggestions";
+import {
+	applyRecentItemSuggestionToExpenseForm,
+	deriveExpenseSuggestions,
+} from "./expenseSuggestions";
 import type { ExpenseWithItems } from "@/lib/nestledger";
+import type { ExpenseForm } from "./nestledger.constants";
 
 let sequence = 0;
 
@@ -116,5 +120,56 @@ describe("deriveExpenseSuggestions", () => {
 		expect(deriveExpenseSuggestions([missingName, invalidPrice, noItems])).toEqual(
 			[],
 		);
+	});
+});
+
+describe("applyRecentItemSuggestionToExpenseForm", () => {
+	it("uses the suggested item's category when filling an empty item price", () => {
+		const form: ExpenseForm = {
+			category: "Groceries",
+			customCategory: "",
+			date: "2026-09-22",
+			description: "",
+			items: [{ name: "med", price: "" }],
+			is_borrow: false,
+			paidBy: null,
+			usedBy: null,
+		};
+
+		expect(
+			applyRecentItemSuggestionToExpenseForm(form, 0, {
+				category: "Healthcare",
+				name: "Medicine",
+				price: 1250,
+			}),
+		).toMatchObject({
+			category: "Healthcare",
+			items: [{ name: "Medicine", price: "1250" }],
+		});
+	});
+
+	it("uses Other and preserves a custom suggestion category", () => {
+		const form: ExpenseForm = {
+			category: "Groceries",
+			customCategory: "",
+			date: "2026-09-22",
+			description: "",
+			items: [{ name: "stream", price: "10" }],
+			is_borrow: false,
+			paidBy: null,
+			usedBy: null,
+		};
+
+		expect(
+			applyRecentItemSuggestionToExpenseForm(form, 0, {
+				category: "Subscriptions",
+				name: "Video service",
+				price: 15,
+			}),
+		).toMatchObject({
+			category: "Other",
+			customCategory: "Subscriptions",
+			items: [{ name: "Video service", price: "10" }],
+		});
 	});
 });

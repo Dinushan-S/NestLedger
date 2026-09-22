@@ -391,6 +391,44 @@ export const styles = StyleSheet.create({
   itemPriceInput: {
     width: 100,
   },
+  itemSuggestionList: {
+    backgroundColor: theme.surfaceMuted,
+    borderColor: theme.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+    marginTop: -2,
+    overflow: 'hidden',
+  },
+  itemSuggestionLabel: {
+    color: theme.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    textTransform: 'uppercase',
+  },
+  itemSuggestionButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  itemSuggestionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  itemSuggestionTitle: {
+    color: theme.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  itemSuggestionMeta: {
+    color: theme.textMuted,
+    fontSize: 12,
+  },
   removeItemButton: {
     padding: 4,
   },
@@ -409,6 +447,43 @@ export const styles = StyleSheet.create({
     color: theme.text,
     fontSize: 16,
     fontWeight: '700',
+  },
+  expenseComposerHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  suggestionTrigger: {
+    alignItems: 'center',
+    backgroundColor: theme.primarySoft,
+    borderRadius: 999,
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  suggestionTriggerText: {
+    color: theme.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  suggestionPickerHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  suggestionPickerIcon: {
+    alignItems: 'center',
+    backgroundColor: theme.primarySoft,
+    borderRadius: 16,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  suggestionPickerCopy: {
+    flex: 1,
   },
   suggestionHint: {
     color: theme.textMuted,
@@ -430,6 +505,14 @@ export const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  suggestionIcon: {
+    alignItems: 'center',
+    backgroundColor: theme.primarySoft,
+    borderRadius: 12,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
   },
   suggestionContent: {
     flex: 1,
