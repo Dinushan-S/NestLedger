@@ -1,5 +1,6 @@
 import { Session, User } from "@supabase/supabase-js";
 
+import type { ParsedReceipt } from "../components/nestledger/receiptParser";
 import { appConfig } from "./config";
 import { supabase } from "./supabase";
 
@@ -215,10 +216,24 @@ const callBackend = async <T>(
 		method: body ? "POST" : "GET",
 	});
 
-	const json = await response.json();
+	const responseText = await response.text();
+	let json: Record<string, unknown> | null = null;
+	try {
+		json = responseText ? JSON.parse(responseText) : {};
+	} catch {
+		if (response.status === 413) {
+			throw new Error("The receipt photo is too large for the server. Try retaking a smaller photo.");
+		}
+		throw new Error(
+			response.ok
+				? "Received invalid data from server."
+				: `Server error (${response.status}). Please try again.`
+		);
+	}
 
 	if (!response.ok) {
-		throw new Error(json.detail ?? "Backend request failed");
+		const detail = (json?.detail as string) || "Backend request failed";
+		throw new Error(detail);
 	}
 
 	return json as T;
@@ -843,6 +858,23 @@ export const pushApi = {
 			platform,
 			push_token: token,
 		});
+	},
+};
+
+export const receiptApi = {
+	async extractReceipt(
+		session: Session,
+		imageBase64: string,
+		mimeType: string = "image/jpeg",
+	) {
+		return callBackend<ParsedReceipt>(
+			"/receipts/extract",
+			session.access_token,
+			{
+				image_base64: imageBase64,
+				mime_type: mimeType,
+			},
+		);
 	},
 };
 
