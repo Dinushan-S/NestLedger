@@ -1,6 +1,10 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
-import { ProfileFormFields, SettingsSummaryField } from './ProfileFormControls';
+import {
+  PasswordInput,
+  ProfileFormFields,
+  SettingsSummaryField,
+} from './ProfileFormControls';
 
 jest.mock('@expo/vector-icons', () => {
   const React = jest.requireActual('react');
@@ -41,5 +45,26 @@ describe('<ProfileFormFields />', () => {
     screen.getByTestId('settings-open-currency-selector');
     screen.getByText('LKR (Rs.)');
     expect(screen.queryByTestId('currency-chip-USD')).toBeNull();
+  });
+});
+
+describe('<PasswordInput />', () => {
+  it('toggles password visibility with an accessible eye button', () => {
+    const screen = render(
+      <PasswordInput
+        label="Password"
+        testID="auth-password-input"
+        toggleTestID="auth-password-visibility-toggle"
+        value="secret"
+      />,
+    );
+    const input = screen.getByTestId('auth-password-input');
+
+    expect(input.props.secureTextEntry).toBe(true);
+    fireEvent.press(screen.getByLabelText('Show password'));
+
+    expect(input.props.secureTextEntry).toBe(false);
+    screen.getByLabelText('Hide password');
+    expect(screen.getByText('eye-off-outline')).toBeTruthy();
   });
 });

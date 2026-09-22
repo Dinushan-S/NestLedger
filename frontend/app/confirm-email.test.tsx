@@ -1,9 +1,16 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import ConfirmEmailScreen from './confirm-email';
 
 const mockReplace = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
+const mockGetSession = jest.fn();
+
+jest.mock('@/lib/nestledger-services', () => ({
+  authApi: {
+    getSession: () => mockGetSession(),
+  },
+}));
 
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => mockUseLocalSearchParams(),
@@ -16,6 +23,19 @@ describe('<ConfirmEmailScreen />', () => {
   beforeEach(() => {
     mockReplace.mockReset();
     mockUseLocalSearchParams.mockReset();
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue(null);
+  });
+
+  it('redirects to the app when a session is already active', async () => {
+    mockGetSession.mockResolvedValue({ user: { id: 'u1' } });
+    mockUseLocalSearchParams.mockReturnValue({ email: 'member@example.com' });
+
+    render(<ConfirmEmailScreen />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/');
+    });
   });
 
   it('shows the registered email address and routes invite sign-ins back through the invite path', () => {

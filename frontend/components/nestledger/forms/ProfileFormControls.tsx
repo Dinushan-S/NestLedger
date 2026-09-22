@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -28,12 +28,62 @@ type ProfileFormFieldsProps = {
   userOnly?: boolean;
 };
 
-export function LabeledInput({ label, ...props }: { label: string } & TextInputProps) {
+type LabeledInputProps = {
+  label: string;
+  trailingAccessory?: ReactNode;
+} & TextInputProps;
+
+export function LabeledInput({
+  label,
+  style,
+  trailingAccessory,
+  ...props
+}: LabeledInputProps) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput placeholderTextColor={theme.textMuted} style={styles.input} {...props} />
+      <View style={styles.inputControl}>
+        <TextInput
+          placeholderTextColor={theme.textMuted}
+          style={[styles.input, trailingAccessory ? styles.inputWithTrailingAccessory : null, style]}
+          {...props}
+        />
+        {trailingAccessory ? (
+          <View style={styles.trailingAccessory}>{trailingAccessory}</View>
+        ) : null}
+      </View>
     </View>
+  );
+}
+
+export function PasswordInput({
+  toggleTestID,
+  ...props
+}: Omit<LabeledInputProps, 'secureTextEntry' | 'trailingAccessory'> & {
+  toggleTestID?: string;
+}) {
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+
+  return (
+    <LabeledInput
+      {...props}
+      secureTextEntry={!isPasswordVisible}
+      trailingAccessory={
+        <Pressable
+          accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
+          accessibilityRole="button"
+          onPress={() => setIsPasswordVisible((current) => !current)}
+          style={styles.passwordToggle}
+          testID={toggleTestID}
+        >
+          <Ionicons
+            color={theme.textMuted}
+            name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
+            size={21}
+          />
+        </Pressable>
+      }
+    />
   );
 }
 
@@ -247,6 +297,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
+  inputControl: {
+    position: 'relative',
+  },
   inputGroup: {
     gap: 8,
   },
@@ -254,6 +307,15 @@ const styles = StyleSheet.create({
     color: theme.text,
     fontSize: 14,
     fontWeight: '600',
+  },
+  inputWithTrailingAccessory: {
+    paddingRight: 56,
+  },
+  passwordToggle: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
   },
   settingsField: {
     alignItems: 'center',
@@ -285,5 +347,12 @@ const styles = StyleSheet.create({
     color: theme.primary,
     fontSize: 15,
     fontWeight: '600',
+  },
+  trailingAccessory: {
+    bottom: 0,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 4,
+    top: 0,
   },
 });
