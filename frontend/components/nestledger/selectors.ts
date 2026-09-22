@@ -190,35 +190,6 @@ export function buildCurrentPlanExpenses(
 	});
 }
 
-export function buildPersonalContributions(
-	currentPlanExpenses: ExpenseWithItems[],
-	memberMap: Map<string, MemberSummary>,
-) {
-	const contributions: Record<
-		string,
-		{ member: MemberSummary; total: number }
-	> = {};
-
-	currentPlanExpenses.forEach((expense) => {
-		if (!expense.paid_by || expense.is_borrow) {
-			return;
-		}
-
-		const member = memberMap.get(expense.paid_by);
-		if (!member) {
-			return;
-		}
-
-		if (!contributions[expense.paid_by]) {
-			contributions[expense.paid_by] = { member, total: 0 };
-		}
-
-		contributions[expense.paid_by]!.total += Number(expense.price ?? 0);
-	});
-
-	return contributions;
-}
-
 export function buildCurrentMonthStatsMap(
 	plans: BudgetPlan[],
 	profileExpenses: ExpenseWithItems[],

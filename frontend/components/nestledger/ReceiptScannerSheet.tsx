@@ -1,7 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	ActivityIndicator,
 	Image,
@@ -94,36 +94,39 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 		setShowReview(false);
 	}, [visible]);
 
-	const processImage = async (
-		rawUri: string,
-		mimeType: string = "image/jpeg",
-	) => {
-		setImageUri(rawUri);
-		setBusy(true);
-		setError(null);
-		try {
-			const activeSession = session ?? (await supabase.auth.getSession()).data.session;
-			if (!activeSession) {
-				throw new Error("You must be logged in to scan a receipt.");
-			}
-			const optimized = await optimizeAndGetBase64(rawUri);
-			setImageUri(optimized.uri);
+	const processImage = useCallback(
+		async (
+			rawUri: string,
+			mimeType: string = "image/jpeg",
+		) => {
+			setImageUri(rawUri);
+			setBusy(true);
+			setError(null);
+			try {
+				const activeSession = session ?? (await supabase.auth.getSession()).data.session;
+				if (!activeSession) {
+					throw new Error("You must be logged in to scan a receipt.");
+				}
+				const optimized = await optimizeAndGetBase64(rawUri);
+				setImageUri(optimized.uri);
 
-			const nextReceipt = await receiptApi.extractReceipt(
-				activeSession,
-				optimized.base64,
-				mimeType,
-			);
-			setParsedReceipt(nextReceipt);
-			setItems(nextReceipt.items);
-			setShowReview(true);
-		} catch (extractError) {
-			setError(messageForError(extractError));
-			setShowReview(false);
-		} finally {
-			setBusy(false);
-		}
-	};
+				const nextReceipt = await receiptApi.extractReceipt(
+					activeSession,
+					optimized.base64,
+					mimeType,
+				);
+				setParsedReceipt(nextReceipt);
+				setItems(nextReceipt.items);
+				setShowReview(true);
+			} catch (extractError) {
+				setError(messageForError(extractError));
+				setShowReview(false);
+			} finally {
+				setBusy(false);
+			}
+		},
+		[session],
+	);
 
 	const capture = async (source: "camera" | "library") => {
 		setError(null);
@@ -167,7 +170,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 				void processImage(asset.uri, asset.mimeType ?? "image/jpeg");
 			}
 		});
-	}, [visible]);
+	}, [visible, processImage]);
 
 	const editedTotal = useMemo(
 		() => roundMoney(items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0)),

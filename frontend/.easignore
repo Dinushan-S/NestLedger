@@ -1,0 +1,9 @@
+.expo/
+.metro-cache/
+.opencode/
+.claude/
+.ocx/
+.ruff_cache/
+dist/
+*.log
+learn-*.json
