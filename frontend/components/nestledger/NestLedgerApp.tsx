@@ -6,15 +6,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import { useRouter } from "expo-router";
 import { Session } from "@supabase/supabase-js";
-import {
-	lazy,
-	Suspense,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme as useAppTheme } from "../../lib/theme-context";
 import {
 	ActivityIndicator,
@@ -146,6 +138,7 @@ import {
 		spaceTypeName,
 } from "./nestledger.constants";
 import { styles } from "./nestledger.styles";
+import { ProfileSettingsModal } from "./settings/ProfileSettingsModal";
 import {
 	CenteredState,
 	ConfirmModal,
@@ -156,11 +149,6 @@ import {
 	SplashScreen,
 	TabButton,
 } from "./nestledger.ui";
-const ProfileSettingsModal = lazy(() =>
-	import("./settings/ProfileSettingsModal").then((module) => ({
-		default: module.ProfileSettingsModal,
-	})),
-);
 
 Notifications.setNotificationHandler({
 	handleNotification: async () => ({
@@ -195,6 +183,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
 	const [authForm, setAuthForm] = useState({ email: "", password: "" });
 	const [authMessage, setAuthMessage] = useState<string | null>(null);
+	const authPasswordInputRef = useRef<TextInput>(null);
 	const [setupMessage, setSetupMessage] = useState<string | null>(null);
 	const [profileLoaded, setProfileLoaded] = useState(false);
 	const [pendingInviteToken, setPendingInviteToken] = useState(
@@ -2009,10 +1998,20 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	if (!session) {
 		return (
 			<SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
-				<ScrollView
-					contentContainerStyle={styles.authWrap}
-					showsVerticalScrollIndicator={false}
+				<KeyboardAvoidingView
+					behavior={Platform.OS === "ios" ? "padding" : "height"}
+					style={styles.screen}
 				>
+					<ScrollView
+						automaticallyAdjustKeyboardInsets
+						contentContainerStyle={[
+							styles.authWrap,
+							{ paddingBottom: Math.max(24, insets.bottom + 24) },
+						]}
+						keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+						keyboardShouldPersistTaps="handled"
+						showsVerticalScrollIndicator={false}
+					>
 					<BentoCard tone="highlight" style={styles.authCard}>
 						<Text style={styles.kicker}>NestLedger</Text>
 						<Text style={styles.heroTitle}>
@@ -2049,10 +2048,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						</View>
 
 						<LabeledInput
+							autoCapitalize="none"
+							autoComplete="email"
+							inputMode="email"
 							label="Email"
 							onChangeText={(value) =>
 								setAuthForm((current) => ({ ...current, email: value }))
 							}
+							onSubmitEditing={() => authPasswordInputRef.current?.focus()}
+							returnKeyType="next"
+							submitBehavior="submit"
 							testID="auth-email-input"
 							value={authForm.email}
 						/>
@@ -2063,6 +2068,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							}
 							testID="auth-password-input"
 							toggleTestID="auth-password-visibility-toggle"
+							ref={authPasswordInputRef}
+							returnKeyType="done"
 							value={authForm.password}
 						/>
 
@@ -2081,7 +2088,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							registrations.
 						</Text>
 					</BentoCard>
-				</ScrollView>
+					</ScrollView>
+				</KeyboardAvoidingView>
 			</SafeAreaView>
 		);
 	}
@@ -4692,6 +4700,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						currency={userCurrency}
 						onClose={() => setShowReceiptScanner(false)}
 						onConfirm={handleReceiptScanConfirm}
+						session={session}
 						visible={showReceiptScanner}
 					/>
 				</Modal>
@@ -5313,25 +5322,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</ModalScaffold>
 				</Modal>
 
-				<Suspense fallback={null}>
-					<ProfileSettingsModal
-						actionBusy={actionBusy}
-						contributionEnabled={contributionEnabled}
-						deletingProfile={
-							activeProfile ? deletingProfileIds.has(activeProfile.id) : false
-						}
-						onChange={setProfileForm}
-						onClose={() => setShowProfileSettings(false)}
-						onDeleteSpace={() =>
-							activeProfile && handleDeleteSpace(activeProfile.id)
-						}
-						onSave={handleSaveSettings}
-						onSignOut={() => authApi.signOut()}
-						onToggleContribution={handleToggleContribution}
-						profileForm={profileForm}
-						visible={showProfileSettings}
-					/>
-				</Suspense>
+				<ProfileSettingsModal
+					actionBusy={actionBusy}
+					contributionEnabled={contributionEnabled}
+					deletingProfile={
+						activeProfile ? deletingProfileIds.has(activeProfile.id) : false
+					}
+					onChange={setProfileForm}
+					onClose={() => setShowProfileSettings(false)}
+					onDeleteSpace={() =>
+						activeProfile && handleDeleteSpace(activeProfile.id)
+					}
+					onSave={handleSaveSettings}
+					onSignOut={() => authApi.signOut()}
+					onToggleContribution={handleToggleContribution}
+					profileForm={profileForm}
+					visible={showProfileSettings}
+				/>
 
 				<Modal
 					animationType="slide"
