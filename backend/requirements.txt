@@ -9,3 +9,4 @@ email-validator>=2.2.0   # required by pydantic EmailStr (InviteRequest.invited_
 python-dotenv>=1.0.1
 requests>=2.31.0
 sentry-sdk>=2.0.0   # error + performance monitoring (auto-enables FastAPI integration)
+google-genai>=2.3.0  # multimodal Gemini API for receipt extraction
