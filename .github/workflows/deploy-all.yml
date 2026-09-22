@@ -94,7 +94,7 @@ jobs:
               sudo systemctl enable nestledger
 
               # printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' > /etc/nginx/sites-available/nestledger
-              printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' | sudo tee /etc/nginx/sites-available/nestledger > /dev/null
+              printf 'server {\n    listen 80;\n    server_name nestledger.dinushan.dev;\n    client_max_body_size 25M;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n' | sudo tee /etc/nginx/sites-available/nestledger > /dev/null
               
               sudo ln -sf /etc/nginx/sites-available/nestledger /etc/nginx/sites-enabled/
               sudo rm -f /etc/nginx/sites-enabled/default

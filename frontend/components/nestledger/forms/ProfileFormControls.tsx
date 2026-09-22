@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ReactNode, useState } from 'react';
+import { forwardRef, ReactNode, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -33,18 +33,19 @@ type LabeledInputProps = {
   trailingAccessory?: ReactNode;
 } & TextInputProps;
 
-export function LabeledInput({
+export const LabeledInput = forwardRef<TextInput, LabeledInputProps>(function LabeledInput({
   label,
   style,
   trailingAccessory,
   ...props
-}: LabeledInputProps) {
+}, ref) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>{label}</Text>
       <View style={styles.inputControl}>
         <TextInput
           placeholderTextColor={theme.textMuted}
+          ref={ref}
           style={[styles.input, trailingAccessory ? styles.inputWithTrailingAccessory : null, style]}
           {...props}
         />
@@ -54,19 +55,20 @@ export function LabeledInput({
       </View>
     </View>
   );
-}
+});
 
-export function PasswordInput({
+export const PasswordInput = forwardRef<TextInput, Omit<LabeledInputProps, 'secureTextEntry' | 'trailingAccessory'> & {
+  toggleTestID?: string;
+}>(function PasswordInput({
   toggleTestID,
   ...props
-}: Omit<LabeledInputProps, 'secureTextEntry' | 'trailingAccessory'> & {
-  toggleTestID?: string;
-}) {
+}, ref) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   return (
     <LabeledInput
       {...props}
+      ref={ref}
       secureTextEntry={!isPasswordVisible}
       trailingAccessory={
         <Pressable
@@ -85,7 +87,7 @@ export function PasswordInput({
       }
     />
   );
-}
+});
 
 export function AvatarPicker({
   onPick,

@@ -7,7 +7,6 @@ export {
   HouseholdProfile,
   Member,
 	RecurringBill,
-	RecurringExpense,
   SavingsEntry,
   SavingsTrackerMeta,
   ShoppingItem,
@@ -22,7 +21,7 @@ export {
   notificationApi,
   profileApi,
 	pushApi,
-	recurringExpenseApi,
+  receiptApi,
   savingsApi,
   shoppingApi,
 } from './nestledger';
