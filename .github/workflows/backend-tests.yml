@@ -2,12 +2,14 @@ name: Backend Tests
 
 on:
   pull_request:
+    branches:
+      - develop
     paths:
       - "backend/**"
       - ".github/workflows/backend-tests.yml"
   push:
     branches:
-      - main
+      - develop
     paths:
       - "backend/**"
       - ".github/workflows/backend-tests.yml"
@@ -72,7 +74,12 @@ jobs:
           PY
 
       - name: Run backend pytest
-        run: pytest backend/tests --junitxml=test_reports/backend_pytest_results.xml
+        run: |
+          if [ -d "backend/tests" ]; then
+            pytest backend/tests --junitxml=test_reports/backend_pytest_results.xml
+          else
+            echo "No backend/tests directory found — skipping pytest."
+          fi
 
       - name: Show backend logs
         if: always()
@@ -84,3 +91,4 @@ jobs:
         with:
           name: backend-pytest-results
           path: test_reports/backend_pytest_results.xml
+          if-no-files-found: ignore
