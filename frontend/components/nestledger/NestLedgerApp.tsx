@@ -2116,6 +2116,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				<SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
 					<ScrollView
 						contentContainerStyle={styles.authWrap}
+						keyboardShouldPersistTaps="handled"
 						showsVerticalScrollIndicator={false}
 					>
 						<BentoCard tone="highlight" style={styles.authCard}>
@@ -2187,6 +2188,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			<SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
 				<ScrollView
 					contentContainerStyle={styles.authWrap}
+					keyboardShouldPersistTaps="handled"
 					showsVerticalScrollIndicator={false}
 				>
 					<BentoCard tone="highlight" style={styles.authCard}>
@@ -2233,6 +2235,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			<SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
 				<ScrollView
 					contentContainerStyle={styles.switcherWrap}
+					keyboardShouldPersistTaps="handled"
 					showsVerticalScrollIndicator={false}
 				>
 					<View style={styles.switcherHeader}>
@@ -2367,6 +2370,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						) : (
 							<ScrollView
 								contentContainerStyle={styles.contentWrap}
+								keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+								keyboardShouldPersistTaps="handled"
+								nestedScrollEnabled
 								showsVerticalScrollIndicator={false}
 							>
 								{setupMessage ? (

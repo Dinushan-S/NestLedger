@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,23 +31,31 @@ export function BottomSheet({
       behavior="padding"
       style={styles.keyboardWrapper}
     >
-      <Pressable onPress={onClose} style={styles.sheetBackdrop}>
-        <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheetCard}>
+      <View style={styles.sheetBackdrop}>
+        <Pressable
+          accessibilityLabel="Close bottom sheet"
+          accessibilityRole="button"
+          onPress={onClose}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.sheetCard}>
           <View style={styles.sheetGrabber} />
           {scrollable ? (
             <ScrollView
               contentContainerStyle={styles.sheetContent}
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
+              nestedScrollEnabled
               showsVerticalScrollIndicator={false}
+              style={styles.sheetScroll}
             >
               {children}
             </ScrollView>
           ) : (
-            <View>{children}</View>
+            <View style={styles.nonScrollContent}>{children}</View>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -72,6 +81,14 @@ const styles = StyleSheet.create({
   sheetContent: {
     gap: 14,
     paddingBottom: 32,
+  },
+  sheetScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  nonScrollContent: {
+    flex: 1,
+    minHeight: 0,
   },
   sheetGrabber: {
     alignSelf: 'center',

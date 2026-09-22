@@ -128,14 +128,6 @@ export const notificationTypes = {
 	shoppingBought: "shopping_item_bought",
 };
 
-// Must stay in sync with backend/server.py NOTIFICATION_TITLES.
-export const notificationTitles: Record<string, string> = {
-	expense_added: "Budget updated",
-	member_joined: "New member joined",
-	shopping_item_added: "Shopping list updated",
-	shopping_item_bought: "Shopping item bought",
-};
-
 export const SPACE_TYPES: {
 	type: SpaceType;
 	emoji: string;

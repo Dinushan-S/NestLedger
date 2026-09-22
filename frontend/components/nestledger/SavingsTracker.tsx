@@ -362,306 +362,293 @@ export function SavingsTracker({
 			<Modal animationType="slide" transparent visible={showDeposit}>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
+						accessibilityLabel="Close deposit sheet"
+						accessibilityRole="button"
 						onPress={() => setShowDeposit(false)}
-						style={s.sheetBackdrop}
-					>
+						style={StyleSheet.absoluteFill}
+					/>
+					<View pointerEvents="box-none" style={s.sheetBackdrop}>
 						<KeyboardAvoidingView behavior={"padding"} style={s.sheetCard}>
 							<View style={s.sheetGrabber} />
 							<ScrollView
 								contentContainerStyle={s.sheetContent}
 								keyboardShouldPersistTaps="handled"
+								nestedScrollEnabled
 								showsVerticalScrollIndicator={false}
 							>
-								<Pressable onPress={(e) => e.stopPropagation()}>
-									<Text style={s.sectionTitle}>Add Deposit</Text>
+								<Text style={s.sectionTitle}>Add Deposit</Text>
 
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
-										<TextInput
-											keyboardType="numeric"
-											onChangeText={(v) =>
-												setDepositForm((f) => ({ ...f, amount: v }))
-											}
-											placeholder="e.g. 1000"
-											style={s.input}
-											testID="savings-deposit-amount-input"
-											value={depositForm.amount}
-										/>
-									</View>
-
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Date</Text>
-										<Pressable
-											onPress={() => setShowDepositPicker(true)}
-											style={s.dateButton}
-											testID="savings-deposit-date-input"
-										>
-											<Text style={s.dateButtonText}>
-												{formatShortDate(depositForm.date)}
-											</Text>
-											<Ionicons
-												color={theme.textMuted}
-												name="calendar-outline"
-												size={20}
-											/>
-										</Pressable>
-										{showDepositPicker ? (
-											<DateTimePicker
-												display={Platform.OS === "ios" ? "spinner" : "default"}
-												mode="date"
-												onChange={(_: any, date?: Date) => {
-													setShowDepositPicker(false);
-													if (date)
-														setDepositForm((f) => ({
-															...f,
-															date: dateToISO(date),
-														}));
-												}}
-												value={new Date(depositForm.date)}
-											/>
-										) : null}
-									</View>
-
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Name (optional)</Text>
-										<TextInput
-											onChangeText={(v) =>
-												setDepositForm((f) => ({ ...f, name: v }))
-											}
-											placeholder="e.g. Salary savings May"
-											placeholderTextColor={theme.textMuted}
-											style={s.input}
-											value={depositForm.name}
-										/>
-									</View>
-
-									{plans.length > 0 ? (
-										<View style={s.fieldSection}>
-											<Text style={s.inputLabel}>
-												Linked budget plan (optional)
-											</Text>
-											<View style={s.segmentRow}>
-												<CategoryChip
-													active={depositForm.planId === ""}
-													label="No plan"
-													onPress={() =>
-														setDepositForm((f) => ({ ...f, planId: "" }))
-													}
-													testID="savings-deposit-plan-none"
-												/>
-												{plans.map((plan) => (
-													<CategoryChip
-														key={plan.id}
-														active={depositForm.planId === plan.id}
-														label={plan.name}
-														onPress={() =>
-															setDepositForm((f) => ({ ...f, planId: plan.id }))
-														}
-														testID={`savings-deposit-plan-${plan.id}`}
-													/>
-												))}
-											</View>
-										</View>
-									) : null}
-
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Note (optional)</Text>
-										<TextInput
-											onChangeText={(v) =>
-												setDepositForm((f) => ({ ...f, note: v }))
-											}
-											placeholder="e.g. Monthly salary savings"
-											placeholderTextColor={theme.textMuted}
-											style={s.input}
-											testID="savings-deposit-note-input"
-											value={depositForm.note}
-										/>
-									</View>
-
-									<View style={s.spacer16} />
-									<ModernButton
-										loading={actionBusy}
-										onPress={handleSubmitDeposit}
-										testID="savings-deposit-confirm"
-										text="Add Deposit"
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
+									<TextInput
+										keyboardType="numeric"
+										onChangeText={(v) =>
+											setDepositForm((f) => ({ ...f, amount: v }))
+										}
+										placeholder="e.g. 1000"
+										style={s.input}
+										testID="savings-deposit-amount-input"
+										value={depositForm.amount}
 									/>
-								</Pressable>
+								</View>
+
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Date</Text>
+									<Pressable
+										onPress={() => setShowDepositPicker(true)}
+										style={s.dateButton}
+										testID="savings-deposit-date-input"
+									>
+										<Text style={s.dateButtonText}>
+											{formatShortDate(depositForm.date)}
+										</Text>
+										<Ionicons
+											color={theme.primary}
+											name="calendar-outline"
+											size={18}
+										/>
+									</Pressable>
+									{showDepositPicker ? (
+										<DateTimePicker
+											display={Platform.OS === "ios" ? "spinner" : "default"}
+											mode="date"
+											onChange={(e, d) => {
+												setShowDepositPicker(false);
+												if (d)
+													setDepositForm((f) => ({
+														...f,
+														date: dateToISO(d),
+													}));
+											}}
+											value={new Date(depositForm.date)}
+										/>
+									) : null}
+								</View>
+
+								{plans.length > 0 ? (
+									<View style={s.fieldSection}>
+										<Text style={s.inputLabel}>Link to Plan (optional)</Text>
+										<View style={s.segmentRow}>
+											<CategoryChip
+												active={!depositForm.planId}
+												label="General"
+												onPress={() =>
+													setDepositForm((f) => ({ ...f, planId: "" }))
+												}
+												testID="savings-deposit-plan-none"
+											/>
+											{plans.map((p) => (
+												<CategoryChip
+													key={p.id}
+													active={depositForm.planId === p.id}
+													label={p.name}
+													onPress={() =>
+														setDepositForm((f) => ({ ...f, planId: p.id }))
+													}
+													testID={`savings-deposit-plan-${p.id}`}
+												/>
+											))}
+										</View>
+									</View>
+								) : null}
+
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Deposit Name / Title (optional)</Text>
+									<TextInput
+										onChangeText={(v) =>
+											setDepositForm((f) => ({ ...f, name: v }))
+										}
+										placeholder="e.g. Salary savings, Bonus, Gift"
+										placeholderTextColor={theme.textMuted}
+										style={s.input}
+										testID="savings-deposit-name-input"
+										value={depositForm.name}
+									/>
+								</View>
+
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Note (optional)</Text>
+									<TextInput
+										onChangeText={(v) =>
+											setDepositForm((f) => ({ ...f, note: v }))
+										}
+										placeholder="e.g. Monthly allocation from salary"
+										placeholderTextColor={theme.textMuted}
+										style={s.input}
+										testID="savings-deposit-note-input"
+										value={depositForm.note}
+									/>
+								</View>
+
+								<View style={s.spacer16} />
+								<ModernButton
+									loading={actionBusy}
+									onPress={handleSubmitDeposit}
+									testID="savings-deposit-confirm"
+									text="Add Deposit"
+								/>
 							</ScrollView>
 						</KeyboardAvoidingView>
-					</Pressable>
+					</View>
 				</View>
 			</Modal>
 
 			<Modal animationType="slide" transparent visible={showWithdraw}>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
+						accessibilityLabel="Close withdraw sheet"
+						accessibilityRole="button"
 						onPress={() => setShowWithdraw(false)}
-						style={s.sheetBackdrop}
-					>
+						style={StyleSheet.absoluteFill}
+					/>
+					<View pointerEvents="box-none" style={s.sheetBackdrop}>
 						<KeyboardAvoidingView behavior={"padding"} style={s.sheetCard}>
 							<View style={s.sheetGrabber} />
 							<ScrollView
 								contentContainerStyle={s.sheetContent}
 								keyboardShouldPersistTaps="handled"
+								nestedScrollEnabled
 								showsVerticalScrollIndicator={false}
 							>
-								<Pressable onPress={(e) => e.stopPropagation()}>
-									<Text style={s.sectionTitle}>Withdraw</Text>
+								<Text style={s.sectionTitle}>Withdraw</Text>
 
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
-										<TextInput
-											keyboardType="numeric"
-											onChangeText={(v) => {
-												setWithdrawError(null);
-												setWithdrawForm((f) => ({ ...f, amount: v }));
-											}}
-											placeholder="e.g. 5000"
-											placeholderTextColor={theme.textMuted}
-											style={s.input}
-											testID="savings-withdraw-amount-input"
-											value={withdrawForm.amount}
-										/>
-									</View>
-
-									<Text style={s.balanceHint}>
-										Available balance:{" "}
-										{formatCurrency(trackerBalance, currencyCode)}
-									</Text>
-
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Date</Text>
-										<Pressable
-											onPress={() => setShowWithdrawPicker(true)}
-											style={s.dateButton}
-											testID="savings-withdraw-date-input"
-										>
-											<Text style={s.dateButtonText}>
-												{formatShortDate(withdrawForm.date)}
-											</Text>
-											<Ionicons
-												color={theme.textMuted}
-												name="calendar-outline"
-												size={20}
-											/>
-										</Pressable>
-										{showWithdrawPicker ? (
-											<DateTimePicker
-												display={Platform.OS === "ios" ? "spinner" : "default"}
-												mode="date"
-												onChange={(_: any, date?: Date) => {
-													setShowWithdrawPicker(false);
-													if (date)
-														setWithdrawForm((f) => ({
-															...f,
-															date: dateToISO(date),
-														}));
-												}}
-												value={new Date(withdrawForm.date)}
-											/>
-										) : null}
-									</View>
-
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Name (optional)</Text>
-										<TextInput
-											onChangeText={(v) =>
-												setWithdrawForm((f) => ({ ...f, name: v }))
-											}
-											placeholder="e.g. Home renovation"
-											placeholderTextColor={theme.textMuted}
-											style={s.input}
-											value={withdrawForm.name}
-										/>
-									</View>
-
-									{plans.length > 0 ? (
-										<View style={s.fieldSection}>
-											<Text style={s.inputLabel}>
-												Linked budget plan (optional)
-											</Text>
-											<View style={s.segmentRow}>
-												<CategoryChip
-													active={withdrawForm.planId === ""}
-													label="Other / No plan"
-													onPress={() =>
-														setWithdrawForm((f) => ({ ...f, planId: "" }))
-													}
-													testID="savings-withdraw-plan-none"
-												/>
-												{plans.map((plan) => (
-													<CategoryChip
-														key={plan.id}
-														active={withdrawForm.planId === plan.id}
-														label={plan.name}
-														onPress={() =>
-															setWithdrawForm((f) => ({
-																...f,
-																planId: plan.id,
-															}))
-														}
-														testID={`savings-withdraw-plan-${plan.id}`}
-													/>
-												))}
-											</View>
-										</View>
-									) : null}
-
-									{!withdrawForm.planId ? (
-										<View style={s.fieldSection}>
-											<Text style={s.inputLabel}>Reason</Text>
-											<View style={s.segmentRow}>
-												{["Emergency", "Expense", "Transfer", "Other"].map(
-													(r) => (
-														<CategoryChip
-															key={r}
-															active={withdrawForm.reason === r}
-															label={r}
-															onPress={() =>
-																setWithdrawForm((f) => ({ ...f, reason: r }))
-															}
-															testID={`savings-withdraw-reason-${r}`}
-														/>
-													),
-												)}
-											</View>
-										</View>
-									) : null}
-
-									<View style={s.inputGroup}>
-										<Text style={s.inputLabel}>Note (optional)</Text>
-										<TextInput
-											onChangeText={(v) =>
-												setWithdrawForm((f) => ({ ...f, note: v }))
-											}
-											placeholder={
-												withdrawForm.planId
-													? `Withdrawal for ${plans.find((p) => p.id === withdrawForm.planId)?.name ?? "plan"}`
-													: `e.g. ${withdrawForm.reason === "Other" ? "Home renovation" : withdrawForm.reason}`
-											}
-											placeholderTextColor={theme.textMuted}
-											style={s.input}
-											testID="savings-withdraw-note-input"
-											value={withdrawForm.note}
-										/>
-									</View>
-
-									{withdrawError ? (
-										<Text style={s.errorText}>{withdrawError}</Text>
-									) : null}
-
-									<View style={s.spacer16} />
-									<ModernButton
-										loading={actionBusy}
-										onPress={handleSubmitWithdraw}
-										destructive
-										testID="savings-withdraw-confirm"
-										text="Withdraw"
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Amount ({currencyCode})</Text>
+									<TextInput
+										keyboardType="numeric"
+										onChangeText={(v) => {
+											setWithdrawError(null);
+											setWithdrawForm((f) => ({ ...f, amount: v }));
+										}}
+										placeholder="e.g. 5000"
+										placeholderTextColor={theme.textMuted}
+										style={s.input}
+										testID="savings-withdraw-amount-input"
+										value={withdrawForm.amount}
 									/>
-								</Pressable>
+								</View>
+
+								<Text style={s.balanceHint}>
+									Available balance:{" "}
+									{formatCurrency(trackerBalance, currencyCode)}
+								</Text>
+
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Date</Text>
+									<Pressable
+										onPress={() => setShowWithdrawPicker(true)}
+										style={s.dateButton}
+										testID="savings-withdraw-date-input"
+									>
+										<Text style={s.dateButtonText}>
+											{formatShortDate(withdrawForm.date)}
+										</Text>
+										<Ionicons
+											color={theme.textMuted}
+											name="calendar-outline"
+											size={20}
+										/>
+									</Pressable>
+									{showWithdrawPicker ? (
+										<DateTimePicker
+											display={Platform.OS === "ios" ? "spinner" : "default"}
+											mode="date"
+											onChange={(_: any, date?: Date) => {
+												setShowWithdrawPicker(false);
+												if (date)
+													setWithdrawForm((f) => ({
+														...f,
+														date: dateToISO(date),
+													}));
+											}}
+											value={new Date(withdrawForm.date)}
+										/>
+									) : null}
+								</View>
+
+								{plans.length > 0 ? (
+									<View style={s.fieldSection}>
+										<Text style={s.inputLabel}>
+											Linked budget plan (optional)
+										</Text>
+										<View style={s.segmentRow}>
+											<CategoryChip
+												active={withdrawForm.planId === ""}
+												label="No plan"
+												onPress={() =>
+													setWithdrawForm((f) => ({ ...f, planId: "" }))
+												}
+												testID="savings-withdraw-plan-none"
+											/>
+											{plans.map((plan) => (
+												<CategoryChip
+													key={plan.id}
+													active={withdrawForm.planId === plan.id}
+													label={plan.name}
+													onPress={() =>
+														setWithdrawForm((f) => ({ ...f, planId: plan.id }))
+													}
+													testID={`savings-withdraw-plan-${plan.id}`}
+												/>
+											))}
+										</View>
+									</View>
+								) : null}
+
+								{!withdrawForm.planId ? (
+									<View style={s.fieldSection}>
+										<Text style={s.inputLabel}>Reason</Text>
+										<View style={s.segmentRow}>
+											{["Emergency", "Expense", "Transfer", "Other"].map(
+												(r) => (
+													<CategoryChip
+														key={r}
+														active={withdrawForm.reason === r}
+														label={r}
+														onPress={() =>
+															setWithdrawForm((f) => ({ ...f, reason: r }))
+														}
+														testID={`savings-withdraw-reason-${r}`}
+													/>
+												),
+											)}
+										</View>
+									</View>
+								) : null}
+
+								<View style={s.inputGroup}>
+									<Text style={s.inputLabel}>Note (optional)</Text>
+									<TextInput
+										onChangeText={(v) =>
+											setWithdrawForm((f) => ({ ...f, note: v }))
+										}
+										placeholder={
+											withdrawForm.planId
+												? `Withdrawal for ${plans.find((p) => p.id === withdrawForm.planId)?.name ?? "plan"}`
+												: `e.g. ${withdrawForm.reason === "Other" ? "Home renovation" : withdrawForm.reason}`
+										}
+										placeholderTextColor={theme.textMuted}
+										style={s.input}
+										testID="savings-withdraw-note-input"
+										value={withdrawForm.note}
+									/>
+								</View>
+
+								{withdrawError ? (
+									<Text style={s.errorText}>{withdrawError}</Text>
+								) : null}
+
+								<View style={s.spacer16} />
+								<ModernButton
+									loading={actionBusy}
+									onPress={handleSubmitWithdraw}
+									destructive
+									testID="savings-withdraw-confirm"
+									text="Withdraw"
+								/>
 							</ScrollView>
 						</KeyboardAvoidingView>
-					</Pressable>
+					</View>
 				</View>
 			</Modal>
 

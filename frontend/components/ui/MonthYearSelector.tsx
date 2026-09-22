@@ -63,8 +63,9 @@ export default function MonthYearSelector({
 			</View>
 			<ScrollView
 				horizontal
+				nestedScrollEnabled
 				showsHorizontalScrollIndicator={false}
-				style={styles.monthScrollRow}
+				contentContainerStyle={styles.monthScrollRow}
 			>
 				<CategoryChip
 					active={viewMonth === "current"}
