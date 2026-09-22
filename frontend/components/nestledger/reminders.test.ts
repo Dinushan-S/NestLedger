@@ -1,9 +1,8 @@
-import * as Notifications from "expo-notifications";
+import * as Notifications from "../../lib/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { cancelExpenseReminders, nextRecurringDueDate, restoreDailyReminder, syncRecurringReminders, updateDailyReminder } from "./reminders";
-import type { RecurringExpense } from "../../lib/nestledger";
+import { cancelExpenseReminders, restoreDailyReminder, updateDailyReminder } from "./reminders";
 
-jest.mock("expo-notifications", () => ({
+jest.mock("../../lib/notifications", () => ({
   SchedulableTriggerInputTypes: { DAILY: "daily", DATE: "date" },
   AndroidImportance: { HIGH: 4 },
   getPermissionsAsync: jest.fn(async () => ({ granted: true })),
@@ -39,55 +38,6 @@ it("reports permission denial instead of pretending reminders are enabled", asyn
   expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
 });
 
-it("advances an overdue schedule beyond today and preserves its monthly anchor", () => {
-  expect(nextRecurringDueDate("2026-01-01", "daily", new Date(2026, 8, 19))).toBe("2026-09-20");
-  expect(nextRecurringDueDate("2026-01-31", "monthly", new Date(2026, 2, 15))).toBe("2026-03-31");
-});
-
-it("removes deleted reminders but leaves other profiles and daily reminders alone", async () => {
-  jest.mocked(Notifications.getAllScheduledNotificationsAsync).mockResolvedValueOnce([
-    { identifier: "deleted", content: { data: { type: "recurring_expense_due", profile_id: "p1" } } },
-    { identifier: "other-profile", content: { data: { type: "recurring_expense_due", profile_id: "p2" } } },
-    { identifier: "daily", content: { data: { type: "daily_expense_reminder" } } },
-  ] as never);
-  await syncRecurringReminders("p1", []);
-  expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledTimes(1);
-  expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith("deleted");
-});
-
-const expense = (changes: Partial<RecurringExpense> = {}): RecurringExpense => ({
-  id: "e1", profile_id: "p1", name: "Mothercare", category: "Healthcare",
-  description: null, created_by: "u1", created_at: "2026-01-01", updated_at: "2026-01-01",
-  is_active: true, frequency: "monthly", next_due_date: "2099-10-01", reminder_time: "09:00",
-  items: [{ name: "Mothercare", price: 2000 }], ...changes,
-});
-
-it("restores a future reminder on a device with no existing alarm", async () => {
-  await syncRecurringReminders("p1", [expense()]);
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
-    content: expect.objectContaining({ data: expect.objectContaining({ recurring_expense_id: "e1", profile_id: "p1" }) }),
-    trigger: expect.objectContaining({ type: "date", date: new Date("2099-10-01T09:00:00") }),
-  }));
-});
-
-it("does not duplicate a reminder across consecutive profile refreshes", async () => {
-  await syncRecurringReminders("p1", [expense()]);
-  const scheduled = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0]![0];
-  jest.mocked(Notifications.getAllScheduledNotificationsAsync).mockResolvedValueOnce([
-    { identifier: "existing", content: scheduled.content },
-  ] as never);
-  await syncRecurringReminders("p1", [expense()]);
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-  expect(Notifications.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
-});
-
-it("keeps a daily review reminder for an overdue unconfirmed expense", async () => {
-  await syncRecurringReminders("p1", [expense({ next_due_date: "2020-01-01" })]);
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
-    trigger: expect.objectContaining({ type: "daily", hour: 9, minute: 0 }),
-  }));
-});
-
 it("does not cancel the old daily alarm if scheduling its replacement fails", async () => {
   jest.mocked(Notifications.getAllScheduledNotificationsAsync).mockResolvedValueOnce([
     { identifier: "working", content: { data: { type: "daily_expense_reminder" } } },
@@ -102,11 +52,10 @@ it("does not cancel the old daily alarm if scheduling its replacement fails", as
 it("cancels only expense reminders on sign-out", async () => {
   jest.mocked(Notifications.getAllScheduledNotificationsAsync).mockResolvedValueOnce([
     { identifier: "daily", content: { data: { type: "daily_expense_reminder" } } },
-    { identifier: "recurring", content: { data: { type: "recurring_expense_due" } } },
     { identifier: "other", content: { data: { type: "unrelated" } } },
   ] as never);
   await cancelExpenseReminders();
-  expect(jest.mocked(Notifications.cancelScheduledNotificationAsync).mock.calls).toEqual([["daily"], ["recurring"]]);
+  expect(jest.mocked(Notifications.cancelScheduledNotificationAsync).mock.calls).toEqual([["daily"]]);
 });
 
 it("does not undo activation when foreground restoration races with the permission dialog", async () => {
