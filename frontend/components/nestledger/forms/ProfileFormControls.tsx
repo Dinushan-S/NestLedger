@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { Ionicons } from '@expo/vector-icons';
 import { forwardRef, ReactNode, useState } from 'react';
 import {
@@ -9,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { avatarChoices, currencyOptions, theme } from '@/constants/nestledger';
+import { avatarChoices, currencyOptions } from '@/constants/nestledger';
 
 export type CreateProfileForm = {
   avatarEmoji: string;
@@ -39,6 +40,8 @@ export const LabeledInput = forwardRef<TextInput, LabeledInputProps>(function La
   trailingAccessory,
   ...props
 }, ref) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>{label}</Text>
@@ -63,6 +66,8 @@ export const PasswordInput = forwardRef<TextInput, Omit<LabeledInputProps, 'secu
   toggleTestID,
   ...props
 }, ref) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   return (
@@ -98,6 +103,7 @@ export function AvatarPicker({
   selected: string;
   testIDPrefix?: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.avatarGrid}>
       {avatarChoices.map((choice) => (
@@ -121,6 +127,7 @@ export function ProfileFormFields({
   testIDPrefix,
   userOnly,
 }: ProfileFormFieldsProps) {
+  const styles = useThemedStyles(createStyles);
   const prefix = testIDPrefix ?? (userOnly ? 'settings' : 'create-profile');
 
   return (
@@ -172,6 +179,7 @@ function CurrencyPicker({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.currencyGrid}>
       {currencyOptions.map((option) => {
@@ -214,6 +222,8 @@ export function SettingsSummaryField({
   title: string;
   value: string;
 }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <Pressable onPress={onPress} style={styles.settingsField} testID={testID}>
       <View style={styles.settingsFieldCopy}>
@@ -230,7 +240,7 @@ export function SettingsSummaryField({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   avatarChoice: {
     alignItems: 'center',
     backgroundColor: theme.surface,

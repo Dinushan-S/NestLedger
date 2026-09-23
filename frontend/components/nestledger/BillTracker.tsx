@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { useState, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -16,13 +17,7 @@ import {
 	Member,
 	BudgetPlan,
 } from "../../lib/nestledger";
-import {
-	theme,
-	billCategories,
-	monthNames,
-	formatCurrency,
-	formatShortDate,
-} from "../../constants/nestledger";
+import { billCategories, monthNames, formatCurrency, formatShortDate } from "../../constants/nestledger";
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
@@ -113,6 +108,8 @@ export function BillTracker({
 	onMarkPaid,
 	onDeleteBill,
 }: Props) {
+	const { theme } = useTheme();
+	const s = useThemedStyles(createStyles);
 	const currencyCode = currencyCodeProp ?? "USD";
 	const [showComposer, setShowComposer] = useState(false);
 	const [showPayment, setShowPayment] = useState(false);
@@ -834,7 +831,7 @@ export function BillTracker({
 	);
 }
 
-const s = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	headerRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",

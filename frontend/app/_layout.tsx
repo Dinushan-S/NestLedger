@@ -8,9 +8,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeProvider, useTheme } from '@/lib/theme-context';
 
-function AppStatusBar() {
-  const { isDark } = useTheme();
-  return <StatusBar style={isDark ? 'light' : 'dark'} />;
+function ThemedNavigation() {
+  const { isDark, theme } = useTheme();
+  return (
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
+        <Stack.Screen name="confirm-email" />
+        <Stack.Screen name="index" />
+        <Stack.Screen name="invite" />
+      </Stack>
+    </>
+  );
 }
 
 export default function RootLayout() {
@@ -18,12 +27,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AppStatusBar />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="confirm-email" />
-            <Stack.Screen name="index" />
-            <Stack.Screen name="invite" />
-          </Stack>
+          <ThemedNavigation />
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

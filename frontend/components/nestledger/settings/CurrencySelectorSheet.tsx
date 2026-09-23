@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -8,8 +9,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-
-import { theme } from '@/constants/nestledger';
 
 import { BottomSheet } from '@/components/ui/BottomSheet';
 
@@ -37,6 +36,8 @@ export function CurrencySelectorSheet({
   value,
   visible,
 }: CurrencySelectorSheetProps) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
 
@@ -118,6 +119,7 @@ function CurrencyRow({
   onPress: () => void;
   selected: boolean;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -133,7 +135,7 @@ function CurrencyRow({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   emptyBody: {
     color: theme.textMuted,
     fontSize: 14,

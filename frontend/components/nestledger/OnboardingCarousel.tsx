@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ComponentProps, useMemo, useRef, useState } from 'react';
 import {
@@ -10,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { theme } from '../../constants/nestledger';
 import BentoCard from '../ui/BentoCard';
 import ModernButton from '../ui/ModernButton';
 
@@ -56,9 +56,9 @@ const steps: OnboardingStep[] = [
   {
     body: 'Start in Budget to create a plan, choose the total amount, set the date range, and record shared expenses against that plan.',
     cards: [
-      { body: 'Create a budget plan for this month, a trip, or a family goal.', icon: 'add-circle-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Create a plan' },
-      { body: 'Set the total amount and the dates that define the plan window.', icon: 'calendar-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Set the limits' },
-      { body: 'Add expenses and watch Dashboard reflect spend and remaining money.', icon: 'stats-chart-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Track progress' },
+      { body: 'Create a budget plan for this month, a trip, or a family goal.', icon: 'add-circle-outline', title: 'Create a plan' },
+      { body: 'Set the total amount and the dates that define the plan window.', icon: 'calendar-outline', title: 'Set the limits' },
+      { body: 'Add expenses and watch Dashboard reflect spend and remaining money.', icon: 'stats-chart-outline', title: 'Track progress' },
     ],
     highlight: 'The Dashboard summary updates from the activity inside your active plan.',
     icon: 'wallet-outline',
@@ -69,7 +69,7 @@ const steps: OnboardingStep[] = [
     body: 'Budget also holds your Bill Trackers and Savings Trackers, so routine household money stays in one place instead of scattered apps and notes.',
     cards: [
       { body: 'Bill Trackers help manage recurring payments and what is still pending.', icon: 'receipt-outline', title: 'Bills' },
-      { body: 'Savings Trackers record deposits, withdrawals, and running balances.', icon: 'leaf-outline', iconBackgroundColor: theme.primarySoft, iconColor: theme.primary, title: 'Savings' },
+      { body: 'Savings Trackers record deposits, withdrawals, and running balances.', icon: 'leaf-outline', title: 'Savings' },
       { body: 'Both live next to your budget plans so home planning stays connected.', icon: 'layers-outline', title: 'One money hub' },
     ],
     highlight: 'Use bills for recurring payments and savings for deposits or household goals.',
@@ -104,6 +104,8 @@ const steps: OnboardingStep[] = [
 ];
 
 export default function OnboardingCarousel({ onComplete, onSkip, primaryActionText }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
@@ -228,7 +230,7 @@ export default function OnboardingCarousel({ onComplete, onSkip, primaryActionTe
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   actionsRow: {
     alignItems: 'center',
     flexDirection: 'row',

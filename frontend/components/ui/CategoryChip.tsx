@@ -1,6 +1,5 @@
+import { useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-
-import { theme } from '../../constants/nestledger';
 
 type Props = {
   active?: boolean;
@@ -11,6 +10,7 @@ type Props = {
 };
 
 export default function CategoryChip({ active, label, onPress, left, testID }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Pressable hitSlop={10} onPress={onPress} testID={testID} style={[styles.chip, active ? styles.activeChip : styles.idleChip]}>
       <View style={styles.content}>
@@ -21,13 +21,13 @@ export default function CategoryChip({ active, label, onPress, left, testID }: P
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   activeChip: {
     backgroundColor: theme.primary,
     borderColor: theme.primary,
   },
   activeLabel: {
-    color: '#FFFFFF',
+    color: theme.onPrimary,
   },
   chip: {
     borderRadius: 999,

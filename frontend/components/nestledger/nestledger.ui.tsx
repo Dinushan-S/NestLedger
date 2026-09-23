@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { useState } from "react";
 import {
 	Modal,
@@ -14,12 +15,13 @@ import {
 	SafeAreaView,
 	useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { theme } from "../../constants/nestledger";
+
 import BentoCard from "../ui/BentoCard";
-import { styles } from "./nestledger.styles";
+import { useStyles } from "./nestledger.styles";
 
 // Small presentational components extracted from NestLedgerApp.tsx (2026-08-05).
 export function SplashScreen() {
+	const styles = useStyles();
 	const insets = useSafeAreaInsets();
 	return (
 		<SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
@@ -38,6 +40,7 @@ export function CenteredState({
 	title: string;
 	body: string;
 }) {
+	const styles = useStyles();
 	return (
 		<View style={styles.centerWrap}>
 			<BentoCard tone="highlight" style={styles.centerCard}>
@@ -49,6 +52,7 @@ export function CenteredState({
 }
 
 export function EmptyState({ title, body }: { body: string; title: string }) {
+	const styles = useStyles();
 	return (
 		<View style={styles.emptyWrap}>
 			<Text style={styles.cardTitle}>{title}</Text>
@@ -68,6 +72,8 @@ export function DatePickerField({
 	onDateChange: (value: string) => void;
 	testID?: string;
 }) {
+	const { theme, isDark } = useTheme();
+	const styles = useStyles();
 	const [showPicker, setShowPicker] = useState(false);
 	const dateObj = new Date(date);
 
@@ -98,6 +104,9 @@ export function DatePickerField({
 			</Pressable>
 			{showPicker ? (
 				<DateTimePicker
+					themeVariant={isDark ? "dark" : "light"}
+					textColor={theme.text}
+					accentColor={theme.primary}
 					display={Platform.OS === "ios" ? "spinner" : "default"}
 					mode="date"
 					onChange={handleChange}
@@ -109,6 +118,7 @@ export function DatePickerField({
 }
 
 export function InfoPill({ label, value }: { label: string; value: string }) {
+	const styles = useStyles();
 	return (
 		<View style={styles.infoPill}>
 			<Text style={styles.infoPillLabel}>{label}</Text>
@@ -132,6 +142,8 @@ export function TabButton({
 	onPress: () => void;
 	testID: string;
 }) {
+	const { theme } = useTheme();
+	const styles = useStyles();
 	return (
 		<Pressable
 			hitSlop={10}
@@ -169,6 +181,8 @@ export function QuickActionCard({
 	onPress: () => void;
 	testID: string;
 }) {
+	const { theme } = useTheme();
+	const styles = useStyles();
 	return (
 		<Pressable onPress={onPress} style={styles.quickActionCard} testID={testID}>
 			<Ionicons color={theme.primary} name={icon} size={22} />
@@ -194,6 +208,8 @@ export function ConfirmModal({
 	title: string;
 	visible: boolean;
 }) {
+	const { theme } = useTheme();
+	const styles = useStyles();
 	if (!visible) return null;
 
 	return (
@@ -258,6 +274,8 @@ export function SafeWrap({
 	onClose: () => void;
 	title: string;
 }) {
+	const { theme } = useTheme();
+	const safeWrapStyles = useThemedStyles(createStyles);
 	return (
 		<View style={safeWrapStyles.screen}>
 			<View style={safeWrapStyles.header}>
@@ -279,7 +297,7 @@ export function SafeWrap({
 	);
 }
 
-const safeWrapStyles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	screen: {
 		backgroundColor: theme.background,
 		flex: 1,

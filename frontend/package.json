@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "node ./node_modules/eslint/bin/eslint.js .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:theme": "node scripts/check-theme.cjs"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",
