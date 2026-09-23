@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from 'react';
 import { useColorScheme } from 'react-native';
@@ -70,4 +71,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 /** Returns the active theme colours and mode controls. */
 export function useTheme(): ThemeContextValue {
   return useContext(ThemeContext);
+}
+
+/** Rebuild a component's styles when the active palette changes. */
+export function useThemedStyles<T>(createStyles: (theme: AppTheme) => T): T {
+  const { theme } = useTheme();
+  return useMemo(() => createStyles(theme), [createStyles, theme]);
 }

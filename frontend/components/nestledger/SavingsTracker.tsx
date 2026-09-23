@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { useState, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -13,13 +14,7 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { SavingsEntry, BudgetPlan, Member } from "../../lib/nestledger";
-import {
-	theme,
-	formatCurrency,
-	formatShortDate,
-	todayISO,
-	dateToISO,
-} from "../../constants/nestledger";
+import { formatCurrency, formatShortDate, todayISO, dateToISO } from "../../constants/nestledger";
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
@@ -68,6 +63,8 @@ export function SavingsTracker({
 	onWithdraw,
 	onDeleteEntry,
 }: Props) {
+	const { theme, isDark } = useTheme();
+	const s = useThemedStyles(createStyles);
 	const currencyCode = currencyCodeProp ?? "USD";
 	const [showDeposit, setShowDeposit] = useState(false);
 	const [showWithdraw, setShowWithdraw] = useState(false);
@@ -410,6 +407,9 @@ export function SavingsTracker({
 									</Pressable>
 									{showDepositPicker ? (
 										<DateTimePicker
+											themeVariant={isDark ? "dark" : "light"}
+											textColor={theme.text}
+											accentColor={theme.primary}
 											display={Platform.OS === "ios" ? "spinner" : "default"}
 											mode="date"
 											onChange={(e, d) => {
@@ -551,6 +551,9 @@ export function SavingsTracker({
 									</Pressable>
 									{showWithdrawPicker ? (
 										<DateTimePicker
+											themeVariant={isDark ? "dark" : "light"}
+											textColor={theme.text}
+											accentColor={theme.primary}
 											display={Platform.OS === "ios" ? "spinner" : "default"}
 											mode="date"
 											onChange={(_: any, date?: Date) => {
@@ -724,7 +727,7 @@ export function SavingsTracker({
 	);
 }
 
-const s = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	headerRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",

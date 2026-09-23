@@ -41,7 +41,6 @@ import {
 	shoppingCategories,
 	shoppingFilters,
 	getCycleWindowForCursor,
-	theme,
 } from "../../constants/nestledger";
 import {
 	AppNotification,
@@ -137,7 +136,7 @@ import {
 		notificationTypes,
 		spaceTypeName,
 } from "./nestledger.constants";
-import { styles } from "./nestledger.styles";
+import { useStyles } from "./nestledger.styles";
 import { ProfileSettingsModal } from "./settings/ProfileSettingsModal";
 import {
 	CenteredState,
@@ -171,7 +170,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const { width } = useWindowDimensions();
 	const isTablet = width >= 720;
 	// Dynamic theme — reads from ThemeContext set up in the root layout
-	const { theme: activeTheme } = useAppTheme();
+	const { theme } = useAppTheme();
+	const styles = useStyles();
 	const bentoWidth = isTablet ? (width - 72) / 2 : width - 40;
 
 	const [booting, setBooting] = useState(true);
@@ -2297,12 +2297,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	return (
 		<GestureHandlerRootView
-			style={[styles.screen, { backgroundColor: activeTheme.background }]}
+			style={[styles.screen, { backgroundColor: theme.background }]}
 		>
 			<SafeAreaView
 				style={[
 					styles.screen,
-					{ paddingTop: insets.top, backgroundColor: activeTheme.background },
+					{ paddingTop: insets.top, backgroundColor: theme.background },
 				]}
 			>
 				<KeyboardAvoidingView
@@ -2314,7 +2314,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							styles.appShell,
 							{
 								paddingBottom: Math.max(16, insets.bottom),
-								backgroundColor: activeTheme.background,
+								backgroundColor: theme.background,
 							},
 						]}
 					>
@@ -2818,7 +2818,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 														style={styles.deleteButton}
 													>
 														<Ionicons
-															color="#fff"
+															color={theme.onDanger}
 															name="trash-outline"
 															size={24}
 														/>
@@ -2841,7 +2841,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 														style={styles.deleteButton}
 													>
 														<Ionicons
-															color="#fff"
+															color={theme.onPrimary}
 															name="create-outline"
 															size={24}
 														/>
@@ -2914,7 +2914,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 														style={styles.deleteButton}
 													>
 														<Ionicons
-															color="#fff"
+															color={theme.onDanger}
 															name="trash-outline"
 															size={24}
 														/>
@@ -2937,7 +2937,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 														style={styles.deleteButton}
 													>
 														<Ionicons
-															color="#fff"
+															color={theme.onPrimary}
 															name="create-outline"
 															size={24}
 														/>
@@ -3060,7 +3060,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 															testID={`shopping-delete-${item.id}`}
 														>
 															<Ionicons
-																color="#fff"
+																color={theme.onDanger}
 																name="trash-outline"
 																size={24}
 															/>
@@ -4364,7 +4364,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 										<View style={styles.dualActions}>
 											<ModernButton
-												icon={<Ionicons color="#FFFFFF" name="add" size={18} />}
+												icon={<Ionicons color={theme.onPrimary} name="add" size={18} />}
 												onPress={() => {
 													setShowExpenseComposer(true);
 												}}
@@ -4374,7 +4374,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 											<ModernButton
 												icon={
 													<Ionicons
-														color="#FFFFFF"
+														color={theme.onPrimary}
 														name="cash-outline"
 														size={18}
 													/>

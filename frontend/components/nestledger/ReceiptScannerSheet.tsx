@@ -374,19 +374,19 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 					))}
 
 					<View style={styles.buttonRow}>
-						<ModernButton icon={<Text>↻</Text>} onPress={resetToCapture} secondary testID="receipt-retake" text="Retake" />
-						<ModernButton disabled={!items.some((item) => item.name.trim() && item.totalPrice > 0)} icon={<Text>✓</Text>} onPress={confirm} testID="receipt-use-scan" text="Use this scan" />
+						<ModernButton icon={<Text style={{ color: theme.primary }}>↻</Text>} onPress={resetToCapture} secondary testID="receipt-retake" text="Retake" />
+						<ModernButton disabled={!items.some((item) => item.name.trim() && item.totalPrice > 0)} icon={<Text style={{ color: theme.onPrimary }}>✓</Text>} onPress={confirm} testID="receipt-use-scan" text="Use this scan" />
 					</View>
 				</>
 			) : (
 				<>
 					<View style={[styles.captureCard, { backgroundColor: theme.primarySoft }]}>
-						<Text style={styles.captureIcon}>▣</Text>
+						<Text style={[styles.captureIcon, { color: theme.primary }]}>▣</Text>
 						<Text style={[styles.captureTitle, { color: theme.text }]}>Skip the typing</Text>
 						<Text style={[styles.helpText, { color: theme.textMuted }]}>Keep the whole receipt in frame. Avoid glare, shadows, and folded corners.</Text>
 					</View>
-					<ModernButton icon={<Text>⌕</Text>} onPress={() => void capture("camera")} testID="receipt-take-photo" text="Take a photo" />
-					<ModernButton icon={<Text>▧</Text>} onPress={() => void capture("library")} secondary testID="receipt-choose-photo" text="Choose from photos" />
+					<ModernButton icon={<Text style={{ color: theme.onPrimary }}>⌕</Text>} onPress={() => void capture("camera")} testID="receipt-take-photo" text="Take a photo" />
+					<ModernButton icon={<Text style={{ color: theme.primary }}>▧</Text>} onPress={() => void capture("library")} secondary testID="receipt-choose-photo" text="Choose from photos" />
 					<Text style={[styles.privacy, { color: theme.textMuted }]}>The image is read on the device. Nothing is saved until you review and confirm the expense.</Text>
 				</>
 			)}

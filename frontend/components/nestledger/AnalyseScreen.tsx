@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -9,12 +10,7 @@ import {
 	View,
 } from "react-native";
 
-import {
-	expenseCategories,
-	formatCurrency,
-	getCycleStart,
-	theme,
-} from "../../constants/nestledger";
+import { expenseCategories, formatCurrency, getCycleStart } from "../../constants/nestledger";
 import type {
 	BudgetPlan,
 	Expense,
@@ -101,6 +97,8 @@ export default function AnalyseScreen({
 	currency,
 	onClose,
 }: Props) {
+	const { theme } = useTheme();
+	const styles = useThemedStyles(createStyles);
 	const fmt = useMemo(
 		() => (v: number) => formatCurrency(v, currency),
 		[currency],
@@ -698,6 +696,7 @@ export default function AnalyseScreen({
 
 function trendDisplay(
 	item: CategoryAnalysis,
+	theme: AppTheme,
 ): { label: string; icon: any; color: string } | null {
 	if (item.trend === "new") {
 		return { label: "New", icon: "sparkles-outline", color: theme.secondary };
@@ -723,9 +722,11 @@ function CategoryRow({
 	dimmed: boolean;
 	onPress: () => void;
 }) {
+	const { theme } = useTheme();
+	const styles = useThemedStyles(createStyles);
 	const color = colorFor(item.category);
 	const sharePct = Math.round(item.share * 100);
-	const td = trendDisplay(item);
+	const td = trendDisplay(item, theme);
 	return (
 		<Pressable
 			style={[styles.row, dimmed && { opacity: 0.45 }]}
@@ -774,7 +775,7 @@ function CategoryRow({
 	);
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	screen: { flex: 1, backgroundColor: theme.background },
 	header: {
 		flexDirection: "row",
@@ -802,7 +803,7 @@ const styles = StyleSheet.create({
 	},
 	planChipActive: { backgroundColor: theme.primary },
 	planChipText: { color: theme.textMuted, fontWeight: "600", fontSize: 13 },
-	planChipTextActive: { color: theme.surface },
+	planChipTextActive: { color: theme.onPrimary },
 	cycleRow: {
 		flexDirection: "row",
 		alignItems: "center",
@@ -829,12 +830,12 @@ const styles = StyleSheet.create({
 	headlineSub: { fontSize: 13, color: theme.textMuted, marginTop: 2 },
 	remainingPill: {
 		marginTop: 8,
-		backgroundColor: "#E3F2E4",
+		backgroundColor: theme.primarySoft,
 		borderRadius: 999,
 		paddingHorizontal: 14,
 		paddingVertical: 5,
 	},
-	remainingText: { color: "#3F9B54", fontSize: 13, fontWeight: "700" },
+	remainingText: { color: theme.primary, fontSize: 13, fontWeight: "700" },
 	overText: {
 		color: theme.danger,
 		fontSize: 13,
@@ -891,7 +892,7 @@ const styles = StyleSheet.create({
 	shareTrack: {
 		height: 8,
 		borderRadius: 999,
-		backgroundColor: "#EDF0EB",
+		backgroundColor: theme.border,
 		overflow: "hidden",
 	},
 	shareFill: { height: 8, borderRadius: 999 },

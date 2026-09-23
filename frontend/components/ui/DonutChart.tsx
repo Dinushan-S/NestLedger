@@ -1,8 +1,7 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import React, { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, G } from "react-native-svg";
-
-import { theme } from "../../constants/nestledger";
 
 export type DonutSlice = {
 	key: string;
@@ -36,6 +35,8 @@ export default function DonutChart({
 	onSlicePress,
 	testID,
 }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
 	const radius = (size - strokeWidth) / 2;
 	const circumference = 2 * Math.PI * radius;
 	const center = size / 2;
@@ -122,7 +123,7 @@ export default function DonutChart({
 	);
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	wrap: {
 		alignItems: "center",
 		justifyContent: "center",

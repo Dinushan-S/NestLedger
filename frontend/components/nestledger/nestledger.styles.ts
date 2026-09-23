@@ -1,8 +1,8 @@
 import { StyleSheet } from 'react-native';
-import { theme } from '../../constants/nestledger';
+import { useThemedStyles, type AppTheme } from '@/lib/theme-context';
 
-// Extracted from NestLedgerApp.tsx (2026-08-05) — static style sheet.
-export const styles = StyleSheet.create({
+// Shared styles follow the active palette across screens and dialogs.
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   amountText: {
     color: theme.text,
     fontSize: 18,
@@ -231,7 +231,7 @@ export const styles = StyleSheet.create({
     top: -6,
   },
   badgeText: {
-    color: '#FFFFFF',
+    color: theme.onSecondary,
     fontSize: 10,
     fontWeight: '800',
   },
@@ -752,7 +752,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmButtonText: {
-    color: '#fff',
+    color: theme.onPrimary,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -760,7 +760,7 @@ export const styles = StyleSheet.create({
     backgroundColor: theme.danger,
   },
   confirmDestructiveText: {
-    color: '#fff',
+    color: theme.onDanger,
   },
   planCard: {
     gap: 14,
@@ -1073,3 +1073,7 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
+export function useStyles() {
+  return useThemedStyles(createStyles);
+}
