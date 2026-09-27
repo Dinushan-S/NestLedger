@@ -543,6 +543,34 @@ def send_invitation(
     return deliver_invitation(payload, invite_token)
 
 
+@api_router.get("/invitations/pending")
+def list_pending_invitations(
+    profile_id: str, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(profile_id, user["id"])
+
+    rows = supabase_rest(
+        "GET",
+        "invitations",
+        params={
+            "profile_id": f"eq.{profile_id}",
+            "status": "eq.pending",
+            "select": "id,invited_email,invite_token,created_at",
+            "order": "created_at.desc",
+        },
+    )
+    return [
+        {
+            "id": row["id"],
+            "invited_email": row["invited_email"],
+            "created_at": row["created_at"],
+            "shareable_link": f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={row['invite_token']}",
+        }
+        for row in rows
+    ]
+
+
 @api_router.post("/invitations/resend")
 def resend_invitation(
     payload: InviteRequest, authorization: str | None = Header(default=None)
