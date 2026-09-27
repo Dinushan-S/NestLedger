@@ -183,6 +183,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
 	const [authForm, setAuthForm] = useState({ email: "", password: "" });
 	const [authMessage, setAuthMessage] = useState<string | null>(null);
+	const [resetCodeSent, setResetCodeSent] = useState(false);
 	const authPasswordInputRef = useRef<TextInput>(null);
 	const [setupMessage, setSetupMessage] = useState<string | null>(null);
 	const [profileLoaded, setProfileLoaded] = useState(false);
@@ -835,6 +836,25 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					});
 				}
 			}
+		} catch (error) {
+			setAuthMessage(extractError(error));
+		} finally {
+			setAuthBusy(false);
+		}
+	};
+
+	const handlePasswordReset = async () => {
+		const email = authForm.email.trim();
+		if (!email) {
+			setAuthMessage("Enter your email address first.");
+			return;
+		}
+		setAuthBusy(true);
+		setAuthMessage(null);
+		try {
+			await authApi.resetPasswordForEmail(email);
+			setResetCodeSent(true);
+			router.push({ pathname: "/reset-password", params: { email } });
 		} catch (error) {
 			setAuthMessage(extractError(error));
 		} finally {
@@ -2083,6 +2103,17 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							testID="auth-submit-button"
 							text={authMode === "signin" ? "Continue" : "Create account"}
 						/>
+						{authMode === "signin" ? (
+							<Pressable
+								accessibilityRole="button"
+								onPress={() => void handlePasswordReset()}
+								style={{ alignItems: "center", paddingVertical: 8 }}
+							>
+								<Text style={{ color: theme.primary, fontWeight: "600" }}>
+									{resetCodeSent ? "Send another code" : "Forgot password?"}
+								</Text>
+							</Pressable>
+						) : null}
 						<Text style={styles.footnote}>
 							Supabase email confirmation is currently enabled for new
 							registrations.
