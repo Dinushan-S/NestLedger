@@ -15,11 +15,27 @@ create table if not exists public.profiles (
   name text not null,
   emoji_avatar text,
   space_type text not null default 'family' check (space_type in ('personal', 'family', 'trip_family', 'trip_friends', 'shared_living')),
+  currency text not null,
   bill_tracker_enabled boolean not null default false,
   savings_tracker_enabled boolean not null default false,
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+
+create or replace function public.set_profile_currency_on_insert()
+returns trigger language plpgsql as $$
+begin
+  if new.currency is null then
+    new.currency := coalesce((
+      select nullif(currency, '') from public.user_profiles where user_id = new.created_by
+    ), 'USD');
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists profile_currency_on_insert on public.profiles;
+create trigger profile_currency_on_insert before insert on public.profiles
+for each row execute function public.set_profile_currency_on_insert();
 
 create table if not exists public.profile_members (
   id uuid primary key default gen_random_uuid(),

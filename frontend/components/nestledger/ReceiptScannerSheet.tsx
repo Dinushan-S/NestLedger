@@ -387,7 +387,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 					</View>
 					<ModernButton icon={<Text style={{ color: theme.onPrimary }}>⌕</Text>} onPress={() => void capture("camera")} testID="receipt-take-photo" text="Take a photo" />
 					<ModernButton icon={<Text style={{ color: theme.primary }}>▧</Text>} onPress={() => void capture("library")} secondary testID="receipt-choose-photo" text="Choose from photos" />
-					<Text style={[styles.privacy, { color: theme.textMuted }]}>The image is read on the device. Nothing is saved until you review and confirm the expense.</Text>
+					<Text style={[styles.privacy, { color: theme.textMuted }]}>Your photo is sent to an AI service to scan the receipt. Scanned items are added to your expenses only after you review and confirm.</Text>
 				</>
 			)}
 

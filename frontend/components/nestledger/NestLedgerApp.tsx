@@ -266,7 +266,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		userProfile && profiles.length > 0
 			? "Open your space"
 			: "Continue to setup";
-	const userCurrency = userProfile?.currency ?? "USD";
+	const activeProfile = useMemo(
+		() => profiles.find((profile) => profile.id === activeProfileId) ?? null,
+		[activeProfileId, profiles],
+	);
+	const userCurrency = activeProfile?.currency ?? userProfile?.currency ?? "USD";
 	const c = useCallback(
 		(value: number) => formatCurrency(value, userCurrency),
 		[userCurrency],
@@ -351,6 +355,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const resetSessionState = useCallback(() => {
 		void cancelExpenseReminders().catch(() => undefined);
+		setAuthForm({ email: "", password: "" });
 		setProfiles([]);
 		setActiveProfileId(null);
 		setUserProfile(null);
@@ -401,10 +406,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setShoppingItems,
 	});
 
-	const activeProfile = useMemo(
-		() => profiles.find((profile) => profile.id === activeProfileId) ?? null,
-		[activeProfileId, profiles],
-	);
 	const selectedPlan = useMemo(
 		() => plans.find((plan) => plan.id === selectedPlanId) ?? null,
 		[plans, selectedPlanId],
@@ -836,6 +837,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					});
 				}
 			}
+			setAuthForm({ email: "", password: "" });
 		} catch (error) {
 			setAuthMessage(extractError(error));
 		} finally {
@@ -2309,6 +2311,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					<ModernButton
 						onPress={() => {
 							setProfileSetupStep("type");
+							setProfileForm({ ...defaultCreateProfileForm, currency: userProfile?.currency ?? "USD" });
 							setShowCreateProfile(true);
 						}}
 						secondary

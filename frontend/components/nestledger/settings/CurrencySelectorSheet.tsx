@@ -68,9 +68,9 @@ export function CurrencySelectorSheet({
           keyboardDismissMode="on-drag"
           ListHeaderComponent={
             <View style={styles.listHeader}>
-              <Text style={styles.title}>Choose currency</Text>
+              <Text style={styles.title}>Choose default currency</Text>
               <Text style={styles.subtitle}>
-                Pick the currency used for your budgets, expenses, bills, and savings views.
+                New spaces you create will use this currency. Existing spaces keep their original currency.
               </Text>
               <TextInput
                 onChangeText={setQuery}

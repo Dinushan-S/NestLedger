@@ -159,10 +159,10 @@ export function ProfileSettingsModal({
 						<ProfileFormFields
 							currencyField={
 								<SettingsSummaryField
-									description="Opens a searchable picker instead of rendering the full currency list inline."
+									description="Used for new spaces you create. Existing spaces keep their original currency."
 									onPress={() => setShowCurrencySelector(true)}
 									testID="settings-open-currency-selector"
-									title="Currency"
+									title="Default currency"
 									value={selectedCurrencySummary}
 								/>
 							}
@@ -230,8 +230,7 @@ export function ProfileSettingsModal({
 					{/* ── Preferences ── */}
 					<SettingsSection item={settingsSections[2]!}>
 						<Text style={styles.preferenceHint}>
-							Amount formatting updates everywhere after you save, while keeping
-							all existing budget and tracker logic the same.
+							Every space keeps the currency it started with, including spaces you join by invite.
 						</Text>
 
 						{/* Contributions toggle */}
