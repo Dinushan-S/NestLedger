@@ -548,18 +548,26 @@ def list_pending_invitations(
     profile_id: str, authorization: str | None = Header(default=None)
 ):
     user = get_current_user(authorization)
-    ensure_profile_member(profile_id, user["id"])
-
-    rows = supabase_rest(
+    profile_rows = supabase_rest(
         "GET",
-        "invitations",
+        "profiles",
         params={
-            "profile_id": f"eq.{profile_id}",
-            "status": "eq.pending",
-            "select": "id,invited_email,invite_token,created_at",
-            "order": "created_at.desc",
+            "id": f"eq.{profile_id}",
+            "select": (
+                "id,profile_members!inner(user_id),"
+                "invitations(id,invited_email,invite_token,created_at)"
+            ),
+            "profile_members.user_id": f"eq.{user['id']}",
+            "invitations.status": "eq.pending",
+            "invitations.order": "created_at.desc",
         },
     )
+    if not profile_rows:
+        raise HTTPException(
+            status_code=403, detail="You do not have access to this profile."
+        )
+
+    rows = profile_rows[0].get("invitations") or []
     return [
         {
             "id": row["id"],
