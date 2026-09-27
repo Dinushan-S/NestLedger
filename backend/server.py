@@ -571,6 +571,31 @@ def list_pending_invitations(
     ]
 
 
+@api_router.delete("/invitations/{invitation_id}")
+def delete_invitation(
+    invitation_id: uuid.UUID,
+    profile_id: uuid.UUID,
+    authorization: str | None = Header(default=None),
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(str(profile_id), user["id"])
+
+    rows = supabase_rest(
+        "DELETE",
+        "invitations",
+        params={
+            "id": f"eq.{invitation_id}",
+            "profile_id": f"eq.{profile_id}",
+            "select": "id",
+        },
+        prefer="return=representation",
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+
+    return {"deleted": True}
+
+
 @api_router.post("/invitations/resend")
 def resend_invitation(
     payload: InviteRequest, authorization: str | None = Header(default=None)
