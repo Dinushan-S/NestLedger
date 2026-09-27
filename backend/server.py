@@ -333,6 +333,22 @@ def send_brevo_invite(
         return False
 
 
+def deliver_invitation(payload: InviteRequest, invite_token: str) -> dict[str, bool | str]:
+    fallback_link = f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={invite_token}"
+    email_delivered = send_brevo_invite(
+        recipient_email=payload.invited_email,
+        inviter_name=payload.inviter_name,
+        profile_name=payload.profile_name,
+        invite_link=f"nestledger://invite?token={invite_token}",
+        fallback_link=fallback_link,
+    )
+    return {
+        "email_delivered": email_delivered,
+        "invite_token": invite_token,
+        "shareable_link": fallback_link,
+    }
+
+
 def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:
     email = user.get("email") or ""
     metadata = user.get("user_metadata") or {}
@@ -497,7 +513,7 @@ def send_invitation(
             headers={"Retry-After": str(retry_after)},
         )
 
-    # duplicate pending invite guard
+    # Reuse pending invites so another send resends the same link.
     existing = supabase_rest(
         "GET",
         "invitations",
@@ -505,45 +521,58 @@ def send_invitation(
             "profile_id": f"eq.{payload.profile_id}",
             "invited_email": f"eq.{payload.invited_email}",
             "status": "eq.pending",
-            "select": "id",
+            "select": "invite_token",
             "limit": "1",
         },
     )
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail="A pending invitation for this address already exists.",
+    invite_token = existing[0]["invite_token"] if existing else str(uuid.uuid4())
+
+    if not existing:
+        supabase_rest(
+            "POST",
+            "invitations",
+            json_data={
+                "profile_id": payload.profile_id,
+                "invited_email": payload.invited_email,
+                "invite_token": invite_token,
+                "status": "pending",
+            },
+            prefer="return=representation",
         )
 
-    invite_token = str(uuid.uuid4())
-    fallback_link = f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={invite_token}"
-    deep_link = f"nestledger://invite?token={invite_token}"
+    return deliver_invitation(payload, invite_token)
 
-    supabase_rest(
-        "POST",
+
+@api_router.post("/invitations/resend")
+def resend_invitation(
+    payload: InviteRequest, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(payload.profile_id, user["id"])
+
+    retry_after = _invite_rate_limiter.check(user["id"])
+    if retry_after is not None:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many invitations sent. Please wait before sending more."},
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    existing = supabase_rest(
+        "GET",
         "invitations",
-        json_data={
-            "profile_id": payload.profile_id,
-            "invited_email": payload.invited_email,
-            "invite_token": invite_token,
-            "status": "pending",
+        params={
+            "profile_id": f"eq.{payload.profile_id}",
+            "invited_email": f"eq.{payload.invited_email}",
+            "status": "eq.pending",
+            "select": "invite_token",
+            "limit": "1",
         },
-        prefer="return=representation",
     )
+    if not existing:
+        raise HTTPException(status_code=404, detail="No pending invitation for this address.")
 
-    email_delivered = send_brevo_invite(
-        recipient_email=payload.invited_email,
-        inviter_name=payload.inviter_name,
-        profile_name=payload.profile_name,
-        invite_link=deep_link,
-        fallback_link=fallback_link,
-    )
-
-    return {
-        "email_delivered": email_delivered,
-        "invite_token": invite_token,
-        "shareable_link": fallback_link,
-    }
+    return deliver_invitation(payload, existing[0]["invite_token"])
 
 
 @api_router.post("/invitations/accept")
