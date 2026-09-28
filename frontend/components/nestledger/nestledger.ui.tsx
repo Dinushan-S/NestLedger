@@ -146,6 +146,8 @@ export function TabButton({
 	const styles = useStyles();
 	return (
 		<Pressable
+			accessibilityRole="tab"
+			accessibilityState={{ selected: active }}
 			hitSlop={10}
 			onPress={onPress}
 			style={styles.tabButton}

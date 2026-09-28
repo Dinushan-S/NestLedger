@@ -1,7 +1,9 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
+	Alert,
 	Linking,
 	Modal,
+	Platform,
 	Pressable,
 	StyleSheet,
 	Switch,
@@ -57,14 +59,14 @@ const SPACE_TYPES = [
 	{
 		type: "family",
 		emoji: "🏠",
-		label: "Family / Home",
-		desc: "Household budget.",
+		label: "Home",
+		desc: "Shared home budget.",
 	},
 	{
 		type: "trip_family",
 		emoji: "✈️",
-		label: "Family Trip",
-		desc: "Travel with family.",
+		label: "Trip",
+		desc: "A shared travel budget.",
 	},
 	{
 		type: "trip_friends",
@@ -88,14 +90,13 @@ const settingsSections: SettingsSectionItem[] = [
 	},
 	{
 		key: "household",
-		title: "Household profile",
-		description: "Shared name and avatar for this space.",
+		title: "Space profile",
+		description: "Name and avatar for this space.",
 	},
 	{
 		key: "preferences",
 		title: "Preferences",
-		description:
-			"Compact settings controls that avoid noisy full-list editing.",
+		description: "Appearance and contribution preferences apply immediately. Save profile and space edits below.",
 	},
 	{
 		key: "danger",
@@ -135,6 +136,27 @@ export function ProfileSettingsModal({
 	const styles = getStyles(theme);
 
 	const [showCurrencySelector, setShowCurrencySelector] = useState(false);
+	const initialForm = useRef(profileForm);
+	useEffect(() => {
+		if (visible) initialForm.current = profileForm;
+		// Capture once per open/close transition; edits while open must not reset the baseline.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [visible]);
+	const hasUnsavedChanges = JSON.stringify(profileForm) !== JSON.stringify(initialForm.current);
+	const closeSettings = () => {
+		if (!hasUnsavedChanges) {
+			onClose();
+			return;
+		}
+		if (Platform.OS === "web") {
+			if (globalThis.confirm?.("Discard your unsaved profile and space changes?")) onClose();
+			return;
+		}
+		Alert.alert("Discard unsaved changes?", "Your profile and space edits have not been saved.", [
+			{ text: "Keep editing", style: "cancel" },
+			{ text: "Discard", style: "destructive", onPress: onClose },
+		]);
+	};
 	const selectedCurrencySummary = useMemo(() => {
 		const symbol = CURRENCY_INFO[profileForm.currency]?.symbol;
 		return symbol
@@ -146,12 +168,13 @@ export function ProfileSettingsModal({
 		<>
 			<Modal
 				animationType="slide"
+				onRequestClose={closeSettings}
 				presentationStyle="pageSheet"
 				visible={visible}
 			>
 				<ModalScaffold
 					closeTestID="close-settings-modal"
-					onClose={onClose}
+					onClose={closeSettings}
 					title="Profile Settings"
 				>
 					{/* ── Personal profile ── */}
@@ -159,10 +182,10 @@ export function ProfileSettingsModal({
 						<ProfileFormFields
 							currencyField={
 								<SettingsSummaryField
-									description="Opens a searchable picker instead of rendering the full currency list inline."
+									description="Used for new spaces you create. Existing spaces keep their original currency."
 									onPress={() => setShowCurrencySelector(true)}
 									testID="settings-open-currency-selector"
-									title="Currency"
+									title="Default currency"
 									value={selectedCurrencySummary}
 								/>
 							}
@@ -175,14 +198,14 @@ export function ProfileSettingsModal({
 					{/* ── Household profile ── */}
 					<SettingsSection item={settingsSections[1]!}>
 						<LabeledInput
-							label="Family profile name"
+							label="Space name"
 							onChangeText={(value) =>
 								onChange({ ...profileForm, familyName: value })
 							}
 							testID="settings-family-name-input"
 							value={profileForm.familyName}
 						/>
-						<Text style={styles.inputLabel}>Family avatar</Text>
+						<Text style={styles.inputLabel}>Space avatar</Text>
 						<AvatarPicker
 							selected={profileForm.familyEmoji}
 							onPick={(value) =>
@@ -196,6 +219,8 @@ export function ProfileSettingsModal({
 								return (
 									<Pressable
 										key={st.type}
+										accessibilityRole="radio"
+										accessibilityState={{ selected }}
 										onPress={() =>
 											onChange({ ...profileForm, spaceType: st.type })
 										}
@@ -230,8 +255,7 @@ export function ProfileSettingsModal({
 					{/* ── Preferences ── */}
 					<SettingsSection item={settingsSections[2]!}>
 						<Text style={styles.preferenceHint}>
-							Amount formatting updates everywhere after you save, while keeping
-							all existing budget and tracker logic the same.
+								Every space keeps the currency it started with, including spaces you join by invite.
 						</Text>
 
 						{/* Contributions toggle */}
@@ -244,6 +268,7 @@ export function ProfileSettingsModal({
 								</Text>
 							</View>
 							<Switch
+								accessibilityLabel="Track contributions"
 								onValueChange={onToggleContribution}
 								thumbColor={contributionEnabled ? theme.primary : theme.border}
 								trackColor={{
@@ -266,6 +291,8 @@ export function ProfileSettingsModal({
 									return (
 										<Pressable
 											key={opt.value}
+											accessibilityRole="button"
+											accessibilityState={{ selected: active }}
 											onPress={() => setThemeMode(opt.value)}
 											style={[
 												styles.appearanceBtn,
@@ -288,16 +315,16 @@ export function ProfileSettingsModal({
 							</View>
 						</View>
 					</SettingsSection>
+					<ModernButton
+						loading={actionBusy}
+						onPress={onSave}
+						testID="settings-save-button"
+						text="Save changes"
+					/>
 
 					{/* ── Danger zone ── */}
 					<SettingsSection item={settingsSections[3]!}>
 						<View style={styles.actionStack}>
-							<ModernButton
-								loading={actionBusy}
-								onPress={onSave}
-								testID="settings-save-button"
-								text="Save changes"
-							/>
 							<ModernButton
 								onPress={onSignOut}
 								secondary
@@ -455,14 +482,14 @@ const getStyles = (theme: ReturnType<typeof useTheme>["theme"]) =>
 			fontWeight: "700",
 			textAlign: "center",
 		},
-		spaceTypeLabelActive: { color: theme.primary },
+		spaceTypeLabelActive: { color: theme.text },
 		spaceTypeDesc: {
 			color: theme.textMuted,
 			fontSize: 10,
 			lineHeight: 13,
 			textAlign: "center",
 		},
-		spaceTypeDescActive: { color: theme.primary },
+		spaceTypeDescActive: { color: theme.textMuted },
 		// Appearance control
 		appearanceWrap: { gap: 6 },
 		appearanceRow: { flexDirection: "row", gap: 8, marginTop: 4 },
@@ -486,5 +513,5 @@ const getStyles = (theme: ReturnType<typeof useTheme>["theme"]) =>
 			fontSize: 11,
 			fontWeight: "700",
 		},
-		appearanceLabelActive: { color: theme.primary },
+		appearanceLabelActive: { color: theme.text },
 	});

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	ActivityIndicator,
 	Image,
+	Linking,
 	Pressable,
 	StyleSheet,
 	Text,
@@ -31,6 +32,7 @@ type Props = {
 };
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
+type NumericReceiptField = "quantity" | "unitPrice" | "totalPrice";
 
 const parseInputNumber = (value: string) => {
 	const parsed = Number(value.replace(/,/g, "").trim());
@@ -80,18 +82,25 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 	const [imageUri, setImageUri] = useState<string | null>(null);
 	const [parsedReceipt, setParsedReceipt] = useState<ParsedReceipt | null>(null);
 	const [items, setItems] = useState<ReceiptItemDraft[]>([]);
+	const [numericInputs, setNumericInputs] = useState<
+		Record<string, Partial<Record<NumericReceiptField, string>>>
+	>({});
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [showReview, setShowReview] = useState(false);
+	const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+	const [imageMimeType, setImageMimeType] = useState("image/jpeg");
 
 	useEffect(() => {
 		if (!visible) return;
 		setImageUri(null);
 		setParsedReceipt(null);
 		setItems([]);
+		setNumericInputs({});
 		setBusy(false);
 		setError(null);
 		setShowReview(false);
+		setCameraPermissionDenied(false);
 	}, [visible]);
 
 	const processImage = useCallback(
@@ -100,6 +109,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 			mimeType: string = "image/jpeg",
 		) => {
 			setImageUri(rawUri);
+			setImageMimeType(mimeType);
 			setBusy(true);
 			setError(null);
 			try {
@@ -109,6 +119,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 				}
 				const optimized = await optimizeAndGetBase64(rawUri);
 				setImageUri(optimized.uri);
+				setImageMimeType("image/jpeg");
 
 				const nextReceipt = await receiptApi.extractReceipt(
 					activeSession,
@@ -117,6 +128,18 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 				);
 				setParsedReceipt(nextReceipt);
 				setItems(nextReceipt.items);
+				setNumericInputs(
+					Object.fromEntries(
+						nextReceipt.items.map((item) => [
+							item.id,
+							{
+								quantity: String(item.quantity),
+								unitPrice: String(item.unitPrice),
+								totalPrice: String(item.totalPrice),
+							},
+						]),
+					),
+				);
 				setShowReview(true);
 			} catch (extractError) {
 				setError(messageForError(extractError));
@@ -134,10 +157,12 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 			if (source === "camera") {
 				const permission = await ImagePicker.requestCameraPermissionsAsync();
 				if (!permission.granted) {
+					setCameraPermissionDenied(true);
 					setError("Camera access is required to scan a bill. Enable it in Settings and try again.");
 					return;
 				}
 			}
+			setCameraPermissionDenied(false);
 			const pickerOptions: ImagePicker.ImagePickerOptions = {
 				allowsEditing: false,
 				mediaTypes: ["images"],
@@ -182,10 +207,42 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 		field: "name" | "quantity" | "unitPrice" | "totalPrice",
 		value: string,
 	) => {
+		if (field === "name") {
+			setItems((current) =>
+				current.map((item, itemIndex) =>
+					itemIndex === index ? { ...item, name: value } : item,
+				),
+			);
+			return;
+		}
+		const item = items[index];
+		if (!item) return;
+		const numericValue = parseInputNumber(value);
+		setNumericInputs((current) => ({
+			...current,
+			[item.id]: {
+				...current[item.id],
+				[field]: value,
+				...(field === "quantity"
+					? { totalPrice: String(roundMoney(numericValue * item.unitPrice)) }
+					: {}),
+				...(field === "unitPrice"
+					? { totalPrice: String(roundMoney(numericValue * item.quantity)) }
+					: {}),
+				...(field === "totalPrice"
+					? {
+							unitPrice: String(
+								item.quantity > 0
+									? roundMoney(numericValue / item.quantity)
+									: numericValue,
+							),
+						}
+					: {}),
+			},
+		}));
 		setItems((current) =>
 			current.map((item, itemIndex) => {
 				if (itemIndex !== index) return item;
-				if (field === "name") return { ...item, name: value };
 				const numericValue = parseInputNumber(value);
 				if (field === "quantity") {
 					return {
@@ -211,11 +268,12 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 	};
 
 	const addItem = () => {
+		const id = `receipt-item-manual-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 		setItems((current) => [
 			...current,
 			{
 				confidence: "low",
-				id: `receipt-item-manual-${current.length + 1}`,
+				id,
 				name: "",
 				quantity: 1,
 				rawText: "",
@@ -223,34 +281,48 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 				unitPrice: 0,
 			},
 		]);
+		setNumericInputs((current) => ({
+			...current,
+			[id]: { quantity: "1", unitPrice: "0", totalPrice: "0" },
+		}));
 	};
 
 	const removeItem = (index: number) => {
+		const itemId = items[index]?.id;
 		setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+		if (itemId) {
+			setNumericInputs((current) => {
+				const next = { ...current };
+				delete next[itemId];
+				return next;
+			});
+		}
 	};
 
 	const confirm = () => {
 		if (!parsedReceipt) return;
-		const validItems = items
-			.filter(
-				(item) =>
-					item.name.trim().length > 0 &&
-					Number.isFinite(item.quantity) &&
-					item.quantity > 0 &&
-					Number.isFinite(item.totalPrice) &&
-					item.totalPrice > 0,
-			)
-			.map((item) => ({
-				...item,
-				name: item.name.trim(),
-				quantity: roundMoney(item.quantity),
-				unitPrice: roundMoney(item.unitPrice),
-				totalPrice: roundMoney(item.totalPrice),
-			}));
-		if (!validItems.length) {
-			setError("Add at least one item with a positive line total.");
+		const invalidIndex = items.findIndex((item) =>
+			!item.name.trim() ||
+			!Number.isFinite(item.quantity) ||
+			item.quantity <= 0 ||
+			!Number.isFinite(item.unitPrice) ||
+			item.unitPrice < 0 ||
+			!Number.isFinite(item.totalPrice) ||
+			item.totalPrice <= 0,
+		);
+		if (invalidIndex >= 0) {
+			setError(
+				`Complete item ${invalidIndex + 1} with a name, positive quantity, and line total, or remove it.`,
+			);
 			return;
 		}
+		const validItems = items.map((item) => ({
+			...item,
+			name: item.name.trim(),
+			quantity: roundMoney(item.quantity),
+			unitPrice: roundMoney(item.unitPrice),
+			totalPrice: roundMoney(item.totalPrice),
+		}));
 		onConfirm({
 			...parsedReceipt,
 			items: validItems,
@@ -262,6 +334,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 		setImageUri(null);
 		setParsedReceipt(null);
 		setItems([]);
+		setNumericInputs({});
 		setError(null);
 		setShowReview(false);
 	};
@@ -305,7 +378,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 
 					<View style={styles.itemsHeader}>
 						<Text style={[styles.sectionTitle, { color: theme.text }]}>Items</Text>
-						<Pressable accessibilityRole="button" onPress={addItem} testID="receipt-add-item">
+						<Pressable accessibilityRole="button" accessibilityLabel="Add receipt item" hitSlop={8} onPress={addItem} style={styles.linkTarget} testID="receipt-add-item">
 							<Text style={[styles.link, { color: theme.primary }]}>+ Add item</Text>
 						</Pressable>
 					</View>
@@ -315,7 +388,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 							<View style={styles.itemTitleRow}>
 								<Text style={[styles.itemNumber, { color: theme.textMuted }]}>Item {index + 1}</Text>
 								{items.length > 1 ? (
-									<Pressable accessibilityRole="button" accessibilityLabel={`Remove item ${index + 1}`} onPress={() => removeItem(index)} testID={`receipt-remove-item-${index}`}>
+										<Pressable accessibilityRole="button" accessibilityLabel={`Remove item ${index + 1}`} hitSlop={8} onPress={() => removeItem(index)} style={styles.linkTarget} testID={`receipt-remove-item-${index}`}>
 										<Text style={[styles.remove, { color: theme.danger }]}>Remove</Text>
 									</Pressable>
 								) : null}
@@ -333,41 +406,44 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 								<View style={styles.numberField}>
 									<Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Qty</Text>
 									<TextInput
+										accessibilityLabel={`Item ${index + 1} quantity`}
 										keyboardType="decimal-pad"
 										onChangeText={(value) => updateItem(index, "quantity", value)}
 										placeholder="1"
 										placeholderTextColor={theme.textMuted}
 										style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surface }]}
 										testID={`receipt-item-quantity-${index}`}
-										value={String(item.quantity || "")}
+										value={numericInputs[item.id]?.quantity ?? String(item.quantity || "")}
 									/>
 								</View>
 								<View style={styles.numberField}>
 									<Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Unit price</Text>
 									<TextInput
+										accessibilityLabel={`Item ${index + 1} unit price`}
 										keyboardType="decimal-pad"
 										onChangeText={(value) => updateItem(index, "unitPrice", value)}
 										placeholder="0.00"
 										placeholderTextColor={theme.textMuted}
 										style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surface }]}
 										testID={`receipt-item-unit-price-${index}`}
-										value={String(item.unitPrice || "")}
+										value={numericInputs[item.id]?.unitPrice ?? String(item.unitPrice || "")}
 									/>
 								</View>
 								<View style={styles.numberField}>
 									<Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Line total</Text>
 									<TextInput
+										accessibilityLabel={`Item ${index + 1} line total`}
 										keyboardType="decimal-pad"
 										onChangeText={(value) => updateItem(index, "totalPrice", value)}
 										placeholder="0.00"
 										placeholderTextColor={theme.textMuted}
 										style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surface }]}
 										testID={`receipt-item-total-${index}`}
-										value={String(item.totalPrice || "")}
+										value={numericInputs[item.id]?.totalPrice ?? String(item.totalPrice || "")}
 									/>
 								</View>
 							</View>
-							<Text style={[styles.confidence, { color: item.confidence === "high" ? theme.success : theme.warning }]}>
+										<Text style={[styles.confidence, { color: theme.text }]}>
 								{item.confidence === "high" ? "Clear match" : "Please verify this row"}
 							</Text>
 						</View>
@@ -375,7 +451,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 
 					<View style={styles.buttonRow}>
 						<ModernButton icon={<Text style={{ color: theme.primary }}>↻</Text>} onPress={resetToCapture} secondary testID="receipt-retake" text="Retake" />
-						<ModernButton disabled={!items.some((item) => item.name.trim() && item.totalPrice > 0)} icon={<Text style={{ color: theme.onPrimary }}>✓</Text>} onPress={confirm} testID="receipt-use-scan" text="Use this scan" />
+						<ModernButton icon={<Text style={{ color: theme.onPrimary }}>✓</Text>} onPress={confirm} testID="receipt-use-scan" text="Use this scan" />
 					</View>
 				</>
 			) : (
@@ -387,11 +463,13 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 					</View>
 					<ModernButton icon={<Text style={{ color: theme.onPrimary }}>⌕</Text>} onPress={() => void capture("camera")} testID="receipt-take-photo" text="Take a photo" />
 					<ModernButton icon={<Text style={{ color: theme.primary }}>▧</Text>} onPress={() => void capture("library")} secondary testID="receipt-choose-photo" text="Choose from photos" />
-					<Text style={[styles.privacy, { color: theme.textMuted }]}>The image is read on the device. Nothing is saved until you review and confirm the expense.</Text>
+					{cameraPermissionDenied ? <ModernButton onPress={() => void Linking.openSettings()} secondary text="Open device settings" /> : null}
+					{error && imageUri ? <ModernButton onPress={() => void processImage(imageUri, imageMimeType)} secondary text="Try scan again" /> : null}
+					<Text style={[styles.privacy, { color: theme.textMuted }]}>Your photo is sent to an AI service to scan the receipt. Scanned items are added to your expenses only after you review and confirm.</Text>
 				</>
 			)}
 
-			{error ? <Text accessibilityRole="alert" style={[styles.error, { color: theme.danger }]}>{error}</Text> : null}
+			{error ? <Text accessibilityRole="alert" style={[styles.error, { color: theme.dangerText }]}>{error}</Text> : null}
 			{showReview ? (
 				<Pressable accessibilityRole="button" onPress={onClose} style={styles.cancelButton} testID="receipt-cancel">
 					<Text style={[styles.link, { color: theme.textMuted }]}>Cancel</Text>
@@ -421,6 +499,7 @@ const styles = StyleSheet.create({
 	warningText: { fontSize: 12, lineHeight: 17 },
 	itemsHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
 	link: { fontSize: 14, fontWeight: "700" },
+	linkTarget: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 48, paddingHorizontal: 8 },
 	itemCard: { borderRadius: 14, borderWidth: 1, gap: 8, padding: 12 },
 	itemTitleRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
 	itemNumber: { fontSize: 12, fontWeight: "700" },

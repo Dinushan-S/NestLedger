@@ -126,8 +126,9 @@
         <ul>
             <li><strong>Supabase</strong> - Database, authentication, and real-time sync. <br><a href="https://supabase.com/privacy" target="_blank">https://supabase.com/privacy</a></li>
             <li><strong>Expo</strong> - Push notification delivery. <br><a href="https://expo.dev/privacy" target="_blank">https://expo.dev/privacy</a></li>
+            <li><strong>Google Gemini API</strong> - Receipt photos are sent to Google to identify receipt items. Google handles submitted content under the applicable Gemini API terms, which differ by billing tier. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Gemini API terms</a>.</li>
         </ul>
-        <p>These providers are GDPR-compliant and have their own privacy policies.</p>
+        <p>Each provider has its own privacy and data handling terms. Review the linked terms for details.</p>
 
         <h2>6. Data Sharing</h2>
         <p>We <strong>never</strong>:</p>
@@ -141,6 +142,7 @@
         <h2>7. Data Security</h2>
         <ul>
             <li>All data is transmitted over <strong>HTTPS</strong> (encrypted in transit)</li>
+            <li>Receipt photos are processed by Google Gemini for extraction and are not added to your NestLedger expenses until you review and confirm them</li>
             <li>Supabase provides <strong>Row-Level Security (RLS)</strong> - only family members can see family data</li>
             <li>Authentication is handled securely by Supabase Auth</li>
             <li>Push tokens are stored securely and never shared</li>

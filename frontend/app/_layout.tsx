@@ -17,6 +17,7 @@ function ThemedNavigation() {
         <Stack.Screen name="confirm-email" />
         <Stack.Screen name="index" />
         <Stack.Screen name="invite" />
+        <Stack.Screen name="reset-password" />
       </Stack>
     </>
   );

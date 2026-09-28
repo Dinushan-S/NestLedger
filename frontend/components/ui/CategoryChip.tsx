@@ -12,7 +12,7 @@ type Props = {
 export default function CategoryChip({ active, label, onPress, left, testID }: Props) {
   const styles = useThemedStyles(createStyles);
   return (
-    <Pressable hitSlop={10} onPress={onPress} testID={testID} style={[styles.chip, active ? styles.activeChip : styles.idleChip]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(active) }} hitSlop={10} onPress={onPress} testID={testID} style={[styles.chip, active ? styles.activeChip : styles.idleChip]}>
       <View style={styles.content}>
         {left}
         <Text style={[styles.label, active ? styles.activeLabel : styles.idleLabel]}>{label}</Text>

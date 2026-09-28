@@ -47,8 +47,11 @@ export const LabeledInput = forwardRef<TextInput, LabeledInputProps>(function La
       <Text style={styles.inputLabel}>{label}</Text>
       <View style={styles.inputControl}>
         <TextInput
+          accessibilityLabel={props.accessibilityLabel ?? label}
+          cursorColor={theme.primary}
           placeholderTextColor={theme.textMuted}
           ref={ref}
+          selectionColor={theme.primary}
           style={[styles.input, trailingAccessory ? styles.inputWithTrailingAccessory : null, style]}
           {...props}
         />
@@ -144,13 +147,18 @@ export function ProfileFormFields({
         testIDPrefix={`${prefix}-avatar`}
         onPick={(value) => onChange({ ...form, avatarEmoji: value })}
       />
-      <Text style={styles.inputLabel}>Your currency</Text>
+      <Text style={styles.inputLabel}>{userOnly ? 'Your default currency' : 'Space currency'}</Text>
       {currencyField ?? (
         <CurrencyPicker
           value={form.currency}
           onChange={(value) => onChange({ ...form, currency: value })}
         />
       )}
+      {!userOnly ? (
+        <Text style={styles.currencyHint}>
+          This will be this space&apos;s currency and your default for new spaces.
+        </Text>
+      ) : null}
 
       {!userOnly ? (
         <>
@@ -298,6 +306,11 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 16,
+  },
+  currencyHint: {
+    color: theme.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
   },
   input: {
     backgroundColor: theme.surface,

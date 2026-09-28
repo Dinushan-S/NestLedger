@@ -12,6 +12,7 @@ import {
 	ActivityIndicator,
 	AppState,
 	Alert,
+	Keyboard,
 	KeyboardAvoidingView,
 	Modal,
 	Platform,
@@ -215,6 +216,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [showCreateProfile, setShowCreateProfile] = useState(false);
 	const [showBudgetComposer, setShowBudgetComposer] = useState(false);
 	const [showExpenseComposer, setShowExpenseComposer] = useState(false);
+	const [showMoreExpenseCategories, setShowMoreExpenseCategories] = useState(false);
 	const [activeExpenseItemSuggestionIndex, setActiveExpenseItemSuggestionIndex] =
 		useState<number | null>(null);
 	const [showReceiptScanner, setShowReceiptScanner] = useState(false);
@@ -266,7 +268,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		userProfile && profiles.length > 0
 			? "Open your space"
 			: "Continue to setup";
-	const userCurrency = userProfile?.currency ?? "USD";
+	const activeProfile = useMemo(
+		() => profiles.find((profile) => profile.id === activeProfileId) ?? null,
+		[activeProfileId, profiles],
+	);
+	const userCurrency = activeProfile?.currency ?? userProfile?.currency ?? "USD";
 	const c = useCallback(
 		(value: number) => formatCurrency(value, userCurrency),
 		[userCurrency],
@@ -276,6 +282,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [reminderTime, setReminderTime] = useState("20:00"); // Default 8 PM
 	const [reminderBusy, setReminderBusy] = useState(false);
 	const [pendingDailyReminder, setPendingDailyReminder] = useState(false);
+	const [androidKeyboardVisible, setAndroidKeyboardVisible] = useState(false);
+
+	useEffect(() => {
+		if (Platform.OS !== "android") return;
+		const showSubscription = Keyboard.addListener("keyboardDidShow", () =>
+			setAndroidKeyboardVisible(true),
+		);
+		const hideSubscription = Keyboard.addListener("keyboardDidHide", () =>
+			setAndroidKeyboardVisible(false),
+		);
+		return () => {
+			showSubscription.remove();
+			hideSubscription.remove();
+		};
+	}, []);
 
 	const [confirmModal, setConfirmModal] = useState<{
 		body: string;
@@ -293,6 +314,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [expenseForm, setExpenseForm] = useState<ExpenseForm>(
 		defaultExpenseForm(),
 	);
+	const originalExpenseForm = useRef<ExpenseForm | null>(null);
 	const [shoppingForm, setShoppingForm] =
 		useState<ShoppingForm>(defaultShoppingForm);
 	const [inviteEmail, setInviteEmail] = useState("");
@@ -351,6 +373,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const resetSessionState = useCallback(() => {
 		void cancelExpenseReminders().catch(() => undefined);
+		setAuthForm({ email: "", password: "" });
 		setProfiles([]);
 		setActiveProfileId(null);
 		setUserProfile(null);
@@ -401,10 +424,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setShoppingItems,
 	});
 
-	const activeProfile = useMemo(
-		() => profiles.find((profile) => profile.id === activeProfileId) ?? null,
-		[activeProfileId, profiles],
-	);
 	const selectedPlan = useMemo(
 		() => plans.find((plan) => plan.id === selectedPlanId) ?? null,
 		[plans, selectedPlanId],
@@ -784,6 +803,28 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		Alert.alert("NestLedger", message);
 	}, []);
 
+	const closeExpenseComposer = useCallback(() => {
+		const discard = () => {
+			setShowExpenseComposer(false);
+			setActiveExpenseItemSuggestionIndex(null);
+			setEditingExpenseId(null);
+			setExpenseForm(defaultExpenseForm());
+		};
+		const hasDraft = editingExpenseId !== null
+			? JSON.stringify(expenseForm) !== JSON.stringify(originalExpenseForm.current)
+			: JSON.stringify(expenseForm) !== JSON.stringify(defaultExpenseForm());
+		if (!hasDraft) {
+			discard();
+		} else if (Platform.OS === "web") {
+			if (globalThis.confirm?.("Discard this expense draft?")) discard();
+		} else {
+			Alert.alert("Discard expense?", "Your unsaved expense changes will be lost.", [
+				{ text: "Keep editing", style: "cancel" },
+				{ text: "Discard", style: "destructive", onPress: discard },
+			]);
+		}
+	}, [editingExpenseId, expenseForm]);
+
 	const showConfirm = (options: {
 		body: string;
 		confirmText?: string;
@@ -812,6 +853,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[announce],
 	);
 
+	const handleSignOut = async () => {
+		setShowProfileSettings(false);
+		setShowProfileSwitcher(false);
+		await authApi.signOut();
+	};
+
 	const handleAuth = async () => {
 		if (!authForm.email || !authForm.password) {
 			setAuthMessage("Enter your email and password to continue.");
@@ -836,6 +883,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					});
 				}
 			}
+			setAuthForm({ email: "", password: "" });
 		} catch (error) {
 			setAuthMessage(extractError(error));
 		} finally {
@@ -1257,11 +1305,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		const validItems = expenseForm.items.filter(
 			(item) => item.name.trim() && item.price.trim(),
 		);
-
 		if (validItems.length === 0) {
 			announce("Add at least one item with name and price.");
 			return;
 		}
+		if (validItems.length !== expenseForm.items.length) {
+			announce("Complete or remove each expense item before saving.");
+			return;
+		}
+		if (validItems.some((item) => !Number.isFinite(Number(item.price)))) {
+			announce("Enter a valid price for each expense item.");
+			return;
+		}
+		const expenseDraft = expenseForm;
 
 		if (
 			expenseForm.category === "Other" &&
@@ -1340,6 +1396,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						current.map((e) => (e.id === editingId ? original : e)),
 					);
 				}
+				setEditingExpenseId(editingId);
+				setExpenseForm(expenseDraft);
+				setShowExpenseComposer(true);
 				announce(extractError(error));
 			}
 			return;
@@ -1394,6 +1453,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		} catch (error) {
 			// Roll back the optimistic entry and surface the failure.
 			setProfileExpenses((current) => current.filter((e) => e.id !== tempId));
+			setExpenseForm(expenseDraft);
+			setShowExpenseComposer(true);
 			announce(extractError(error));
 		}
 	};
@@ -1612,7 +1673,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const startEditExpense = (expense: ExpenseWithItems) => {
 		setEditingExpenseId(expense.id);
-		setExpenseForm({
+		const form = {
 			category:
 				expenseCategories.find((c) => c.key === expense.category)?.key ??
 				"Other",
@@ -1631,7 +1692,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			is_borrow: expense.is_borrow,
 			paidBy: expense.paid_by,
 			usedBy: expense.used_by,
-		});
+		};
+		originalExpenseForm.current = form;
+		setExpenseForm(form);
 		requestAnimationFrame(() => {
 			setShowExpenseComposer(true);
 		});
@@ -1998,14 +2061,18 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!activeBudget) return { spent: 0 };
 		return { spent: currentMonthStatsMap[activeBudget.id]?.spent ?? 0 };
 	}, [activeBudget, currentMonthStatsMap]);
+	const dashboardBalance = (activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent;
+	const visibleExpenseCategories = showMoreExpenseCategories ||
+		expenseCategories.slice(0, 4).some(({ key }) => key === expenseForm.category)
+		? expenseCategories
+		: expenseCategories.slice(0, 4);
 	const pendingItemsCount = shoppingItems.filter(
 		(item) => !item.is_bought,
 	).length;
-
 	if (!isConfigReady) {
 		return (
 			<CenteredState
-				body="Supabase and backend config are missing in app.json extra values."
+				body="The app connection is not set up yet. Please check your app configuration."
 				title="NestLedger isn’t configured yet"
 			/>
 		);
@@ -2072,6 +2139,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							autoComplete="email"
 							inputMode="email"
 							label="Email"
+							spellCheck={false}
 							onChangeText={(value) =>
 								setAuthForm((current) => ({ ...current, email: value }))
 							}
@@ -2082,6 +2150,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							value={authForm.email}
 						/>
 						<PasswordInput
+							autoComplete={authMode === "signin" ? "current-password" : "new-password"}
 							label="Password"
 							onChangeText={(value) =>
 								setAuthForm((current) => ({ ...current, password: value }))
@@ -2094,7 +2163,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						/>
 
 						{authMessage ? (
-							<Text style={styles.errorText}>{authMessage}</Text>
+							<Text accessibilityRole="alert" style={styles.errorText}>{authMessage}</Text>
 						) : null}
 
 						<ModernButton
@@ -2103,20 +2172,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							testID="auth-submit-button"
 							text={authMode === "signin" ? "Continue" : "Create account"}
 						/>
-						{authMode === "signin" ? (
-							<Pressable
-								accessibilityRole="button"
-								onPress={() => void handlePasswordReset()}
-								style={{ alignItems: "center", paddingVertical: 8 }}
-							>
-								<Text style={{ color: theme.primary, fontWeight: "600" }}>
-									{resetCodeSent ? "Send another code" : "Forgot password?"}
-								</Text>
+		{authMode === "signin" ? (
+							<Pressable accessibilityRole="button" onPress={() => void handlePasswordReset()} style={styles.authRecoveryButton}>
+								<Text style={styles.authRecoveryText}>{resetCodeSent ? "Send another code" : "Forgot password?"}</Text>
 							</Pressable>
 						) : null}
 						<Text style={styles.footnote}>
-							Supabase email confirmation is currently enabled for new
-							registrations.
+							New accounts need to confirm their email before signing in.
 						</Text>
 					</BentoCard>
 					</ScrollView>
@@ -2309,6 +2371,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					<ModernButton
 						onPress={() => {
 							setProfileSetupStep("type");
+							setProfileForm({ ...defaultCreateProfileForm, currency: userProfile?.currency ?? "USD" });
 							setShowCreateProfile(true);
 						}}
 						secondary
@@ -2316,7 +2379,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						text="Create another space"
 					/>
 					<ModernButton
-						onPress={() => authApi.signOut()}
+						onPress={handleSignOut}
 						secondary
 						testID="profile-switcher-signout"
 						text="Sign out"
@@ -2337,7 +2400,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				]}
 			>
 				<KeyboardAvoidingView
-					behavior={Platform.select({ ios: "padding", default: undefined })}
+					behavior={Platform.select({ ios: "padding", android: "height", default: undefined })}
 					style={styles.screen}
 				>
 					<View
@@ -2373,7 +2436,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 								/>
 							</Pressable>
 
-							<Pressable
+											<Pressable
+								accessibilityRole="button"
+								accessibilityLabel={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
 								hitSlop={10}
 								onPress={() => setShowNotifications(true)}
 								style={styles.bellButton}
@@ -2442,25 +2507,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 														style={[
 															styles.breakdownStatValue,
 															{
-																color:
-																	(activeBudget?.total_amount ?? 0) -
-																		currentMonthPlanStatsDashboard.spent >
-																	0
-																		? theme.success
-																		: theme.danger,
+													color: dashboardBalance >= 0 ? theme.success : theme.dangerText,
 															},
 														]}
 													>
-														{c(
-															Math.max(
-																(activeBudget?.total_amount ?? 0) -
-																	currentMonthPlanStatsDashboard.spent,
-																0,
-															),
-														)}
+																	{c(Math.abs(dashboardBalance))}
 													</Text>
 													<Text style={styles.breakdownStatLabel}>
-														Remaining
+														{dashboardBalance >= 0 ? "Remaining" : "Over budget by"}
 													</Text>
 												</View>
 											</View>
@@ -2473,6 +2527,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 														: 0
 												}
 											/>
+											{!activeBudget ? <ModernButton onPress={() => setShowBudgetComposer(true)} text="Create a budget" /> : null}
 										</BentoCard>
 
 										<Pressable
@@ -2596,13 +2651,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 												<Text style={styles.bodyMuted}>
 													spent ·{" "}
 													{c(
-														Math.max(
-															(activeBudget?.total_amount ?? 0) -
-																currentMonthPlanStatsDashboard.spent,
-															0,
-														),
+													dashboardBalance >= 0 ? dashboardBalance : Math.abs(dashboardBalance),
 													)}{" "}
-													left
+									{dashboardBalance >= 0 ? "left" : "over budget"}
 												</Text>
 											</BentoCard>
 
@@ -2612,7 +2663,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 													{pendingItemsCount}
 												</Text>
 												<Text style={styles.bodyMuted}>
-													pending household items
+								pending shared items
 												</Text>
 												<View style={styles.statRow}>
 													<InfoPill
@@ -2638,7 +2689,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 												<Text style={styles.cardEyebrow}>Notifications</Text>
 												<Text style={styles.metricText}>{unreadCount}</Text>
 												<Text style={styles.bodyMuted}>
-													unread family updates
+								unread space updates
 												</Text>
 											</BentoCard>
 
@@ -2822,7 +2873,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 										{plans.length === 0 ? (
 											<EmptyState
-												body="Create your first family budget plan to start tracking expenses."
+								body="Create your first budget plan to start tracking expenses."
 												title="No plans yet"
 											/>
 										) : null}
@@ -3154,7 +3205,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 											})
 										) : (
 											<EmptyState
-												body="Add household items so everyone can see and update them together."
+								body="Add shared items so everyone can see and update them together."
 												title="List is empty"
 											/>
 										)}
@@ -3245,11 +3296,15 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 													<View style={styles.timePickerRow}>
 														<Text style={styles.inputLabel}>Reminder time</Text>
 														<TextInput
-															keyboardType="numbers-and-punctuation"
-															editable={!reminderBusy}
-															onChangeText={setReminderTime}
-															onEndEditing={() => void updateReminderTime()}
-															placeholder="20:00"
+									keyboardType="numbers-and-punctuation"
+									editable={!reminderBusy}
+									onBlur={() => setAndroidKeyboardVisible(false)}
+									onChangeText={setReminderTime}
+									onEndEditing={() => void updateReminderTime()}
+									onFocus={() => {
+										if (Platform.OS === "android") setAndroidKeyboardVisible(true);
+									}}
+									placeholder="20:00"
 															style={styles.timeInput}
 															value={reminderTime}
 														/>
@@ -3265,7 +3320,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</ScrollView>
 						)}
 
-						<View style={styles.bottomTabs}>
+						<View style={[styles.bottomTabs, androidKeyboardVisible && { display: "none" }]}>
 							<TabButton
 								active={activeTab === "dashboard"}
 								badge={0}
@@ -4009,7 +4064,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 																				<Text style={styles.listSubtitle}>
 																					{expense.paid_by
 																						? `Paid by ${memberMap.get(expense.paid_by)?.name ?? "Member"}`
-																						: "Paid from Family Budget"}
+												: "Paid from budget"}
 																					{expense.used_by
 																						? ` · Used by ${memberMap.get(expense.used_by)?.name ?? "Member"}`
 																						: ""}
@@ -4466,7 +4521,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 																<Text style={styles.listSubtitle}>
 																	{expense.paid_by
 																		? `Paid by ${memberMap.get(expense.paid_by)?.name ?? "Member"}`
-																		: "Paid from Family Budget"}
+											: "Paid from budget"}
 																	{expense.used_by
 																		? ` · Used by ${memberMap.get(expense.used_by)?.name ?? "Member"}`
 																		: ""}
@@ -4521,7 +4576,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 											})
 										) : (
 											<EmptyState
-												body="Use the add button to capture a new family expense."
+								body="Use the add button to capture a shared expense."
 												title="No expenses in this view"
 											/>
 										)}
@@ -4732,7 +4787,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</ModalScaffold>
 				</Modal>
 
-				<Modal animationType="slide" transparent visible={showReceiptScanner}>
+				<Modal animationType="slide" onRequestClose={() => setShowReceiptScanner(false)} transparent visible={showReceiptScanner}>
 					<ReceiptScannerSheet
 						currency={userCurrency}
 						onClose={() => setShowReceiptScanner(false)}
@@ -4742,15 +4797,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					/>
 				</Modal>
 
-				<Modal animationType="slide" transparent visible={showExpenseComposer}>
-					<BottomSheet
-						onClose={() => {
-							setShowExpenseComposer(false);
-							setActiveExpenseItemSuggestionIndex(null);
-							setEditingExpenseId(null);
-							setExpenseForm(defaultExpenseForm());
-						}}
-					>
+				<Modal animationType="slide" onRequestClose={closeExpenseComposer} transparent visible={showExpenseComposer}>
+					<BottomSheet onClose={closeExpenseComposer}>
 						<Text style={styles.sectionTitle}>
 							{editingExpenseId ? "Edit Expense" : "Add Expense"}
 						</Text>
@@ -4787,9 +4835,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										style={[styles.textInput, styles.itemPriceInput]}
 										value={item.price}
 									/>
-									{expenseForm.items.length > 1 ? (
-										<Pressable
-											hitSlop={10}
+					{expenseForm.items.length > 1 ? (
+						<Pressable
+							accessibilityRole="button"
+							accessibilityLabel={`Remove item ${index + 1}`}
+							hitSlop={10}
 											onPress={() => removeExpenseItem(index)}
 											style={styles.removeItemButton}
 										>
@@ -4848,7 +4898,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						<View style={styles.fieldSection}>
 							<Text style={styles.inputLabel}>Category</Text>
 							<View style={styles.segmentRow}>
-								{expenseCategories.map((category) => (
+				{visibleExpenseCategories.map((category) => (
 									<CategoryChip
 										key={category.key}
 										active={expenseForm.category === category.key}
@@ -4860,9 +4910,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 											}))
 										}
 									/>
-								))}
-							</View>
-						</View>
+				))}
+			</View>
+			{expenseCategories.length > visibleExpenseCategories.length ? (
+				<Pressable accessibilityRole="button" onPress={() => setShowMoreExpenseCategories(true)} style={styles.addItemButton}>
+					<Text style={styles.addItemText}>More categories</Text>
+				</Pressable>
+			) : null}
+		</View>
 						{expenseForm.category === "Other" ? (
 							<LabeledInput
 								label="Custom category"

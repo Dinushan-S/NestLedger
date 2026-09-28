@@ -686,7 +686,7 @@ export function BillTracker({
 										<View style={s.segmentRow}>
 											<CategoryChip
 												active={paymentForm.paidBy === null}
-												label="Family Budget"
+												label="Budget"
 												onPress={() =>
 													setPaymentForm((f) => ({ ...f, paidBy: null }))
 												}

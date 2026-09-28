@@ -14,6 +14,7 @@ export const theme = {
 	border: "#E5E5E0",
 	success: "#8AB096",
 	danger: "#D67C7C",
+	dangerText: "#A33F3F",
 	dangerSoft: "#F5E0E0",
 	warning: "#E1B45C",
 };
@@ -35,6 +36,7 @@ export const darkTheme = {
 	border: "#2E3430",
 	success: "#7AAB86",
 	danger: "#D67C7C",
+	dangerText: "#F09191",
 	dangerSoft: "#3A2222",
 	warning: "#E1B45C",
 };
