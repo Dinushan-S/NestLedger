@@ -17,7 +17,7 @@ import requests
 import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
