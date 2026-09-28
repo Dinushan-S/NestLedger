@@ -2,7 +2,6 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Alert,
 	Linking,
-	Modal,
 	Platform,
 	Pressable,
 	StyleSheet,
@@ -166,16 +165,11 @@ export function ProfileSettingsModal({
 
 	return (
 		<>
-			<Modal
-				animationType="slide"
-				onRequestClose={closeSettings}
-				presentationStyle="pageSheet"
-				visible={visible}
-			>
 				<ModalScaffold
 					closeTestID="close-settings-modal"
 					onClose={closeSettings}
 					title="Profile Settings"
+					visible={visible}
 				>
 					{/* ── Personal profile ── */}
 					<SettingsSection item={settingsSections[0]!}>
@@ -359,7 +353,6 @@ export function ProfileSettingsModal({
 						</Pressable>
 					</SettingsSection>
 				</ModalScaffold>
-			</Modal>
 
 			<CurrencySelectorSheet
 				onChange={(currency) => onChange({ ...profileForm, currency })}

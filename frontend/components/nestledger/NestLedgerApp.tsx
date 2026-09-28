@@ -24,10 +24,7 @@ import {
 	useWindowDimensions,
 	View,
 } from "react-native";
-import {
-	GestureHandlerRootView,
-	Swipeable,
-} from "react-native-gesture-handler";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
 	useSafeAreaInsets,
 	SafeAreaView,
@@ -2677,16 +2674,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					onClose={() => setShowAnalyse(false)}
 				/>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => {
-						setShowBudgetComposer(false);
-						setEditingPlanId(null);
-						setBudgetForm(defaultBudgetForm());
-					}}
-					presentationStyle="pageSheet"
-					visible={showBudgetComposer}
-				>
 					<ModalScaffold
 						closeTestID="close-budget-modal"
 						onClose={() => {
@@ -2695,6 +2682,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setBudgetForm(defaultBudgetForm());
 						}}
 						title={editingPlanId ? "Edit Budget Plan" : "Create Budget Plan"}
+						visible={showBudgetComposer}
 					>
 						<LabeledInput
 							label="Plan name"
@@ -2736,17 +2724,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							text={editingPlanId ? "Update plan" : "Save plan"}
 						/>
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => {
-						setShowNewPlanComposer(false);
-						setNewPlanName("");
-					}}
-					presentationStyle="pageSheet"
-					visible={showNewPlanComposer}
-				>
 					<ModalScaffold
 						closeTestID="close-new-plan-modal"
 						onClose={() => {
@@ -2754,6 +2732,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setNewPlanName("");
 						}}
 						title="New plan"
+						visible={showNewPlanComposer}
 					>
 						<View style={styles.segmentRow}>
 							<CategoryChip
@@ -2838,21 +2817,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						)}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => {
-						setEditingBillTrackerId(null);
-						setEditingSavingsTrackerId(null);
-						setEditBillTrackerForm({ name: "" });
-						setEditSavingsTrackerForm({ name: "" });
-					}}
-					presentationStyle="pageSheet"
-					visible={
-						Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)
-					}
-				>
 					<ModalScaffold
 						closeTestID="close-edit-tracker-modal"
 						onClose={() => {
@@ -2862,6 +2827,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setEditSavingsTrackerForm({ name: "" });
 						}}
 						title="Edit tracker"
+						visible={
+							Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)
+						}
 					>
 						{editingBillTrackerId ? (
 							<>
@@ -2898,14 +2866,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setSelectedBillTrackerId(null)}
-					presentationStyle="pageSheet"
-					visible={Boolean(selectedBillTrackerId)}
-				>
 					<ModalScaffold
 						closeTestID="close-bill-tracker-detail"
 						onClose={() => setSelectedBillTrackerId(null)}
@@ -2913,6 +2874,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ??
 							"Bill Tracker"
 						}
+						visible={Boolean(selectedBillTrackerId)}
 					>
 						{selectedBillTrackerId ? (
 							<>
@@ -2980,14 +2942,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setSelectedSavingsTrackerId(null)}
-					presentationStyle="pageSheet"
-					visible={Boolean(selectedSavingsTrackerId)}
-				>
 					<ModalScaffold
 						closeTestID="close-savings-tracker-detail"
 						onClose={() => setSelectedSavingsTrackerId(null)}
@@ -2995,6 +2950,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)
 								?.name ?? "Savings Tracker"
 						}
+						visible={Boolean(selectedSavingsTrackerId)}
 					>
 						{selectedSavingsTrackerId ? (
 							<>
@@ -3079,18 +3035,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setSelectedPlanId(null)}
-					presentationStyle="pageSheet"
-					visible={Boolean(selectedPlan)}
-				>
 					<ModalScaffold
 						closeTestID="close-budget-detail-modal"
 						onClose={() => setSelectedPlanId(null)}
 						title={selectedPlan?.name ?? "Budget plan"}
+						visible={Boolean(selectedPlan)}
 					>
 						{selectedPlan ? (
 							<>
@@ -4098,7 +4048,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						)}
 					</ModalScaffold>
-				</Modal>
 
 				<Modal animationType="slide" onRequestClose={() => setShowReceiptScanner(false)} transparent visible={showReceiptScanner}>
 					<ReceiptScannerSheet
@@ -4616,16 +4565,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</BottomSheet>
 				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowMembers(false)}
-					presentationStyle="pageSheet"
-					visible={showMembers}
-				>
 					<ModalScaffold
 						closeTestID="close-members-modal"
 						onClose={() => setShowMembers(false)}
 						title="Members"
+						visible={showMembers}
 					>
 						{members.map((member) => (
 							<BentoCard key={member.id}>
@@ -4650,18 +4594,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</BentoCard>
 						))}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowInvite(false)}
-					presentationStyle="pageSheet"
-					visible={showInvite}
-				>
 					<ModalScaffold
 						closeTestID="close-invite-modal"
 						onClose={() => setShowInvite(false)}
 						title="Invite Member"
+						visible={showInvite}
 					>
 						<Text style={styles.bodyMuted}>
 							Send an email invite or share the generated link. The invite opens
@@ -4703,14 +4641,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</BentoCard>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowNotifications(false)}
-					presentationStyle="pageSheet"
-					visible={showNotifications}
-				>
 					<ModalScaffold
 						closeTestID="close-notifications-modal"
 						onClose={() => setShowNotifications(false)}
@@ -4734,6 +4665,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</Pressable>
 						}
 						title="Notifications"
+						visible={showNotifications}
 					>
 						{notifications.length > 0 ? (
 							notifications.map((item) => (
@@ -4767,7 +4699,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							/>
 						)}
 					</ModalScaffold>
-				</Modal>
 
 				<ProfileSettingsModal
 					actionBusy={actionBusy}
@@ -4787,16 +4718,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					visible={showProfileSettings}
 				/>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowExpenseFilters(false)}
-					presentationStyle="pageSheet"
-					visible={showExpenseFilters}
-				>
 					<ModalScaffold
 						closeTestID="close-expense-filters-modal"
 						onClose={() => setShowExpenseFilters(false)}
 						title="Filter Expenses"
+						visible={showExpenseFilters}
 					>
 						<Text style={styles.inputLabel}>Time window</Text>
 						<View style={styles.segmentRow}>
@@ -4826,7 +4752,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							))}
 						</View>
 					</ModalScaffold>
-				</Modal>
 			</SafeAreaView>
 		</GestureHandlerRootView>
 	);

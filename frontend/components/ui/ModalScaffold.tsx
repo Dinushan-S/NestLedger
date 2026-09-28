@@ -1,6 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/lib/theme-context';
@@ -11,6 +20,7 @@ type ModalScaffoldProps = {
   onClose: () => void;
   rightAction?: ReactNode;
   title: string;
+  visible: boolean;
 };
 
 export function ModalScaffold({
@@ -19,14 +29,24 @@ export function ModalScaffold({
   onClose,
   rightAction,
   title,
+  visible,
 }: ModalScaffoldProps) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
   return (
-    <SafeAreaView
-      style={[styles.flex, { backgroundColor: theme.background, paddingTop: insets.top, paddingHorizontal: 20 }]}
+    // Every call site used onRequestClose={onClose}, so Android back and the close
+    // button are the same action. This owns the Modal rather than sitting inside
+    // one so callers cannot forget visible or wire the two handlers differently.
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="pageSheet"
+      visible={visible}
     >
+      <SafeAreaView
+        style={[styles.flex, { backgroundColor: theme.background, paddingTop: insets.top, paddingHorizontal: 20 }]}
+      >
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <View style={styles.modalHeader}>
           <Pressable accessibilityLabel={`Close ${title}`} accessibilityRole="button" hitSlop={10} onPress={onClose} testID={closeTestID}>
@@ -45,7 +65,8 @@ export function ModalScaffold({
           {children}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 

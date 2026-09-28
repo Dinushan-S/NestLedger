@@ -18,7 +18,7 @@ import { formatCurrency, formatShortDate, parseDateOnly, todayLocalDate, toLocal
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
-import { SafeWrap } from "./nestledger.ui";
+import { ModalScaffold } from "../ui/ModalScaffold";
 
 type Props = {
 	trackerId: string;
@@ -665,23 +665,15 @@ export function SavingsTracker({
 				</View>
 			</Modal>
 
-			<Modal
-				animationType="slide"
-				onRequestClose={() => {
+			<ModalScaffold
+				visible={showDetail}
+				closeTestID="savings-detail-close"
+				onClose={() => {
 					setShowDetail(false);
 					setSelectedEntry(null);
 				}}
-				presentationStyle="pageSheet"
-				visible={showDetail}
+				title="Savings Entry"
 			>
-				<SafeWrap
-					closeTestID="savings-detail-close"
-					onClose={() => {
-						setShowDetail(false);
-						setSelectedEntry(null);
-					}}
-					title="Savings Entry"
-				>
 					{selectedEntry ? (
 						<>
 							<BentoCard tone="highlight">
@@ -735,8 +727,7 @@ export function SavingsTracker({
 							/>
 						</>
 					) : null}
-				</SafeWrap>
-			</Modal>
+			</ModalScaffold>
 		</>
 	);
 }
