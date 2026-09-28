@@ -215,7 +215,12 @@ export function ConfirmModal({
 	if (!visible) return null;
 
 	return (
-		<Modal animationType="fade" transparent visible={visible}>
+		<Modal
+			animationType="fade"
+			onRequestClose={onClose}
+			transparent
+			visible={visible}
+		>
 			<View style={styles.confirmBackdrop}>
 				<Pressable
 					accessibilityLabel="Close confirmation"

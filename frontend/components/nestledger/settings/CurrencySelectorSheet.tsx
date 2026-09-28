@@ -59,7 +59,7 @@ export function CurrencySelectorSheet({
   );
 
   return (
-    <Modal animationType="slide" transparent visible={visible}>
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <BottomSheet onClose={onClose} scrollable={false}>
         <SectionList
           extraData={value}

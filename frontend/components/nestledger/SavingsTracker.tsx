@@ -356,7 +356,12 @@ export function SavingsTracker({
 				</Pressable>
 			) : null}
 
-			<Modal animationType="slide" transparent visible={showDeposit}>
+			<Modal
+				animationType="slide"
+				onRequestClose={() => setShowDeposit(false)}
+				transparent
+				visible={showDeposit}
+			>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
 						accessibilityLabel="Close deposit sheet"
@@ -493,7 +498,12 @@ export function SavingsTracker({
 				</View>
 			</Modal>
 
-			<Modal animationType="slide" transparent visible={showWithdraw}>
+			<Modal
+				animationType="slide"
+				onRequestClose={() => setShowWithdraw(false)}
+				transparent
+				visible={showWithdraw}
+			>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
 						accessibilityLabel="Close withdraw sheet"
@@ -657,6 +667,10 @@ export function SavingsTracker({
 
 			<Modal
 				animationType="slide"
+				onRequestClose={() => {
+					setShowDetail(false);
+					setSelectedEntry(null);
+				}}
 				presentationStyle="pageSheet"
 				visible={showDetail}
 			>

@@ -6,7 +6,7 @@ Scope: login, adding expenses, receipt scanning, dashboard, and settings.
 
 Method: independent Impeccable UX assessment and implementation assessment using relevant [Web Interface Guidelines](https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md). Browser-only rules were excluded for this Expo/React Native application.
 
-Status: code changes for all 21 findings are implemented. Local checks passed; hosted redirect configuration and native device verification remain outstanding.
+Status: code changes for all 21 findings are implemented. Local checks passed; native device verification remains outstanding. Password recovery uses OTP and has no redirect URL dependency.
 
 The findings and scores below record the original review, not current open defects. Locations refer to source at review time. Paths are relative to `frontend/`; line numbers may shift after changes.
 
@@ -101,7 +101,7 @@ Source-based scores, not a visual or native-device usability certification.
 
 - **#1-3 Implemented:** failed-save drafts are restored; receipt decimals remain editable as typed; incomplete receipt and expense rows block submission with feedback.
 - **#4 Implemented; provider handling unverified:** the scanner discloses AI service processing, and the privacy policy names Gemini and receipt image handling. Data handling depends on the account billing tier and applicable Gemini API terms; this project tier was not verified.
-- **#5 Implemented; redirect configured by user:** password reset is wired in the app, and the user reports adding `nestledger://reset-password` to Supabase Auth allowed redirect URLs. The link still needs an end-to-end device test.
+- **#5 Implemented with OTP:** password reset is wired in the app as an OTP code flow. It does not use a password-reset redirect URL; verify the OTP flow end to end when a test account is available.
 - **#6, #8-10, #12, #15, #18 Implemented:** accessible names and states, readable text, larger receipt touch targets, settings save placement, and login feedback were updated.
 - **#7, #16-17 Implemented:** outside taps on an edited expense ask Keep editing or Discard; settings discard handling, settings save behavior, and scanner recovery were updated.
 - **#11 Implemented; device verification pending:** receipt and expense composer Back handlers are wired. Verify the close/discard behavior on Android.
@@ -116,4 +116,4 @@ Source-based scores, not a visual or native-device usability certification.
 
 Frontend typecheck and lint passed after these follow-up changes. Native device behavior remains unverified.
 
-Local typecheck, lint, theme checks, and diff checks passed. Native password reset and Android Back behavior still need end-to-end verification; the redirect URL configuration was reported by the user and was not independently checked.
+Local typecheck, lint, theme checks, and diff checks passed. Native OTP password reset and Android Back behavior still need end-to-end verification. No password-reset redirect URL is required by the current flow.

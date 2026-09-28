@@ -400,7 +400,12 @@ export function BillTracker({
 				)}
 			</View>
 
-			<Modal animationType="slide" transparent visible={showComposer}>
+			<Modal
+				animationType="slide"
+				onRequestClose={() => setShowComposer(false)}
+				transparent
+				visible={showComposer}
+			>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
 						accessibilityLabel="Close bill sheet"
@@ -574,7 +579,15 @@ export function BillTracker({
 				</View>
 			</Modal>
 
-			<Modal animationType="slide" transparent visible={showPayment}>
+			<Modal
+				animationType="slide"
+				onRequestClose={() => {
+					setShowPayment(false);
+					setSelectedBill(null);
+				}}
+				transparent
+				visible={showPayment}
+			>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
 						accessibilityLabel="Close payment sheet"
@@ -721,6 +734,10 @@ export function BillTracker({
 
 			<Modal
 				animationType="slide"
+				onRequestClose={() => {
+					setShowBillDetail(false);
+					setDetailBill(null);
+				}}
 				presentationStyle="pageSheet"
 				visible={showBillDetail}
 			>

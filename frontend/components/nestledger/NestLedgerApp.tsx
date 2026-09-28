@@ -118,6 +118,10 @@ import { cancelExpenseReminders, localDate, restoreDailyReminder, updateDailyRem
 import { BillTracker as BillTrackerComponent } from "./BillTracker";
 import { SavingsTracker as SavingsTrackerComponent } from "./SavingsTracker";
 import AnalyseScreen from "./AnalyseScreen";
+import DashboardTab from "./tabs/DashboardTab";
+import BudgetTab from "./tabs/BudgetTab";
+import ShoppingTab from "./tabs/ShoppingTab";
+import ProfileTab from "./tabs/ProfileTab";
 import {
 	BorrowForm,
 	BudgetForm,
@@ -145,7 +149,6 @@ import {
 	DatePickerField,
 	EmptyState,
 	InfoPill,
-	QuickActionCard,
 	SplashScreen,
 	TabButton,
 } from "./nestledger.ui";
@@ -2054,21 +2057,35 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		}
 	};
 
-	const latestActivities = notifications.slice(0, 4);
-	const activeBudget = plans[0];
+	const handleSaveSpaceType = async () => {
+		if (!activeProfileId) return;
+		await runAction(async () => {
+			const updatedHousehold = await profileApi.updateHousehold(
+				activeProfileId,
+				{ space_type: migrationSpaceType },
+			);
+			setProfiles((prev) =>
+				prev.map((profile) =>
+					profile.id === activeProfileId
+						? { ...profile, ...updatedHousehold }
+						: profile,
+				),
+			);
+			setMigrationCardVisible(false);
+		});
+	};
 
-	const currentMonthPlanStatsDashboard = useMemo(() => {
-		if (!activeBudget) return { spent: 0 };
-		return { spent: currentMonthStatsMap[activeBudget.id]?.spent ?? 0 };
-	}, [activeBudget, currentMonthStatsMap]);
-	const dashboardBalance = (activeBudget?.total_amount ?? 0) - currentMonthPlanStatsDashboard.spent;
+	const handleClearBought = () => runAction(async () => {
+		if (!activeProfile) return;
+		await shoppingApi.clearBought(activeProfile.id);
+		setShoppingItems((prev) => prev.filter((item) => !item.is_bought));
+		void refreshProfileData(activeProfile.id);
+	});
+
 	const visibleExpenseCategories = showMoreExpenseCategories ||
 		expenseCategories.slice(0, 4).some(({ key }) => key === expenseForm.category)
 		? expenseCategories
 		: expenseCategories.slice(0, 4);
-	const pendingItemsCount = shoppingItems.filter(
-		(item) => !item.is_bought,
-	).length;
 	if (!isConfigReady) {
 		return (
 			<CenteredState
@@ -2483,840 +2500,102 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 								) : null}
 
 								{activeTab === "dashboard" ? (
-									<View style={styles.sectionGap}>
-										<BentoCard tone="highlight">
-											<Text style={styles.kicker}>Dashboard</Text>
-											<Text style={styles.heroTitle}>
-												{activeBudget?.name ?? "No budget yet"}
-											</Text>
-											<View style={styles.breakdownSummaryRow}>
-												<View style={styles.breakdownStat}>
-													<Text style={styles.breakdownStatValue}>
-														{c(activeBudget?.total_amount ?? 0)}
-													</Text>
-													<Text style={styles.breakdownStatLabel}>Budget</Text>
-												</View>
-												<View style={styles.breakdownStat}>
-													<Text style={styles.breakdownStatValue}>
-														{c(currentMonthPlanStatsDashboard.spent)}
-													</Text>
-													<Text style={styles.breakdownStatLabel}>Spent</Text>
-												</View>
-												<View style={styles.breakdownStat}>
-													<Text
-														style={[
-															styles.breakdownStatValue,
-															{
-													color: dashboardBalance >= 0 ? theme.success : theme.dangerText,
-															},
-														]}
-													>
-																	{c(Math.abs(dashboardBalance))}
-													</Text>
-													<Text style={styles.breakdownStatLabel}>
-														{dashboardBalance >= 0 ? "Remaining" : "Over budget by"}
-													</Text>
-												</View>
-											</View>
-											<View style={styles.spacer12} />
-											<ProgressBar
-												progress={
-													activeBudget
-														? currentMonthPlanStatsDashboard.spent /
-															Math.max(activeBudget.total_amount, 1)
-														: 0
-												}
-											/>
-											{!activeBudget ? <ModernButton onPress={() => setShowBudgetComposer(true)} text="Create a budget" /> : null}
-										</BentoCard>
-
-										<Pressable
-											onPress={() => setShowAnalyse(true)}
-											testID="open-analyse"
-										>
-											<BentoCard>
-												<View style={styles.analyseCardRow}>
-													<View style={styles.analyseCardIcon}>
-														<Ionicons
-															name="pie-chart-outline"
-															size={22}
-															color={theme.primary}
-														/>
-													</View>
-													<View style={{ flex: 1 }}>
-														<Text style={styles.analyseCardTitle}>
-															View full report
-														</Text>
-														<Text style={styles.bodyMuted}>
-															See where your money went and how to spend less
-															next month
-														</Text>
-													</View>
-													<Ionicons
-														name="chevron-forward"
-														size={20}
-														color={theme.textMuted}
-													/>
-												</View>
-											</BentoCard>
-										</Pressable>
-
-										{migrationCardVisible ? (
-											<BentoCard>
-												<Text style={styles.inputLabel}>
-													What kind of space is this?
-												</Text>
-												<Text style={styles.bodyMuted}>
-													We&apos;ve added space types so NestLedger shows only
-													what&apos;s relevant for you. Tap your type below.
-												</Text>
-												<View style={styles.spaceTypeGrid}>
-													{SPACE_TYPES.map((st) => {
-														const selected = migrationSpaceType === st.type;
-														return (
-															<Pressable
-																key={st.type}
-																onPress={() => setMigrationSpaceType(st.type)}
-																style={[
-																	styles.spaceTypeCard,
-																	selected && styles.spaceTypeCardActive,
-																]}
-															>
-																<Text style={styles.spaceTypeEmoji}>
-																	{st.emoji}
-																</Text>
-																<Text
-																	style={[
-																		styles.spaceTypeLabel,
-																		selected && styles.spaceTypeLabelActive,
-																	]}
-																>
-																	{st.label}
-																</Text>
-																<Text
-																	style={[
-																		styles.spaceTypeDesc,
-																		selected && styles.spaceTypeDescActive,
-																	]}
-																>
-																	{st.desc}
-																</Text>
-															</Pressable>
-														);
-													})}
-												</View>
-												<View style={styles.spacer12} />
-													<ModernButton
-														loading={actionBusy}
-														onPress={async () => {
-															if (!activeProfileId) return;
-															await runAction(async () => {
-																const updatedHousehold = await profileApi.updateHousehold(
-																	activeProfileId,
-																	{ space_type: migrationSpaceType },
-																);
-																setProfiles((prev) =>
-																	prev.map((p) =>
-																		p.id === activeProfileId
-																			? { ...p, ...updatedHousehold }
-																			: p,
-																	),
-																);
-																setMigrationCardVisible(false);
-															});
-														}}
-														testID="migration-card-save"
-														text="Save space type"
-														/>
-												<ModernButton
-													onPress={() => setMigrationCardVisible(false)}
-													secondary
-													testID="migration-card-dismiss"
-													text="Remind me later"
-												/>
-											</BentoCard>
-										) : null}
-
-										<View
-											style={[
-												styles.bentoRow,
-												isTablet && { justifyContent: "space-between" },
-											]}
-										>
-											<BentoCard style={{ width: bentoWidth }}>
-												<Text style={styles.cardEyebrow}>Current cycle</Text>
-												<Text style={styles.metricText}>
-													{c(currentMonthPlanStatsDashboard.spent)}
-												</Text>
-												<Text style={styles.bodyMuted}>
-													spent ·{" "}
-													{c(
-													dashboardBalance >= 0 ? dashboardBalance : Math.abs(dashboardBalance),
-													)}{" "}
-									{dashboardBalance >= 0 ? "left" : "over budget"}
-												</Text>
-											</BentoCard>
-
-											<BentoCard style={{ width: bentoWidth }}>
-												<Text style={styles.cardEyebrow}>Shopping</Text>
-												<Text style={styles.metricText}>
-													{pendingItemsCount}
-												</Text>
-												<Text style={styles.bodyMuted}>
-								pending shared items
-												</Text>
-												<View style={styles.statRow}>
-													<InfoPill
-														label="Bought"
-														value={`${shoppingItems.filter((item) => item.is_bought).length}`}
-													/>
-													<InfoPill
-														label="Unread"
-														value={`${shoppingBadgeCount}`}
-													/>
-												</View>
-											</BentoCard>
-
-											<BentoCard style={{ width: bentoWidth }}>
-												<Text style={styles.cardEyebrow}>Members</Text>
-												<Text style={styles.metricText}>{members.length}</Text>
-												<Text style={styles.bodyMuted}>
-													everyone sees updates in real time
-												</Text>
-											</BentoCard>
-
-											<BentoCard style={{ width: bentoWidth }}>
-												<Text style={styles.cardEyebrow}>Notifications</Text>
-												<Text style={styles.metricText}>{unreadCount}</Text>
-												<Text style={styles.bodyMuted}>
-								unread space updates
-												</Text>
-											</BentoCard>
-
-											<BentoCard style={{ width: bentoWidth }}>
-												<Text style={styles.cardEyebrow}>Savings</Text>
-												{savingsTrackers.length > 0 ? (
-													<>
-														<Text style={styles.metricText}>
-															{c(
-																Object.values(
-																	currentMonthSavingsStatsMap,
-																).reduce((sum, s) => sum + s.balance, 0),
-															)}
-														</Text>
-														<Text style={styles.bodyMuted}>
-															total saved across all plans
-														</Text>
-													</>
-												) : (
-													<>
-														<Text style={styles.metricText}>—</Text>
-														<Text style={styles.bodyMuted}>
-															No savings entries yet
-														</Text>
-													</>
-												)}
-											</BentoCard>
-										</View>
-
-										<BentoCard>
-											<View style={styles.rowBetween}>
-												<Text style={styles.sectionTitle}>Recent activity</Text>
-												<Pressable onPress={() => setShowNotifications(true)}>
-													<Text style={styles.linkText}>Open all</Text>
-												</Pressable>
-											</View>
-											{latestActivities.length > 0 ? (
-												latestActivities.map((item) => (
-													<View key={item.id} style={styles.listRow}>
-														<Ionicons
-															color={theme.primary}
-															name="ellipse"
-															size={10}
-														/>
-														<View style={{ flex: 1 }}>
-															<Text style={styles.listTitle}>
-																{item.message}
-															</Text>
-															<Text style={styles.listSubtitle}>
-																{formatShortDate(item.created_at)}
-															</Text>
-														</View>
-													</View>
-												))
-											) : (
-												<EmptyState
-													body="Notifications and shared actions will show here."
-													title="No activity yet"
-												/>
-											)}
-										</BentoCard>
-									</View>
+									<DashboardTab
+										activeBudget={plans[0]}
+										spent={plans[0] ? currentMonthStatsMap[plans[0].id]?.spent ?? 0 : 0}
+										shoppingItems={shoppingItems}
+										shoppingBadgeCount={shoppingBadgeCount}
+										memberCount={members.length}
+										unreadCount={unreadCount}
+										savingsTrackerCount={savingsTrackers.length}
+										currentMonthSavingsStatsMap={currentMonthSavingsStatsMap}
+										latestActivities={notifications.slice(0, 4)}
+										isTablet={isTablet}
+										bentoWidth={bentoWidth}
+										c={c}
+										migrationCardVisible={migrationCardVisible}
+										migrationSpaceType={migrationSpaceType}
+										actionBusy={actionBusy}
+										onCreateBudget={() => setShowBudgetComposer(true)}
+										onAnalyse={() => setShowAnalyse(true)}
+										onNotifications={() => setShowNotifications(true)}
+										onMigrationSpaceTypeChange={setMigrationSpaceType}
+										onSaveMigration={handleSaveSpaceType}
+										onDismissMigration={() => setMigrationCardVisible(false)}
+									/>
 								) : null}
 
 								{activeTab === "budget" ? (
-									<View style={styles.sectionGap}>
-										<View style={styles.headerBlock}>
-											<View style={styles.headerContent}>
-												<Text style={styles.sectionTitle}>Budget plans</Text>
-												<Text style={styles.bodyMuted}>
-													Track spend, remaining balance, and shared expenses.
-												</Text>
-											</View>
-											<View style={styles.iconRow}>
-												<Pressable
-													hitSlop={8}
-													onPress={() => setBudgetEditMode(!budgetEditMode)}
-													testID="budget-edit-mode-toggle"
-												>
-													<Ionicons
-														color={
-															budgetEditMode ? theme.primary : theme.textMuted
-														}
-														name={
-															budgetEditMode
-																? "checkmark-circle"
-																: "settings-outline"
-														}
-														size={24}
-													/>
-												</Pressable>
-												<ModernButton
-													onPress={() => {
-														setNewPlanType("budget");
-														setShowNewPlanComposer(true);
-													}}
-													secondary
-													testID="budget-new-plan"
-													text="New plan"
-												/>
-											</View>
-										</View>
-
-										{plans.map((plan) => {
-											const stats = currentMonthStatsMap[plan.id] ?? {
-												spent: 0,
-												allocated: plan.total_amount,
-												remaining: plan.total_amount,
-											};
-											return (
-												<BentoCard key={plan.id} style={styles.planCard}>
-													<View style={styles.rowBetween}>
-														<Pressable
-															onPress={() => setSelectedPlanId(plan.id)}
-															style={{ flex: 1 }}
-															testID={`budget-plan-${plan.id}`}
-														>
-															<Text style={styles.cardTitle}>{plan.name}</Text>
-															<Text style={styles.bodyMuted}>
-																{formatShortDate(plan.start_date)} →{" "}
-																{formatShortDate(plan.end_date)}
-															</Text>
-														</Pressable>
-														<View style={styles.iconRow}>
-															{budgetEditMode ? (
-																<>
-																	<Pressable
-																		hitSlop={8}
-																		onPress={() => handleEditBudget(plan)}
-																		testID={`budget-edit-${plan.id}`}
-																	>
-																		<Ionicons
-																			color={theme.primary}
-																			name="create-outline"
-																			size={22}
-																		/>
-																	</Pressable>
-																	<Pressable
-																		hitSlop={8}
-																		onPress={() =>
-																			handleDeleteBudget(plan.id, plan.name)
-																		}
-																		testID={`budget-delete-${plan.id}`}
-																	>
-																		<Ionicons
-																			color={theme.danger}
-																			name="trash-outline"
-																			size={22}
-																		/>
-																	</Pressable>
-																</>
-															) : null}
-															<Pressable
-																hitSlop={8}
-																onPress={() => setSelectedPlanId(plan.id)}
-															>
-																<Ionicons
-																	color={theme.primary}
-																	name="chevron-forward-circle-outline"
-																	size={26}
-																/>
-															</Pressable>
-														</View>
-													</View>
-													<View style={styles.statRow}>
-														<InfoPill
-															label="Allocated"
-															value={c(stats.allocated)}
-														/>
-														<InfoPill label="Spent" value={c(stats.spent)} />
-														<InfoPill label="Left" value={c(stats.remaining)} />
-													</View>
-													<ProgressBar
-														progress={
-															stats.spent / Math.max(stats.allocated, 1)
-														}
-													/>
-												</BentoCard>
-											);
-										})}
-
-										{plans.length === 0 ? (
-											<EmptyState
-								body="Create your first budget plan to start tracking expenses."
-												title="No plans yet"
-											/>
-										) : null}
-
-										{billTrackers.map((tracker) => {
-											const bStats = currentMonthBillStatsMap[tracker.id] ?? {
-												paid: 0,
-												paidCount: 0,
-												pending: 0,
-												pendingCount: 0,
-												totalCount: 0,
-											};
-											const renderRightActions = () => (
-												<View style={styles.deleteAction}>
-													<Pressable
-														hitSlop={10}
-														onPress={() =>
-															handleDeleteTracker(
-																"bill",
-																tracker.id,
-																tracker.name,
-															)
-														}
-														style={styles.deleteButton}
-													>
-														<Ionicons
-															color={theme.onDanger}
-															name="trash-outline"
-															size={24}
-														/>
-													</Pressable>
-												</View>
-											);
-											const renderLeftActions = () => (
-												<View
-													style={[
-														styles.deleteAction,
-														{ backgroundColor: theme.primary },
-													]}
-												>
-													<Pressable
-														hitSlop={10}
-														onPress={() => {
-															setEditingBillTrackerId(tracker.id);
-															setEditBillTrackerForm({ name: tracker.name });
-														}}
-														style={styles.deleteButton}
-													>
-														<Ionicons
-															color={theme.onPrimary}
-															name="create-outline"
-															size={24}
-														/>
-													</Pressable>
-												</View>
-											);
-											return (
-												<Swipeable
-													key={tracker.id}
-													renderLeftActions={renderLeftActions}
-													renderRightActions={renderRightActions}
-													overshootRight={false}
-													overshootLeft={false}
-												>
-													<Pressable
-														onPress={() => {
-															setBillViewMonth("current");
-															setBillTrackerDetailLoading(true);
-															setSelectedBillTrackerId(tracker.id);
-														}}
-													>
-														<BentoCard>
-															<View style={styles.rowBetween}>
-																<View style={{ flex: 1 }}>
-																	<Text style={styles.cardTitle}>
-																		{tracker.name}
-																	</Text>
-																	<Text style={styles.bodyMuted}>
-																		Bills this month: {bStats.totalCount}
-																	</Text>
-																</View>
-																<Ionicons
-																	color={theme.primary}
-																	name="chevron-forward-circle-outline"
-																	size={26}
-																/>
-															</View>
-															<View style={styles.statRow}>
-																<InfoPill label="Paid" value={c(bStats.paid)} />
-																<InfoPill
-																	label="Pending"
-																	value={c(bStats.pending)}
-																/>
-																<InfoPill
-																	label="Total"
-																	value={`${bStats.totalCount} bills`}
-																/>
-															</View>
-														</BentoCard>
-													</Pressable>
-												</Swipeable>
-											);
-										})}
-
-										{savingsTrackers.map((tracker) => {
-											const sStats = currentMonthSavingsStatsMap[
-												tracker.id
-											] ?? { balance: 0, deposits: 0, withdrawals: 0, net: 0 };
-											const renderRightActions = () => (
-												<View style={styles.deleteAction}>
-													<Pressable
-														hitSlop={10}
-														onPress={() =>
-															handleDeleteTracker(
-																"savings",
-																tracker.id,
-																tracker.name,
-															)
-														}
-														style={styles.deleteButton}
-													>
-														<Ionicons
-															color={theme.onDanger}
-															name="trash-outline"
-															size={24}
-														/>
-													</Pressable>
-												</View>
-											);
-											const renderLeftActions = () => (
-												<View
-													style={[
-														styles.deleteAction,
-														{ backgroundColor: theme.primary },
-													]}
-												>
-													<Pressable
-														hitSlop={10}
-														onPress={() => {
-															setEditingSavingsTrackerId(tracker.id);
-															setEditSavingsTrackerForm({ name: tracker.name });
-														}}
-														style={styles.deleteButton}
-													>
-														<Ionicons
-															color={theme.onPrimary}
-															name="create-outline"
-															size={24}
-														/>
-													</Pressable>
-												</View>
-											);
-											return (
-												<Swipeable
-													key={tracker.id}
-													renderLeftActions={renderLeftActions}
-													renderRightActions={renderRightActions}
-													overshootRight={false}
-													overshootLeft={false}
-												>
-													<Pressable
-														onPress={() => {
-															setSavingsViewMonth("current");
-															setSavingsTrackerDetailLoading(true);
-															setSelectedSavingsTrackerId(tracker.id);
-														}}
-													>
-														<BentoCard>
-															<View style={styles.rowBetween}>
-																<Text style={styles.cardTitle}>
-																	{tracker.name}
-																</Text>
-																<Ionicons
-																	color={theme.primary}
-																	name="chevron-forward-circle-outline"
-																	size={26}
-																/>
-															</View>
-															<View style={styles.statRow}>
-																<InfoPill
-																	label="Balance"
-																	value={c(sStats.balance)}
-																/>
-																<InfoPill
-																	label="Deposits"
-																	value={c(sStats.deposits)}
-																/>
-																<InfoPill label="Net" value={c(sStats.net)} />
-															</View>
-														</BentoCard>
-													</Pressable>
-												</Swipeable>
-											);
-										})}
-
-										{billTrackers.length === 0 &&
-										savingsTrackers.length === 0 ? (
-											<EmptyState
-												body="Create your first bill or savings tracker to get started."
-												title="No trackers yet"
-											/>
-										) : null}
-									</View>
+									<BudgetTab
+										plans={plans}
+										billTrackers={billTrackers}
+										savingsTrackers={savingsTrackers}
+										currentMonthStatsMap={currentMonthStatsMap}
+										currentMonthBillStatsMap={currentMonthBillStatsMap}
+										currentMonthSavingsStatsMap={currentMonthSavingsStatsMap}
+										budgetEditMode={budgetEditMode}
+										c={c}
+										onToggleEditMode={() => setBudgetEditMode(!budgetEditMode)}
+										onNewPlan={() => {
+											setNewPlanType("budget");
+											setShowNewPlanComposer(true);
+										}}
+										onSelectPlan={setSelectedPlanId}
+										onEditBudget={handleEditBudget}
+										onDeleteBudget={handleDeleteBudget}
+										onDeleteTracker={handleDeleteTracker}
+										onEditBillTracker={(tracker) => {
+											setEditingBillTrackerId(tracker.id);
+											setEditBillTrackerForm({ name: tracker.name });
+										}}
+										onSelectBillTracker={(id) => {
+											setBillViewMonth("current");
+											setBillTrackerDetailLoading(true);
+											setSelectedBillTrackerId(id);
+										}}
+										onEditSavingsTracker={(tracker) => {
+											setEditingSavingsTrackerId(tracker.id);
+											setEditSavingsTrackerForm({ name: tracker.name });
+										}}
+										onSelectSavingsTracker={(id) => {
+											setSavingsViewMonth("current");
+											setSavingsTrackerDetailLoading(true);
+											setSelectedSavingsTrackerId(id);
+										}}
+									/>
 								) : null}
 
 								{activeTab === "shopping" ? (
-									<View style={styles.sectionGap}>
-										<View style={styles.headerBlock}>
-											<View style={styles.headerContent}>
-												<Text style={styles.sectionTitle}>Shopping list</Text>
-												<Text style={styles.bodyMuted}>
-													Shared in real time with bought timestamps and member
-													names.
-												</Text>
-											</View>
-											<ModernButton
-												onPress={() => setShowShoppingComposer(true)}
-												secondary
-												testID="shopping-open-add"
-												text="Add item"
-											/>
-										</View>
-
-										<View style={styles.segmentRow}>
-											{shoppingFilters.map((filter) => (
-												<CategoryChip
-													key={filter}
-													active={shoppingFilter === filter}
-													label={filter}
-													onPress={() => setShoppingFilter(filter)}
-												/>
-											))}
-										</View>
-
-										<Pressable
-											hitSlop={10}
-											onPress={() =>
-												runAction(async () => {
-													if (!activeProfile) return;
-													await shoppingApi.clearBought(activeProfile.id);
-													setShoppingItems((prev) =>
-														prev.filter((i) => !i.is_bought),
-													);
-													void refreshProfileData(activeProfile.id);
-												})
-											}
-										>
-											<Text style={styles.linkText}>
-												Clear all bought items
-											</Text>
-										</Pressable>
-
-										{filteredShoppingItems.length > 0 ? (
-											filteredShoppingItems.map((item) => {
-												const actor = memberMap.get(
-													item.bought_by ?? item.added_by,
-												);
-												const renderRightActions = () => (
-													<View style={styles.deleteAction}>
-														<Pressable
-															hitSlop={10}
-															onPress={() =>
-																handleDeleteShoppingItem(item.id, item.name)
-															}
-															style={styles.deleteButton}
-															testID={`shopping-delete-${item.id}`}
-														>
-															<Ionicons
-																color={theme.onDanger}
-																name="trash-outline"
-																size={24}
-															/>
-														</Pressable>
-													</View>
-												);
-												return (
-													<Swipeable
-														key={item.id}
-														renderRightActions={renderRightActions}
-														overshootRight={false}
-													>
-														<BentoCard style={styles.shoppingCard}>
-															<View style={styles.rowBetween}>
-																<View style={{ flex: 1 }}>
-																	<Text
-																		style={[
-																			styles.listTitle,
-																			item.is_bought && styles.strikethrough,
-																		]}
-																	>
-																		{item.name}
-																	</Text>
-																	<Text style={styles.listSubtitle}>
-																		{item.quantity ? `${item.quantity} • ` : ""}
-																		{item.category || "General"}
-																	</Text>
-																	<Text style={styles.listSubtitle}>
-																		Added by{" "}
-																		{memberMap.get(item.added_by)?.name ??
-																			"Member"}
-																		{item.is_bought
-																			? ` • Bought by ${actor?.name ?? "Member"} on ${formatShortDate(item.bought_at)}`
-																			: ""}
-																	</Text>
-																</View>
-																<Pressable
-																	hitSlop={12}
-																	onPress={() => handleMarkBought(item)}
-																	testID={`shopping-mark-bought-${item.id}`}
-																>
-																	<Ionicons
-																		color={
-																			item.is_bought
-																				? theme.success
-																				: theme.primary
-																		}
-																		name={
-																			item.is_bought
-																				? "checkmark-circle"
-																				: "checkmark-circle-outline"
-																		}
-																		size={28}
-																	/>
-																</Pressable>
-															</View>
-														</BentoCard>
-													</Swipeable>
-												);
-											})
-										) : (
-											<EmptyState
-								body="Add shared items so everyone can see and update them together."
-												title="List is empty"
-											/>
-										)}
-									</View>
+									<ShoppingTab
+										filteredShoppingItems={filteredShoppingItems}
+										shoppingFilter={shoppingFilter}
+										memberMap={memberMap}
+										onAddItem={() => setShowShoppingComposer(true)}
+										onFilterChange={setShoppingFilter}
+										onClearBought={handleClearBought}
+										onDeleteItem={handleDeleteShoppingItem}
+										onMarkBought={handleMarkBought}
+									/>
 								) : null}
 
 								{activeTab === "profile" ? (
-									<View style={styles.sectionGap}>
-										<BentoCard tone="highlight">
-											<Text style={styles.sectionTitle}>
-												{userProfile.name}
-											</Text>
-											<Text style={styles.bodyMuted}>{userProfile.email}</Text>
-											<View style={styles.statRow}>
-												<InfoPill
-													label="Avatar"
-													value={userProfile.avatar_emoji ?? "🏡"}
-												/>
-												<InfoPill label="Home" value={activeProfile.name} />
-											</View>
-										</BentoCard>
-
-										<View style={styles.quickActionGrid}>
-											<QuickActionCard
-												icon="people-outline"
-												label="Members"
-												onPress={() => setShowMembers(true)}
-												testID="profile-open-members"
-											/>
-											<QuickActionCard
-												icon="person-add-outline"
-												label="Invite"
-												onPress={() => setShowInvite(true)}
-												testID="profile-open-invite"
-											/>
-											<QuickActionCard
-												icon="settings-outline"
-												label="Settings"
-												onPress={primeSettingsForm}
-												testID="profile-open-settings"
-											/>
-											<QuickActionCard
-												icon="swap-horizontal-outline"
-												label="Switch"
-												onPress={() => setShowProfileSwitcher(true)}
-												testID="profile-open-switcher"
-											/>
-										</View>
-
-										<BentoCard>
-											<View style={styles.reminderSection}>
-												<Text style={styles.inputLabel}>Daily Reminder</Text>
-												<View style={styles.reminderRow}>
-													<View style={styles.reminderInfo}>
-														<Ionicons
-															color={theme.primary}
-															name="notifications-outline"
-															size={24}
-														/>
-														<View style={styles.reminderTextWrap}>
-															<Text style={styles.reminderText}>
-																Remind me to add expenses
-															</Text>
-															<Text style={styles.reminderSubtext}>
-																Daily notification at {reminderTime}
-															</Text>
-														</View>
-													</View>
-													<Pressable
-														hitSlop={10}
-														disabled={reminderBusy}
-														onPress={() => toggleReminder(!reminderEnabled)}
-														style={[
-															styles.toggleButton,
-															reminderEnabled && styles.toggleButtonActive,
-														]}
-													>
-														<View
-															style={[
-																styles.toggleCircle,
-																reminderEnabled && styles.toggleCircleActive,
-															]}
-														/>
-													</Pressable>
-												</View>
-
-												{reminderEnabled ? (
-													<View style={styles.timePickerRow}>
-														<Text style={styles.inputLabel}>Reminder time</Text>
-														<TextInput
-									keyboardType="numbers-and-punctuation"
-									editable={!reminderBusy}
-									onBlur={() => setAndroidKeyboardVisible(false)}
-									onChangeText={setReminderTime}
-									onEndEditing={() => void updateReminderTime()}
-									onFocus={() => {
-										if (Platform.OS === "android") setAndroidKeyboardVisible(true);
-									}}
-									placeholder="20:00"
-															style={styles.timeInput}
-															value={reminderTime}
-														/>
-														<Text style={styles.timeHint}>
-															Format: HH:MM (24-hour)
-														</Text>
-													</View>
-												) : null}
-											</View>
-										</BentoCard>
-									</View>
+									<ProfileTab
+										userProfile={userProfile}
+										profileName={activeProfile.name}
+										reminderBusy={reminderBusy}
+										reminderEnabled={reminderEnabled}
+										reminderTime={reminderTime}
+										onMembers={() => setShowMembers(true)}
+										onInvite={() => setShowInvite(true)}
+										onSettings={primeSettingsForm}
+										onSwitchProfile={() => setShowProfileSwitcher(true)}
+										onToggleReminder={toggleReminder}
+										onReminderTimeChange={setReminderTime}
+										onSaveReminderTime={updateReminderTime}
+										onAndroidKeyboardVisibleChange={setAndroidKeyboardVisible}
+									/>
 								) : null}
+
 							</ScrollView>
 						)}
 
@@ -3382,6 +2661,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => {
+						setShowBudgetComposer(false);
+						setEditingPlanId(null);
+						setBudgetForm(defaultBudgetForm());
+					}}
 					presentationStyle="pageSheet"
 					visible={showBudgetComposer}
 				>
@@ -3438,6 +2722,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => {
+						setShowNewPlanComposer(false);
+						setNewPlanName("");
+					}}
 					presentationStyle="pageSheet"
 					visible={showNewPlanComposer}
 				>
@@ -3536,6 +2824,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => {
+						setEditingBillTrackerId(null);
+						setEditingSavingsTrackerId(null);
+						setEditBillTrackerForm({ name: "" });
+						setEditSavingsTrackerForm({ name: "" });
+					}}
 					presentationStyle="pageSheet"
 					visible={
 						Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)
@@ -3590,6 +2884,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setSelectedBillTrackerId(null)}
 					presentationStyle="pageSheet"
 					visible={Boolean(selectedBillTrackerId)}
 				>
@@ -3671,6 +2966,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setSelectedSavingsTrackerId(null)}
 					presentationStyle="pageSheet"
 					visible={Boolean(selectedSavingsTrackerId)}
 				>
@@ -3769,6 +3065,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setSelectedPlanId(null)}
 					presentationStyle="pageSheet"
 					visible={Boolean(selectedPlan)}
 				>
@@ -5026,7 +4323,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</BottomSheet>
 				</Modal>
 
-				<Modal animationType="slide" transparent visible={showShoppingComposer}>
+				<Modal
+					animationType="slide"
+					onRequestClose={() => setShowShoppingComposer(false)}
+					transparent
+					visible={showShoppingComposer}
+				>
 					<BottomSheet onClose={() => setShowShoppingComposer(false)}>
 						<Text style={styles.sectionTitle}>Add Shopping Item</Text>
 						<LabeledInput
@@ -5068,7 +4370,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</BottomSheet>
 				</Modal>
 
-				<Modal animationType="slide" transparent visible={showBoughtComposer}>
+				<Modal
+					animationType="slide"
+					onRequestClose={() => {
+						setShowBoughtComposer(false);
+						setPendingBoughtItem(null);
+						setBoughtForm({ price: "", paidBy: null, planId: "" });
+					}}
+					transparent
+					visible={showBoughtComposer}
+				>
 					<BottomSheet
 						onClose={() => {
 							setShowBoughtComposer(false);
@@ -5175,7 +4486,20 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</BottomSheet>
 				</Modal>
 
-				<Modal animationType="slide" transparent visible={showBorrowComposer}>
+				<Modal
+					animationType="slide"
+					onRequestClose={() => {
+						setShowBorrowComposer(false);
+						setBorrowForm({
+							amount: "",
+							date: new Date().toISOString().slice(0, 10),
+							description: "",
+						});
+						setEditingBorrowId(null);
+					}}
+					transparent
+					visible={showBorrowComposer}
+				>
 					<BottomSheet
 						onClose={() => {
 							setShowBorrowComposer(false);
@@ -5225,7 +4549,19 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</BottomSheet>
 				</Modal>
 
-				<Modal animationType="slide" transparent visible={showRepayComposer}>
+				<Modal
+					animationType="slide"
+					onRequestClose={() => {
+						setShowRepayComposer(false);
+						setRepayForm({
+							amount: "",
+							borrowId: "",
+							date: new Date().toISOString().slice(0, 10),
+						});
+					}}
+					transparent
+					visible={showRepayComposer}
+				>
 					<BottomSheet
 						onClose={() => {
 							setShowRepayComposer(false);
@@ -5266,6 +4602,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setShowMembers(false)}
 					presentationStyle="pageSheet"
 					visible={showMembers}
 				>
@@ -5301,6 +4638,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setShowInvite(false)}
 					presentationStyle="pageSheet"
 					visible={showInvite}
 				>
@@ -5353,6 +4691,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setShowNotifications(false)}
 					presentationStyle="pageSheet"
 					visible={showNotifications}
 				>
@@ -5434,6 +4773,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 				<Modal
 					animationType="slide"
+					onRequestClose={() => setShowExpenseFilters(false)}
 					presentationStyle="pageSheet"
 					visible={showExpenseFilters}
 				>
