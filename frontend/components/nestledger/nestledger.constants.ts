@@ -143,14 +143,14 @@ export const SPACE_TYPES: {
 	{
 		type: "family",
 		emoji: "🏠",
-		label: "Family / Home",
-		desc: "Household budget shared with your family.",
+		label: "Home",
+		desc: "Shared home budget.",
 	},
 	{
 		type: "trip_family",
 		emoji: "✈️",
-		label: "Family Trip",
-		desc: "Travel budget for the whole family.",
+		label: "Trip",
+		desc: "A shared travel budget.",
 	},
 	{
 		type: "trip_friends",

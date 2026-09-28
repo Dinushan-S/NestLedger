@@ -29,7 +29,7 @@ export function ModalScaffold({
     >
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <View style={styles.modalHeader}>
-          <Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
+          <Pressable accessibilityLabel={`Close ${title}`} accessibilityRole="button" hitSlop={10} onPress={onClose} testID={closeTestID}>
             <Ionicons color={theme.text} name="close-outline" size={28} />
           </Pressable>
           <Text style={[styles.modalTitle, { color: theme.text }]}>{title}</Text>

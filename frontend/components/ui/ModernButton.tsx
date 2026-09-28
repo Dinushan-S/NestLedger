@@ -49,6 +49,9 @@ export default function ModernButton({
   return (
     <Animated.View style={[{ transform: [{ scale }] }, style]}>
       <Pressable
+        accessibilityLabel={text}
+        accessibilityRole="button"
+        accessibilityState={{ busy: Boolean(loading), disabled: Boolean(disabled || loading) }}
         disabled={disabled || loading}
         hitSlop={10}
         onPress={onPress}
@@ -98,7 +101,7 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     backgroundColor: theme.secondarySoft,
   },
   secondaryLabel: {
-    color: theme.primary,
+    color: theme.text,
   },
   destructive: {
     backgroundColor: theme.dangerSoft,

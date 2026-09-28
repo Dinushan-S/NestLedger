@@ -35,6 +35,16 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
   authCard: {
     gap: 14,
   },
+  authRecoveryButton: {
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  authRecoveryText: {
+    color: theme.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
   authWrap: {
     flexGrow: 1,
     justifyContent: 'center',

@@ -47,10 +47,11 @@ export const LabeledInput = forwardRef<TextInput, LabeledInputProps>(function La
       <Text style={styles.inputLabel}>{label}</Text>
       <View style={styles.inputControl}>
         <TextInput
+          accessibilityLabel={props.accessibilityLabel ?? label}
           cursorColor={theme.primary}
           placeholderTextColor={theme.textMuted}
-          selectionColor={theme.primary}
           ref={ref}
+          selectionColor={theme.primary}
           style={[styles.input, trailingAccessory ? styles.inputWithTrailingAccessory : null, style]}
           {...props}
         />
@@ -153,7 +154,6 @@ export function ProfileFormFields({
           onChange={(value) => onChange({ ...form, currency: value })}
         />
       )}
-
       {!userOnly ? (
         <Text style={styles.currencyHint}>
           This will be this space&apos;s currency and your default for new spaces.
