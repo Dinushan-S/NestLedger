@@ -4,7 +4,7 @@ import { useStyles } from "../nestledger.styles";
 import BentoCard from "../../ui/BentoCard";
 import { Pressable, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import type { ShoppingItem } from "../../../lib/nestledger-services";
+import type { ShoppingItem } from "../../../lib/nestledger";
 import { formatShortDate, shoppingFilters } from "../../../constants/nestledger";
 import CategoryChip from "../../ui/CategoryChip";
 import ModernButton from "../../ui/ModernButton";

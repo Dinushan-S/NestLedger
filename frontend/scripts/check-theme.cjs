@@ -63,10 +63,14 @@ for (const background of ['background', 'surface', 'surfaceMuted', 'primarySoft'
 }
 
 // Guard every app component against reintroducing a fixed light-palette import.
+// git ls-files still lists a file until its deletion is staged, so skip any that
+// are already gone from the working tree.
 const root = path.resolve(__dirname, '..');
 const files = execFileSync('git', ['ls-files', 'app', 'components'], { cwd: root, encoding: 'utf8' }).trim().split(/\r?\n/);
 for (const file of files.filter(file => /\.tsx?$/.test(file))) {
-  const source = fs.readFileSync(path.join(root, file), 'utf8');
+  const full = path.join(root, file);
+  if (!fs.existsSync(full)) continue;
+  const source = fs.readFileSync(full, 'utf8');
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   for (const node of ast.statements) {
     if (!ts.isImportDeclaration(node) || !node.moduleSpecifier.text.endsWith('constants/nestledger')) continue;

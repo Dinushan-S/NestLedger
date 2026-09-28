@@ -4,7 +4,7 @@ import { useStyles } from "../nestledger.styles";
 import BentoCard from "../../ui/BentoCard";
 import { Pressable, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import type { BillTrackerMeta, BudgetPlan, SavingsTrackerMeta } from "../../../lib/nestledger-services";
+import type { BillTrackerMeta, BudgetPlan, SavingsTrackerMeta } from "../../../lib/nestledger";
 import { formatShortDate } from "../../../constants/nestledger";
 import ModernButton from "../../ui/ModernButton";
 import ProgressBar from "../../ui/ProgressBar";

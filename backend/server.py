@@ -30,7 +30,6 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 APP_PUBLIC_URL = os.getenv("APP_PUBLIC_URL", "")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
-BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "NestLedger")
 BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "")
@@ -179,21 +178,18 @@ class ReceiptExtractRequest(BaseModel):
 
 class ReceiptExtractedItem(BaseModel):
     name: str = Field(description="Item name or description")
-    code: str | None = Field(default=None, description="Item product or SKU code")
     quantity: float = Field(default=1.0, description="Quantity purchased")
     unit_price: float = Field(description="Unit price per item")
-    discount: float | None = Field(default=None, description="Discount amount applied to item")
     total_price: float = Field(description="Net line total price after discount")
 
 
 class ReceiptExtractionResult(BaseModel):
+    # Only the fields the client is handed are declared. Asking the model for
+    # branch, time, currency or rounding adds tokens and latency for data that
+    # extract_receipt discards.
     vendor: str | None = Field(default=None, description="Store or merchant name")
-    branch: str | None = Field(default=None, description="Branch or location")
     date: str | None = Field(default=None, description="Date on receipt in YYYY-MM-DD or printed format")
-    time: str | None = Field(default=None, description="Time on receipt")
-    currency: str | None = Field(default=None, description="Currency symbol or code (e.g. LKR)")
     subtotal: float | None = Field(default=None, description="Subtotal before tax or rounding")
-    rounding_off: float | None = Field(default=None, description="Rounding off adjustment")
     total: float | None = Field(default=None, description="Grand total payable")
     items: list[ReceiptExtractedItem] = Field(default_factory=list, description="Extracted line items")
     warnings: list[str] = Field(default_factory=list, description="Any warnings or discrepancies")
@@ -893,9 +889,9 @@ def extract_receipt(
 
     prompt = (
         "You are an expert financial auditor AI. Extract all information accurately from this receipt/bill image. "
-        "Pay special attention to merchant/vendor name, branch, date, time, currency, itemized line items with "
-        "product names, codes/SKUs, quantities, unit prices, discounts, line totals, subtotal, rounding off, "
-        "and net total. Ignore loyalty points and promotional footer notices. "
+        "Pay special attention to merchant/vendor name, date, itemized line items with product names, "
+        "quantities, unit prices, line totals, subtotal and net total. "
+        "Ignore loyalty points and promotional footer notices. "
         "Ensure all item total prices sum up reasonably to the printed total."
     )
 

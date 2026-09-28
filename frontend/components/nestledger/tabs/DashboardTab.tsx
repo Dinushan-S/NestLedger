@@ -3,7 +3,7 @@ import { useTheme } from "../../../lib/theme-context";
 import { useStyles } from "../nestledger.styles";
 import BentoCard from "../../ui/BentoCard";
 import { Pressable, Text, View } from "react-native";
-import type { AppNotification, BudgetPlan, ShoppingItem, SpaceType } from "../../../lib/nestledger-services";
+import type { AppNotification, BudgetPlan, ShoppingItem, SpaceType } from "../../../lib/nestledger";
 import { formatShortDate } from "../../../constants/nestledger";
 import ModernButton from "../../ui/ModernButton";
 import ProgressBar from "../../ui/ProgressBar";

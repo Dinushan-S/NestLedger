@@ -281,7 +281,6 @@ function tableCrud<T extends { created_at: string; id: string }>(
 const planCrud = tableCrud<BudgetPlan>("budget_plans");
 const billTrackerCrud = tableCrud<BillTrackerMeta>("bill_trackers");
 const recurringBillCrud = tableCrud<RecurringBill>("recurring_bills");
-const paymentCrud = tableCrud<BillPayment>("bill_payments");
 const savingsTrackerCrud = tableCrud<SavingsTrackerMeta>("savings_trackers");
 const savingsEntryCrud = tableCrud<SavingsEntry>("savings");
 
@@ -437,15 +436,6 @@ export const profileApi = {
 			user_profile: profileMap.get(item.user_id) ?? null,
 		})) as Member[];
 	},
-	async fetchProfile(profileId: string) {
-		const { data, error } = await supabase
-			.from("profiles")
-			.select("*")
-			.eq("id", profileId)
-			.single();
-		if (error) throw error;
-		return data as HouseholdProfile;
-	},
 	async updateHousehold(
 		profileId: string,
 		values: Partial<
@@ -504,34 +494,39 @@ export const budgetApi = {
 	},
 };
 
+type ExpenseInput = Omit<Expense, "created_at" | "id" | "price"> & {
+	items: Omit<ExpenseItem, "created_at" | "expense_id" | "id">[];
+};
+
 export const expenseApi = {
-	async addExpense(
-		input: Omit<Expense, "created_at" | "id" | "price"> & {
-			items: Omit<ExpenseItem, "created_at" | "expense_id" | "id">[];
-		},
-	) {
+	/**
+	 * Inserts the expense and its items. `columns` lets the caller ask for only
+	 * what it will read back: "*" for the full row, "id" when it just needs the
+	 * new id to attach something to.
+	 */
+	async addExpense(input: ExpenseInput, columns = "*") {
 		const totalPrice = input.items.reduce((sum, item) => sum + item.price, 0);
 		const { items, description, ...expenseData } = input;
 
-		// Build expense payload - only include description if it has a value
-		const expensePayload: any = {
+		// Only add description if it has a value.
+		const expensePayload: Record<string, unknown> = {
 			...expenseData,
 			price: totalPrice,
 			created_at: nowIso(),
 		};
-
-		// Only add description if it's not null/empty
 		if (description && description.trim()) {
 			expensePayload.description = description.trim();
 		}
 
-		const { data: expense, error: expenseError } = await supabase
+		const { data, error: expenseError } = await supabase
 			.from("expenses")
 			.insert(expensePayload)
-			.select("*")
+			.select(columns)
 			.single();
 
 		if (expenseError) throw expenseError;
+		// A dynamic select() defeats the generated row type, so narrow it back.
+		const expense = data as unknown as { id: string } & Partial<Expense>;
 
 		if (items.length > 0) {
 			const itemsPayload = items.map((item) => ({
@@ -548,48 +543,6 @@ export const expenseApi = {
 		}
 
 		return { ...expense, items } as ExpenseWithItems;
-	},
-	async addExpenseWithId(
-		input: Omit<Expense, "created_at" | "id" | "price"> & {
-			items: Omit<ExpenseItem, "created_at" | "expense_id" | "id">[];
-		},
-	): Promise<{ id: string }> {
-		const totalPrice = input.items.reduce((sum, item) => sum + item.price, 0);
-		const { items, description, ...expenseData } = input;
-
-		const expensePayload: any = {
-			...expenseData,
-			price: totalPrice,
-			created_at: nowIso(),
-		};
-
-		if (description && description.trim()) {
-			expensePayload.description = description.trim();
-		}
-
-		const { data: expense, error: expenseError } = await supabase
-			.from("expenses")
-			.insert(expensePayload)
-			.select("id")
-			.single();
-
-		if (expenseError) throw expenseError;
-
-		if (items.length > 0) {
-			const itemsPayload = items.map((item) => ({
-				...item,
-				expense_id: expense.id,
-				created_at: nowIso(),
-			}));
-
-			const { error: itemsError } = await supabase
-				.from("expense_items")
-				.insert(itemsPayload);
-
-			if (itemsError) throw itemsError;
-		}
-
-		return { id: expense.id };
 	},
 	async updateExpense(
 		expenseId: string,
@@ -675,16 +628,6 @@ export const expenseApi = {
 
 		if (error) throw error;
 	},
-	async fetchExpenses(planId: string) {
-		const { data, error } = await supabase
-			.from("expenses")
-			.select("*, items:expense_items(*)")
-			.eq("plan_id", planId)
-			.order("date", { ascending: false });
-
-		if (error) throw error;
-		return (data ?? []) as ExpenseWithItems[];
-	},
 	async fetchProfileExpenses(profileId: string) {
 		const { data, error } = await supabase
 			.from("expenses")
@@ -694,16 +637,6 @@ export const expenseApi = {
 
 		if (error) throw error;
 		return (data ?? []) as ExpenseWithItems[];
-	},
-	async fetchExpenseItems(expenseId: string) {
-		const { data, error } = await supabase
-			.from("expense_items")
-			.select("*")
-			.eq("expense_id", expenseId)
-			.order("created_at", { ascending: true });
-
-		if (error) throw error;
-		return (data ?? []) as ExpenseItem[];
 	},
 };
 
@@ -917,7 +850,6 @@ export const billApi = {
 		return (data ?? []) as RecurringBill[];
 	},
 	createRecurringBill: recurringBillCrud.create,
-	updateRecurringBill: recurringBillCrud.update,
 	deleteRecurringBill: recurringBillCrud.remove,
 	async fetchPayments(profileId: string) {
 		const { data, error } = await supabase
@@ -952,22 +884,6 @@ export const billApi = {
 		if (error) throw error;
 		return data as BillPayment;
 	},
-	async updatePayment(
-		paymentId: string,
-		updates: Partial<
-			Pick<BillPayment, "amount" | "plan_id" | "status" | "units">
-		>,
-	) {
-		const { data, error } = await supabase
-			.from("bill_payments")
-			.update(updates)
-			.eq("id", paymentId)
-			.select(billPaymentColumns)
-			.single();
-		if (error) throw error;
-		return data as BillPayment;
-	},
-	deletePayment: paymentCrud.remove,
 };
 
 export const savingsApi = {

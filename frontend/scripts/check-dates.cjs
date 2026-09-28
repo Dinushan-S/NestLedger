@@ -108,10 +108,38 @@ for (const zone of zones) {
     `${zone}: neither write edge distinguishes local from UTC, so this zone cannot catch a regression`,
   );
 
-  console.log(
-    `  ${zone}: UTC offset ${-offsetMinutes / 60}h | ${days.length} days parsed, ` +
-      `${drifted.length} drift on read | ${writeDrifted.length}/2 write edges drift`,
+// A Postgres `date` column must be written as YYYY-MM-DD. Normalising a picked
+// or scanned date through toISOString() instead stores the UTC day, which is the
+// previous day for every zone at or east of UTC, so the row is permanently off by
+// one. This asserts the round trip the expense and borrow paths actually do.
+for (const day of days) {
+  assert.equal(
+    toLocalDate(parseDateOnly(day)),
+    day,
+    `${zone}: normalising ${day} for a date column must not shift it`,
   );
+}
+const dateColumnDrift = days.filter(
+  (d) => parseDateOnly(d).toISOString().slice(0, 10) !== d,
+);
+if (offsetMinutes <= 0) {
+  assert.ok(
+    dateColumnDrift.length > 0,
+    `${zone}: a UTC round trip should shift a date column east of UTC but did not, ` +
+      'so this zone cannot catch the bug',
+  );
+}
+assert.equal(
+  toLocalDate(parseDateOnly('28 Sept 2026')),
+  '2026-09-28',
+  'a printed-format date from a scanned receipt must normalise to the picked day',
+);
+
+console.log(
+  `  ${zone}: UTC offset ${-offsetMinutes / 60}h | ${days.length} days parsed, ` +
+    `${drifted.length} drift on read | ${writeDrifted.length}/2 write edges drift | ` +
+    `${dateColumnDrift.length}/${days.length} shift a date column`,
+);
 }
 
 // Timestamps are instants, not calendar days: parseDateOnly must not touch them.

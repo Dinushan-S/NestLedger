@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { authApi } from '@/lib/nestledger-services';
+import { authApi } from '@/lib/nestledger';
 
 import ModernButton from '@/components/ui/ModernButton';
 import BentoCard from '@/components/ui/BentoCard';

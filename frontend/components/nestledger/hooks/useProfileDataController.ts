@@ -119,21 +119,15 @@ export function useProfileDataController({
         onError(message);
       }
     },
+    // State setters from useState are referentially stable for the component's
+    // lifetime, so they are deliberately left out of this dependency list. The
+    // signature keeps them flat rather than passing a bag object, because a fresh
+    // object literal every render would change this callback's identity every
+    // render and make useRealtimeChannel resubscribe on every render.
     [
       onError,
       selectedPlanId,
       sessionUserId,
-      setBillPayments,
-      setBillTrackers,
-      setMembers,
-      setNotifications,
-      setPlans,
-      setProfileExpenses,
-      setRecurringBills,
-      setSavings,
-      setSavingsTrackers,
-      setSelectedPlanId,
-      setShoppingItems,
     ],
   );
 

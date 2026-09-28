@@ -2,13 +2,7 @@ import { StyleSheet } from 'react-native';
 import { useThemedStyles, type AppTheme } from '@/lib/theme-context';
 
 // Shared styles follow the active palette across screens and dialogs.
-const createStyles = (theme: AppTheme) => StyleSheet.create({
-  amountText: {
-    color: theme.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  analyseCardRow: {
+const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
@@ -457,92 +451,7 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     color: theme.text,
     fontSize: 16,
     fontWeight: '700',
-  },
-  expenseComposerHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  suggestionTrigger: {
-    alignItems: 'center',
-    backgroundColor: theme.primarySoft,
-    borderRadius: 999,
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  suggestionTriggerText: {
-    color: theme.primary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  suggestionPickerHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  suggestionPickerIcon: {
-    alignItems: 'center',
-    backgroundColor: theme.primarySoft,
-    borderRadius: 16,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  suggestionPickerCopy: {
-    flex: 1,
-  },
-  suggestionHint: {
-    color: theme.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  suggestionList: {
-    gap: 8,
-    marginTop: 10,
-  },
-  suggestionButton: {
-    alignItems: 'center',
-    backgroundColor: theme.surfaceMuted,
-    borderColor: theme.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  suggestionIcon: {
-    alignItems: 'center',
-    backgroundColor: theme.primarySoft,
-    borderRadius: 12,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  suggestionContent: {
-    flex: 1,
-    gap: 2,
-  },
-  suggestionTitle: {
-    color: theme.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  suggestionMeta: {
-    color: theme.textMuted,
-    fontSize: 12,
-  },
-  suggestionAmount: {
-    color: theme.primary,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  expenseCardRow: {
+  },  expenseCardRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
@@ -690,12 +599,7 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-  },
-  modalScreen: {
-    backgroundColor: theme.background,
-    flex: 1,
-  },
-  modalTitle: {
+  },  modalTitle: {
     color: theme.text,
     fontSize: 18,
     fontWeight: '700',
@@ -806,23 +710,11 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  rowGap: {
+  },  iconRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
-  },
-  iconRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rowEnd: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  reminderSection: {
+  },  reminderSection: {
     marginTop: 16,
     marginBottom: 16,
     gap: 12,

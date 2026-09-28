@@ -6,7 +6,7 @@ import {
 	todayLocalDate,
 	toLocalDate,
 } from "../../constants/nestledger";
-import type { SpaceType } from "../../lib/nestledger-services";
+import type { SpaceType } from "../../lib/nestledger";
 import type { CreateProfileForm } from "./forms/ProfileFormControls";
 
 // Form types + shared constants/helpers extracted from NestLedgerApp.tsx (2026-08-05).
