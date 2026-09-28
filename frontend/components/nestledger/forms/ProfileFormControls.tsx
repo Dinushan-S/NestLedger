@@ -10,7 +10,8 @@ import {
   View,
 } from 'react-native';
 
-import { avatarChoices, currencyOptions } from '@/constants/nestledger';
+import { CURRENCY_INFO, avatarChoices } from '@/constants/nestledger';
+import { CurrencySelectorSheet } from '../settings/CurrencySelectorSheet';
 
 export type CreateProfileForm = {
   avatarEmoji: string;
@@ -187,31 +188,34 @@ function CurrencyPicker({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
-  return (
-    <View style={styles.currencyGrid}>
-      {currencyOptions.map((option) => {
-        const active = value === option.code;
+  const [open, setOpen] = useState(false);
+  const active = CURRENCY_INFO[value];
 
-        return (
-          <Pressable
-            key={option.code}
-            onPress={() => onChange(option.code)}
-            style={[styles.currencyChip, active && styles.currencyChipActive]}
-            testID={`currency-chip-${option.code}`}
-          >
-            <Text style={[styles.currencyChipCode, active && styles.currencyChipCodeActive]}>
-              {option.code}
-            </Text>
-            <Text
-              style={[styles.currencyChipSymbol, active && styles.currencyChipSymbolActive]}
-            >
-              {option.symbol}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Space currency, ${value}`}
+        onPress={() => setOpen(true)}
+        style={styles.currencyField}
+        testID="currency-field"
+      >
+        <Text style={styles.currencyFieldCode}>{value}</Text>
+        <Text style={styles.currencyFieldSymbol}>{active?.symbol ?? ''}</Text>
+        <View style={styles.currencyFieldSpacer} />
+        <Ionicons color={theme.textMuted} name="chevron-down" size={18} />
+      </Pressable>
+      <CurrencySelectorSheet
+        onChange={onChange}
+        onClose={() => setOpen(false)}
+        subtitle="Amounts in this space are shown in this currency. You can change it later in settings."
+        title="Choose space currency"
+        value={value}
+        visible={open}
+      />
+    </>
   );
 }
 
@@ -271,41 +275,30 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
   },
-  currencyChip: {
+  currencyField: {
     alignItems: 'center',
     backgroundColor: theme.surface,
     borderColor: theme.border,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  currencyChipActive: {
-    backgroundColor: theme.primarySoft,
-    borderColor: theme.primary,
-  },
-  currencyChipCode: {
-    color: theme.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  currencyChipCodeActive: {
-    color: theme.primary,
-  },
-  currencyChipSymbol: {
-    color: theme.textMuted,
-    fontSize: 12,
-  },
-  currencyChipSymbolActive: {
-    color: theme.primary,
-  },
-  currencyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 16,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  currencyFieldCode: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  currencyFieldSymbol: {
+    color: theme.textMuted,
+    fontSize: 14,
+  },
+  currencyFieldSpacer: {
+    flex: 1,
   },
   currencyHint: {
     color: theme.textMuted,

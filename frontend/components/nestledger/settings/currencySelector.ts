@@ -1,4 +1,4 @@
-import { CURRENCY_INFO } from '@/constants/nestledger';
+import { CURRENCY_INFO, symbolFor } from '@/constants/nestledger';
 
 export type CurrencyOptionViewModel = {
   code: string;
@@ -12,70 +12,42 @@ export type CurrencySection = {
   title: string;
 };
 
-const currencyNameByCode: Record<string, string> = {
-  AED: 'United Arab Emirates Dirham',
-  ARS: 'Argentine Peso',
-  AUD: 'Australian Dollar',
-  BDT: 'Bangladeshi Taka',
-  BHD: 'Bahraini Dinar',
-  BRL: 'Brazilian Real',
-  CAD: 'Canadian Dollar',
-  CHF: 'Swiss Franc',
-  CLP: 'Chilean Peso',
-  CNY: 'Chinese Yuan',
-  COP: 'Colombian Peso',
-  DKK: 'Danish Krone',
-  EGP: 'Egyptian Pound',
-  EUR: 'Euro',
-  GBP: 'British Pound',
-  HKD: 'Hong Kong Dollar',
-  IDR: 'Indonesian Rupiah',
-  ILS: 'Israeli New Shekel',
-  INR: 'Indian Rupee',
-  JPY: 'Japanese Yen',
-  KES: 'Kenyan Shilling',
-  KRW: 'South Korean Won',
-  KWD: 'Kuwaiti Dinar',
-  LKR: 'Sri Lanka Rupee',
-  MXN: 'Mexican Peso',
-  MYR: 'Malaysian Ringgit',
-  NGN: 'Nigerian Naira',
-  NOK: 'Norwegian Krone',
-  NPR: 'Nepalese Rupee',
-  NZD: 'New Zealand Dollar',
-  OMR: 'Omani Rial',
-  PEN: 'Peruvian Sol',
-  PHP: 'Philippine Peso',
-  PKR: 'Pakistani Rupee',
-  PLN: 'Polish Zloty',
-  QAR: 'Qatari Riyal',
-  RUB: 'Russian Ruble',
-  SAR: 'Saudi Riyal',
-  SEK: 'Swedish Krona',
-  SGD: 'Singapore Dollar',
-  THB: 'Thai Baht',
-  TRY: 'Turkish Lira',
-  TWD: 'New Taiwan Dollar',
-  USD: 'United States Dollar',
-  VND: 'Vietnamese Dong',
-  ZAR: 'South African Rand',
-};
+// Intl.DisplayNames would localise these, but Hermes does not implement it
+// (React Native runs on Hermes by default), so the curated English name is the
+// floor and DisplayNames is only an upgrade where the engine has it.
+const currencyNames =
+  typeof Intl.DisplayNames === 'function'
+    ? new Intl.DisplayNames(undefined, { type: 'currency' })
+    : null;
 
-export function buildCurrencyViewModels(): CurrencyOptionViewModel[] {
-  return Object.entries(CURRENCY_INFO)
-    .map(([code, info]) => {
-      const name = currencyNameByCode[code] ?? code;
+function currencyNameFor(code: string): string {
+  try {
+    const localized = currencyNames?.of(code);
+    if (localized && localized !== code) return localized;
+  } catch {
+    // Fall through to the curated name.
+  }
+  return CURRENCY_INFO[code]?.name ?? code;
+}
+
+export function buildCurrencyViewModels(
+  codes: readonly string[] = Object.keys(CURRENCY_INFO),
+): CurrencyOptionViewModel[] {
+  return codes
+    .map((rawCode) => {
+      const code = rawCode.toUpperCase();
+      const symbol = symbolFor(code);
+      const name = currencyNameFor(code);
 
       return {
         code,
         name,
-        searchText: `${code} ${name} ${info.symbol}`.toLowerCase(),
-        symbol: info.symbol,
+        searchText: `${code} ${name} ${symbol}`.toLowerCase(),
+        symbol,
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 }
-
 export function buildCurrencySections({
   currentCode,
   popularCodes,

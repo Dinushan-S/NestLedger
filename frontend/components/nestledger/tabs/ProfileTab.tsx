@@ -3,7 +3,7 @@ import { useTheme } from "../../../lib/theme-context";
 import { useStyles } from "../nestledger.styles";
 import BentoCard from "../../ui/BentoCard";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import type { UserProfile } from "../../../lib/nestledger-services";
+import type { UserProfile } from "../../../lib/nestledger";
 import { InfoPill, QuickActionCard } from "../nestledger.ui";
 
 type Props = {

@@ -1,3 +1,4 @@
+import { parseDateOnly, toLocalDate } from '@/constants/nestledger';
 import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { useState } from "react";
 import {
@@ -75,9 +76,9 @@ export function DatePickerField({
 	const { theme, isDark } = useTheme();
 	const styles = useStyles();
 	const [showPicker, setShowPicker] = useState(false);
-	const dateObj = new Date(date);
+	const dateObj = parseDateOnly(date);
 
-	const formattedDate = dateObj.toLocaleDateString("en-LK", {
+	const formattedDate = dateObj.toLocaleDateString(undefined, {
 		day: "numeric",
 		month: "short",
 		year: "numeric",
@@ -86,8 +87,7 @@ export function DatePickerField({
 	const handleChange = (event: unknown, selectedDate?: Date) => {
 		setShowPicker(false);
 		if (selectedDate) {
-			const iso = selectedDate.toISOString().slice(0, 10);
-			onDateChange(iso);
+			onDateChange(toLocalDate(selectedDate));
 		}
 	};
 

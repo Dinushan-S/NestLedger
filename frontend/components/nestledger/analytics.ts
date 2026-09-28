@@ -13,7 +13,7 @@
  * (unpaid) balance*, surfaced as a single "Borrowed" category (only when > 0).
  */
 
-import { expenseCategories } from "../../constants/nestledger";
+import { expenseCategories, parseDateOnly } from "../../constants/nestledger";
 import type { Expense } from "../../lib/nestledger";
 
 export const BORROW_CATEGORY = "Borrowed";
@@ -98,7 +98,7 @@ export function filterExpensesByDate(
 	const s = start.getTime();
 	const e = end.getTime();
 	return expenses.filter((x) => {
-		const t = new Date(x.date).getTime();
+		const t = parseDateOnly(x.date).getTime();
 		return Number.isFinite(t) && t >= s && t <= e;
 	});
 }

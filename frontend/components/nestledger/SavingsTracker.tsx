@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { SavingsEntry, BudgetPlan, Member } from "../../lib/nestledger";
-import { formatCurrency, formatShortDate, todayISO, dateToISO } from "../../constants/nestledger";
+import { formatCurrency, formatShortDate, parseDateOnly, todayLocalDate, toLocalDate } from "../../constants/nestledger";
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
@@ -69,7 +69,7 @@ export function SavingsTracker({
 	const [showDeposit, setShowDeposit] = useState(false);
 	const [showWithdraw, setShowWithdraw] = useState(false);
 	const [showDetail, setShowDetail] = useState(false);
-	const todayStr = todayISO();
+	const todayStr = todayLocalDate();
 	const [depositForm, setDepositForm] = useState({
 		amount: "",
 		note: "",
@@ -97,7 +97,7 @@ export function SavingsTracker({
 	const filteredSavings = useMemo(() => {
 		if (viewMonth !== undefined && viewYear !== undefined) {
 			return trackerSavings.filter((e) => {
-				const d = new Date(e.date);
+				const d = parseDateOnly(e.date);
 				return d.getMonth() + 1 === viewMonth && d.getFullYear() === viewYear;
 			});
 		}
@@ -114,7 +114,7 @@ export function SavingsTracker({
 
 	const thisMonthEntries = useMemo(() => {
 		return filteredSavings.filter((e) => {
-			const d = new Date(e.date);
+			const d = parseDateOnly(e.date);
 			return (
 				d.getFullYear() === currentYear && d.getMonth() + 1 === currentMonth
 			);
@@ -422,10 +422,10 @@ export function SavingsTracker({
 												if (d)
 													setDepositForm((f) => ({
 														...f,
-														date: dateToISO(d),
+														date: toLocalDate(d),
 													}));
 											}}
-											value={new Date(depositForm.date)}
+											value={parseDateOnly(depositForm.date)}
 										/>
 									) : null}
 								</View>
@@ -571,10 +571,10 @@ export function SavingsTracker({
 												if (date)
 													setWithdrawForm((f) => ({
 														...f,
-														date: dateToISO(date),
+														date: toLocalDate(date),
 													}));
 											}}
-											value={new Date(withdrawForm.date)}
+											value={parseDateOnly(withdrawForm.date)}
 										/>
 									) : null}
 								</View>

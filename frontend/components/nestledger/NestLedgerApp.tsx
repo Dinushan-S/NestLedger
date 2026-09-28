@@ -42,6 +42,9 @@ import {
 	shoppingCategories,
 	shoppingFilters,
 	getCycleWindowForCursor,
+	parseDateOnly,
+	todayLocalDate,
+	toLocalDate,
 } from "../../constants/nestledger";
 import {
 	AppNotification,
@@ -68,7 +71,7 @@ import {
 	savingsApi,
 	shoppingApi,
 	validateSession,
-} from "../../lib/nestledger-services";
+} from "../../lib/nestledger";
 import { isConfigReady } from "../../lib/config";
 import * as Notifications from "../../lib/notifications";
 import BentoCard from "../ui/BentoCard";
@@ -112,9 +115,7 @@ import {
 	formatReceiptItemName,
 	type ParsedReceipt,
 } from "./receiptParser";
-import { registerRemotePushWhenSupported } from "./pushNotificationSupport";
-import { cancelExpenseReminders, localDate, restoreDailyReminder, updateDailyReminder } from "./reminders";
-
+import { cancelExpenseReminders, restoreDailyReminder, updateDailyReminder } from "./reminders";
 import { BillTracker as BillTrackerComponent } from "./BillTracker";
 import { SavingsTracker as SavingsTrackerComponent } from "./SavingsTracker";
 import AnalyseScreen from "./AnalyseScreen";
@@ -232,13 +233,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	);
 	const [borrowForm, setBorrowForm] = useState<BorrowForm>({
 		amount: "",
-		date: new Date().toISOString().slice(0, 10),
+		date: todayLocalDate(),
 		description: "",
 	});
 	const [repayForm, setRepayForm] = useState<RepayForm>({
 		amount: "",
 		borrowId: "",
-		date: new Date().toISOString().slice(0, 10),
+		date: todayLocalDate(),
 	});
 	const [showShoppingComposer, setShowShoppingComposer] = useState(false);
 	const [showBoughtComposer, setShowBoughtComposer] = useState(false);
@@ -432,7 +433,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[plans, selectedPlanId],
 	);
 	const selectedPlanAnchorDay = useMemo(
-		() => (selectedPlan ? new Date(selectedPlan.start_date).getDate() : 1),
+		() => (selectedPlan ? parseDateOnly(selectedPlan.start_date).getDate() : 1),
 		[selectedPlan],
 	);
 
@@ -734,14 +735,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			}
 		};
 
-		void registerRemotePushWhenSupported(
-			{
-				isPhysicalDevice: Device.isDevice,
-				platform: Platform.OS,
-				isExpoGo: isRunningInExpoGo(),
-			},
-			register,
-		);
+		// Remote push is unsupported on a simulator, and on Android inside Expo Go.
+		const canRegister = Device.isDevice && !(Platform.OS === "android" && isRunningInExpoGo());
+		if (canRegister) void register();
 	}, [session]);
 
 	// Route notification taps (foreground, background, and cold start) to the relevant screen.
@@ -793,7 +789,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!pendingDailyReminder || !sessionUserId || !selectedPlan || selectedPlan.profile_id !== activeProfileId) return;
 		setPendingDailyReminder(false);
 		setEditingExpenseId(null);
-		setExpenseForm({ ...defaultExpenseForm(), date: localDate(new Date()) });
+		setExpenseForm({ ...defaultExpenseForm(), date: todayLocalDate() });
 		setShowExpenseComposer(true);
 	}, [pendingDailyReminder, selectedPlan, sessionUserId, activeProfileId]);
 
@@ -1235,32 +1231,47 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	) => {
 		if (!activeProfile || !session?.user) return;
 		await runAction(async () => {
-			// The payment row and the linked budget expense are independent rows,
-			// so both writes can share one round trip.
-			const [savedPayment] = await Promise.all([
+			// The payment row and the linked budget expense are independent writes,
+			// so they still share one round trip. allSettled rather than all: if the
+			// expense fails the payment has already committed, and hiding it would
+			// leave the list disagreeing with the database until the next refresh.
+			const [paymentResult, expenseResult] = await Promise.allSettled([
 				billApi.addPayment({ ...payment, tracker_id: trackerId }),
 				payment.plan_id && payment.amount > 0
-					? expenseApi.addExpenseWithId({
-							plan_id: payment.plan_id,
-							profile_id: payment.profile_id,
-							description: paymentName ?? "Bill payment",
-							category: "Utilities",
-							date: payment.date ?? new Date().toISOString(),
-							added_by: payment.added_by,
-							paid_by:
-								payment.added_by !== session.user.id ? payment.added_by : null,
-							is_borrow: false,
-							used_by: null,
-							items: [{ name: "Bill payment", price: payment.amount }],
-						})
+					? expenseApi.addExpense(
+							{
+								plan_id: payment.plan_id,
+								profile_id: payment.profile_id,
+								description: paymentName ?? "Bill payment",
+								category: "Utilities",
+								date: payment.date ?? todayLocalDate(),
+								added_by: payment.added_by,
+								paid_by:
+									payment.added_by !== session.user.id ? payment.added_by : null,
+								is_borrow: false,
+								used_by: null,
+								items: [{ name: "Bill payment", price: payment.amount }],
+							},
+							"id",
+						)
 					: Promise.resolve(null),
 			]);
-			setBillPayments((prev) => [savedPayment, ...prev]);
+
+			if (paymentResult.status === "rejected") throw paymentResult.reason;
+			setBillPayments((prev) => [paymentResult.value, ...prev]);
 			await notifyOtherMembers(
 				`${userProfile?.name ?? "A member"} paid a bill (${c(payment.amount)})`,
 				notificationTypes.expense,
 			);
 			void refreshProfileData(activeProfile.id, true);
+
+			// Reported only after the payment is reflected, so the message describes
+			// a half-finished action rather than an apparently failed one.
+			if (expenseResult.status === "rejected") {
+				throw new Error(
+					`Payment saved, but the matching ${c(payment.amount)} budget expense could not be created. Check the budget total and add it manually if it is short.`,
+				);
+			}
 		});
 	};
 
@@ -1338,7 +1349,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			name: item.name.trim(),
 			price: Number(item.price),
 		}));
-		const date = new Date(expenseForm.date).toISOString();
+		// expenses.date is a Postgres `date`: the form may hold a printed format
+		// from a scanned receipt, so normalise it, but never through toISOString()
+		// -- that stores the UTC day, which is the wrong day east of UTC.
+		const date = toLocalDate(parseDateOnly(expenseForm.date));
 		const description = expenseForm.description.trim() || null;
 		const paidBy = showContribution ? expenseForm.paidBy : null;
 		const usedBy =
@@ -1482,7 +1496,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			customCategory: isKnownCategory
 				? ""
 				: receipt.vendor ?? "Scanned receipt",
-			date: receipt.date ?? localDate(new Date()),
+			date: receipt.date ?? todayLocalDate(),
 			description: receipt.vendor ? `Receipt · ${receipt.vendor}` : "Scanned receipt",
 			items: itemDrafts.length > 0 ? itemDrafts : [{ name: "", price: "" }],
 		});
@@ -1515,7 +1529,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		}
 
 		await runAction(async () => {
-			const borrowDate = new Date(borrowForm.date).toISOString();
+			const borrowDate = toLocalDate(parseDateOnly(borrowForm.date));
 			const borrowDescription = borrowForm.description.trim() || null;
 			const borrowItem = {
 				name: borrowForm.description.trim() || "Borrowed from budget",
@@ -1581,7 +1595,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			}
 			setBorrowForm({
 				amount: "",
-				date: new Date().toISOString().slice(0, 10),
+				date: todayLocalDate(),
 				description: "",
 			});
 			setShowBorrowComposer(false);
@@ -1628,7 +1642,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			setRepayForm({
 				amount: "",
 				borrowId: "",
-				date: new Date().toISOString().slice(0, 10),
+				date: todayLocalDate(),
 			});
 			setShowRepayComposer(false);
 			void refreshProfileData(activeProfile.id, true);
@@ -1824,18 +1838,21 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					? `${pendingBoughtItem.name} (Qty: ${pendingBoughtItem.quantity})`
 					: pendingBoughtItem.name;
 
-				const newExpense = await expenseApi.addExpenseWithId({
-					added_by: session.user.id,
-					category: pendingBoughtItem.category || "Groceries",
-					date: new Date().toISOString(),
+				const newExpense = await expenseApi.addExpense(
+					{
+						added_by: session.user.id,
+						category: pendingBoughtItem.category || "Groceries",
+					date: todayLocalDate(),
 					description: pendingBoughtItem.category || null,
-					is_borrow: false,
-					items: [{ name: itemDescription, price }],
-					paid_by: boughtForm.paidBy,
+						is_borrow: false,
+						items: [{ name: itemDescription, price }],
+						paid_by: boughtForm.paidBy,
 					plan_id: boughtForm.planId,
 					profile_id: activeProfile.id,
-					used_by: boughtForm.paidBy,
-				});
+						used_by: boughtForm.paidBy,
+					},
+					"id",
+				);
 
 				const updated = await shoppingApi.markBought(
 					pendingBoughtItem.id,
@@ -1845,8 +1862,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				setShoppingItems((prev) =>
 					prev.map((i) => (i.id === updated.id ? updated : i)),
 				);
-				const boughtAt = new Date().toISOString();
-				setProfileExpenses((prev) => [
+					const boughtAt = new Date().toISOString();
+					const boughtDay = todayLocalDate();
+					setProfileExpenses((prev) => [
 					{
 						id: newExpense.id,
 						plan_id: boughtForm.planId,
@@ -1854,7 +1872,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						description: pendingBoughtItem.category || null,
 						category: pendingBoughtItem.category || "Groceries",
 						price,
-						date: boughtAt,
+						date: boughtDay,
 						created_at: boughtAt,
 						added_by: session.user.id,
 						paid_by: boughtForm.paidBy,
@@ -2985,8 +3003,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										savings.some(
 											(e) =>
 												e.tracker_id === selectedSavingsTrackerId &&
-												new Date(e.date).getMonth() + 1 === m &&
-												new Date(e.date).getFullYear() === savingsViewYear,
+												parseDateOnly(e.date).getMonth() + 1 === m &&
+												parseDateOnly(e.date).getFullYear() === savingsViewYear,
 										)
 									}
 									onSetMonth={setSavingsViewMonth}
@@ -2999,7 +3017,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 												.filter(
 													(e) => e.tracker_id === selectedSavingsTrackerId,
 												)
-												.map((e) => new Date(e.date).getFullYear()),
+												.map((e) => parseDateOnly(e.date).getFullYear()),
 										),
 									].sort()}
 								/>
@@ -3938,13 +3956,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 																	>{`${data.member.avatar} ${data.member.name}`}</Text>
 																	<ModernButton
 																		onPress={() => {
-																			setRepayForm({
-																				amount: "",
-																				borrowId: userId,
-																				date: new Date()
-																					.toISOString()
-																					.slice(0, 10),
-																			});
+											setRepayForm({
+												amount: "",
+												borrowId: userId,
+												date: todayLocalDate(),
+											});
 																			setShowRepayComposer(true);
 																		}}
 																		secondary
@@ -4492,7 +4508,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						setShowBorrowComposer(false);
 						setBorrowForm({
 							amount: "",
-							date: new Date().toISOString().slice(0, 10),
+							date: todayLocalDate(),
 							description: "",
 						});
 						setEditingBorrowId(null);
@@ -4505,7 +4521,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setShowBorrowComposer(false);
 							setBorrowForm({
 								amount: "",
-								date: new Date().toISOString().slice(0, 10),
+								date: todayLocalDate(),
 								description: "",
 							});
 							setEditingBorrowId(null);
@@ -4556,7 +4572,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						setRepayForm({
 							amount: "",
 							borrowId: "",
-							date: new Date().toISOString().slice(0, 10),
+							date: todayLocalDate(),
 						});
 					}}
 					transparent
@@ -4568,7 +4584,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setRepayForm({
 								amount: "",
 								borrowId: "",
-								date: new Date().toISOString().slice(0, 10),
+								date: todayLocalDate(),
 							});
 						}}
 					>

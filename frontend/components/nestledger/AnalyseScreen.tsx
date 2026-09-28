@@ -10,7 +10,7 @@ import {
 	View,
 } from "react-native";
 
-import { expenseCategories, formatCurrency, getCycleStart } from "../../constants/nestledger";
+import { expenseCategories, formatCurrency, getCycleStart, parseDateOnly } from "../../constants/nestledger";
 import type {
 	BudgetPlan,
 	Expense,
@@ -79,13 +79,13 @@ function pickDefaultPlan(plans: BudgetPlan[]): BudgetPlan | null {
 	const now = Date.now();
 	const containing = plans.find(
 		(p) =>
-			new Date(p.start_date).getTime() <= now &&
-			new Date(p.end_date).getTime() >= now,
+			parseDateOnly(p.start_date).getTime() <= now &&
+			parseDateOnly(p.end_date).getTime() >= now,
 	);
 	if (containing) return containing;
 	return [...plans].sort(
 		(a, b) =>
-			new Date(b.start_date).getTime() - new Date(a.start_date).getTime(),
+			parseDateOnly(b.start_date).getTime() - parseDateOnly(a.start_date).getTime(),
 	)[0]!;
 }
 
@@ -114,7 +114,7 @@ export default function AnalyseScreen({
 		() =>
 			[...plans].sort(
 				(a, b) =>
-					new Date(b.start_date).getTime() - new Date(a.start_date).getTime(),
+					parseDateOnly(b.start_date).getTime() - parseDateOnly(a.start_date).getTime(),
 			),
 		[plans],
 	);
@@ -133,7 +133,7 @@ export default function AnalyseScreen({
 	}, [selectedPlanId, plans]);
 
 	const anchorDay = useMemo(
-		() => (selectedPlan ? new Date(selectedPlan.start_date).getDate() : 1),
+		() => (selectedPlan ? parseDateOnly(selectedPlan.start_date).getDate() : 1),
 		[selectedPlan],
 	);
 
@@ -145,9 +145,9 @@ export default function AnalyseScreen({
 		if (!selectedPlan) return null;
 		const planExpenses = expenses.filter((e) => e.plan_id === selectedPlan.id);
 		if (planExpenses.length === 0) {
-			const start = new Date(selectedPlan.start_date);
+			const start = parseDateOnly(selectedPlan.start_date);
 			const now = new Date();
-			const end = selectedPlan.end_date ? new Date(selectedPlan.end_date) : now;
+			const end = selectedPlan.end_date ? parseDateOnly(selectedPlan.end_date) : now;
 			return {
 				minCursor: { year: start.getFullYear(), month: start.getMonth() },
 				maxCursor: { year: end.getFullYear(), month: end.getMonth() },
@@ -158,7 +158,7 @@ export default function AnalyseScreen({
 		let maxYear = -Infinity;
 		let maxMonth = -Infinity;
 		for (const e of planExpenses) {
-			const d = new Date(e.date);
+			const d = parseDateOnly(e.date);
 			const y = d.getFullYear();
 			const m = d.getMonth();
 			if (y < minYear || (y === minYear && m < minMonth)) {
@@ -260,7 +260,7 @@ export default function AnalyseScreen({
 		const s = period.start.getTime();
 		const e = period.end.getTime();
 		return expenses.filter((x) => {
-			const t = new Date(x.date).getTime();
+			const t = parseDateOnly(x.date).getTime();
 			return Number.isFinite(t) && t >= s && t <= e;
 		});
 	}, [expenses, period]);
@@ -289,7 +289,7 @@ export default function AnalyseScreen({
 				: !x.is_borrow && (x.category || "Other") === detailCategory,
 		);
 		return rows.sort(
-			(a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+			(a, b) => parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime(),
 		);
 	}, [detailCategory, cycleExpenses]);
 
@@ -631,7 +631,7 @@ export default function AnalyseScreen({
 														{label}
 													</Text>
 													<Text style={styles.detailMeta}>
-														{fmtDate(new Date(x.date))} · {who}
+														{fmtDate(parseDateOnly(x.date))} · {who}
 													</Text>
 												</View>
 												<Text

@@ -8,7 +8,7 @@ import BentoCard from '@/components/ui/BentoCard';
 import ModernButton from '@/components/ui/ModernButton';
 import { useTheme } from '@/lib/theme-context';
 import { supabase } from '@/lib/supabase';
-import { authApi } from '@/lib/nestledger-services';
+import { authApi } from '@/lib/nestledger';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
