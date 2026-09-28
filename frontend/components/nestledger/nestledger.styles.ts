@@ -56,16 +56,25 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     fontWeight: '600',
   },
   spaceTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   spaceTypeCard: {
+    alignItems: 'center',
     backgroundColor: theme.surface,
     borderColor: theme.border,
     borderRadius: 16,
     borderWidth: 1,
+    flexGrow: 1,
     gap: 2,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    width: '48%',
+  },
+  setupActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   spaceTypeCardActive: {
     backgroundColor: theme.primarySoft,
@@ -79,14 +88,16 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     color: theme.text,
     fontSize: 15,
     fontWeight: '700',
+    textAlign: 'center',
   },
   spaceTypeLabelActive: {
     color: theme.primary,
   },
   spaceTypeDesc: {
     color: theme.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   spaceTypeDescActive: {
     color: theme.primary,

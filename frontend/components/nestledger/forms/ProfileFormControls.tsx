@@ -26,6 +26,7 @@ type ProfileFormFieldsProps = {
   currencyField?: ReactNode;
   form: CreateProfileForm;
   onChange: (value: CreateProfileForm) => void;
+  spaceOnly?: boolean;
   testIDPrefix?: string;
   userOnly?: boolean;
 };
@@ -128,26 +129,48 @@ export function ProfileFormFields({
   currencyField,
   form,
   onChange,
+  spaceOnly,
   testIDPrefix,
   userOnly,
 }: ProfileFormFieldsProps) {
   const styles = useThemedStyles(createStyles);
   const prefix = testIDPrefix ?? (userOnly ? 'settings' : 'create-profile');
 
-  return (
+  const spaceFields = userOnly ? null : (
     <>
       <LabeledInput
-        label="Your name"
-        onChangeText={(value: string) => onChange({ ...form, name: value })}
-        testID={`${prefix}-name-input`}
-        value={form.name}
+        label="Space name"
+        onChangeText={(value: string) => onChange({ ...form, familyName: value })}
+        testID={`${prefix}-family-name-input`}
+        value={form.familyName}
       />
-      <Text style={styles.inputLabel}>Choose your avatar</Text>
+      <Text style={styles.inputLabel}>Space avatar</Text>
       <AvatarPicker
-        selected={form.avatarEmoji}
-        testIDPrefix={`${prefix}-avatar`}
-        onPick={(value) => onChange({ ...form, avatarEmoji: value })}
+        selected={form.familyEmoji}
+        testIDPrefix={`${prefix}-family-avatar`}
+        onPick={(value) => onChange({ ...form, familyEmoji: value })}
       />
+    </>
+  );
+
+  return (
+    <>
+      {spaceOnly ? spaceFields : (
+        <>
+          <LabeledInput
+            label="Your name"
+            onChangeText={(value: string) => onChange({ ...form, name: value })}
+            testID={`${prefix}-name-input`}
+            value={form.name}
+          />
+          <Text style={styles.inputLabel}>Choose your avatar</Text>
+          <AvatarPicker
+            selected={form.avatarEmoji}
+            testIDPrefix={`${prefix}-avatar`}
+            onPick={(value) => onChange({ ...form, avatarEmoji: value })}
+          />
+        </>
+      )}
       <Text style={styles.inputLabel}>{userOnly ? 'Your default currency' : 'Space currency'}</Text>
       {currencyField ?? (
         <CurrencyPicker
@@ -161,22 +184,7 @@ export function ProfileFormFields({
         </Text>
       ) : null}
 
-      {!userOnly ? (
-        <>
-          <LabeledInput
-            label="Space name"
-            onChangeText={(value: string) => onChange({ ...form, familyName: value })}
-            testID={`${prefix}-family-name-input`}
-            value={form.familyName}
-          />
-          <Text style={styles.inputLabel}>Space avatar</Text>
-          <AvatarPicker
-            selected={form.familyEmoji}
-            testIDPrefix={`${prefix}-family-avatar`}
-            onPick={(value) => onChange({ ...form, familyEmoji: value })}
-          />
-        </>
-      ) : null}
+      {spaceOnly ? null : spaceFields}
     </>
   );
 }

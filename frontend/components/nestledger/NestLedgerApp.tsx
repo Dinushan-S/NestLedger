@@ -926,18 +926,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			return;
 		}
 
-		if (!profileForm.name.trim() || !profileForm.familyName.trim()) {
-			announce("Add your name and the space name first.");
+		const familyName = profileForm.familyName.trim();
+		if (!familyName) {
+			announce("Add a space name first.");
 			return;
 		}
+
+		// Your name is prefilled from the profile and its field is hidden on the
+		// new-space step, so fall back to the space name instead of dead-ending.
+		const name = profileForm.name.trim() || familyName;
 
 		await runAction(async () => {
 			const profile = await profileApi.createHousehold({
 				avatarEmoji: profileForm.avatarEmoji,
 				currency: profileForm.currency,
 				familyEmoji: profileForm.familyEmoji,
-				familyName: profileForm.familyName,
-				name: profileForm.name,
+				familyName,
+				name,
 				spaceType: (profileForm.spaceType as SpaceType) ?? "personal",
 				user: session.user,
 			});
@@ -2290,19 +2295,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 									);
 								})}
 							</View>
-							<ModernButton
-								onPress={() => setProfileSetupStep("details")}
-								testID="space-type-next"
-								text="Continue →"
-							/>
-							{!isFirstSetup ? (
+							<View style={styles.setupActionsRow}>
 								<ModernButton
-									onPress={() => setShowCreateProfile(false)}
-									secondary
-									testID="create-profile-cancel"
-									text="Cancel"
+									onPress={() => setProfileSetupStep("details")}
+									style={{ flex: 1 }}
+									testID="space-type-next"
+									text="Continue →"
 								/>
-							) : null}
+								{!isFirstSetup ? (
+									<ModernButton
+										onPress={() => setShowCreateProfile(false)}
+										secondary
+										style={{ flex: 1 }}
+										testID="create-profile-cancel"
+										text="Cancel"
+									/>
+								) : null}
+							</View>
 						</BentoCard>
 					</ScrollView>
 				</SafeAreaView>
@@ -2331,24 +2340,32 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							{SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.emoji}{" "}
 							{SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.label}
 						</Text>
-						<ProfileFormFields form={profileForm} onChange={setProfileForm} />
+						<ProfileFormFields
+							form={profileForm}
+							onChange={setProfileForm}
+							spaceOnly={!isFirstSetup}
+						/>
 						{setupMessage ? (
 							<Text style={styles.errorText}>{setupMessage}</Text>
 						) : null}
-						<ModernButton
-							loading={actionBusy}
-							onPress={handleCreateProfile}
-							testID="create-profile-submit"
-							text={isFirstSetup ? "Create space" : "Create space"}
-						/>
-						{!isFirstSetup ? (
+						<View style={styles.setupActionsRow}>
 							<ModernButton
-								onPress={() => setShowCreateProfile(false)}
-								secondary
-								testID="create-profile-cancel"
-								text="Cancel"
+								loading={actionBusy}
+								onPress={handleCreateProfile}
+								style={{ flex: 1 }}
+								testID="create-profile-submit"
+								text="Create space"
 							/>
-						) : null}
+							{!isFirstSetup ? (
+								<ModernButton
+									onPress={() => setShowCreateProfile(false)}
+									secondary
+									style={{ flex: 1 }}
+									testID="create-profile-cancel"
+									text="Cancel"
+								/>
+							) : null}
+						</View>
 					</BentoCard>
 				</ScrollView>
 			</SafeAreaView>
@@ -2403,7 +2420,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					<ModernButton
 						onPress={() => {
 							setProfileSetupStep("type");
-							setProfileForm({ ...defaultCreateProfileForm, currency: userProfile?.currency ?? "USD" });
+							setProfileForm({
+								...defaultCreateProfileForm,
+								avatarEmoji: userProfile?.avatar_emoji ?? avatarChoices[0]!,
+								currency: userProfile?.currency ?? "USD",
+								name: userProfile?.name ?? "",
+							});
 							setShowCreateProfile(true);
 						}}
 						secondary
