@@ -333,6 +333,22 @@ def send_brevo_invite(
         return False
 
 
+def deliver_invitation(payload: InviteRequest, invite_token: str) -> dict[str, bool | str]:
+    fallback_link = f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={invite_token}"
+    email_delivered = send_brevo_invite(
+        recipient_email=payload.invited_email,
+        inviter_name=payload.inviter_name,
+        profile_name=payload.profile_name,
+        invite_link=f"nestledger://invite?token={invite_token}",
+        fallback_link=fallback_link,
+    )
+    return {
+        "email_delivered": email_delivered,
+        "invite_token": invite_token,
+        "shareable_link": fallback_link,
+    }
+
+
 def upsert_user_profile_from_auth(user: dict[str, Any]) -> None:
     email = user.get("email") or ""
     metadata = user.get("user_metadata") or {}
@@ -497,7 +513,7 @@ def send_invitation(
             headers={"Retry-After": str(retry_after)},
         )
 
-    # duplicate pending invite guard
+    # Reuse pending invites so another send resends the same link.
     existing = supabase_rest(
         "GET",
         "invitations",
@@ -505,45 +521,119 @@ def send_invitation(
             "profile_id": f"eq.{payload.profile_id}",
             "invited_email": f"eq.{payload.invited_email}",
             "status": "eq.pending",
-            "select": "id",
+            "select": "invite_token",
             "limit": "1",
         },
     )
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail="A pending invitation for this address already exists.",
+    invite_token = existing[0]["invite_token"] if existing else str(uuid.uuid4())
+
+    if not existing:
+        supabase_rest(
+            "POST",
+            "invitations",
+            json_data={
+                "profile_id": payload.profile_id,
+                "invited_email": payload.invited_email,
+                "invite_token": invite_token,
+                "status": "pending",
+            },
+            prefer="return=representation",
         )
 
-    invite_token = str(uuid.uuid4())
-    fallback_link = f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={invite_token}"
-    deep_link = f"nestledger://invite?token={invite_token}"
+    return deliver_invitation(payload, invite_token)
 
-    supabase_rest(
-        "POST",
+
+@api_router.get("/invitations/pending")
+def list_pending_invitations(
+    profile_id: str, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    profile_rows = supabase_rest(
+        "GET",
+        "profiles",
+        params={
+            "id": f"eq.{profile_id}",
+            "select": (
+                "id,profile_members!inner(user_id),"
+                "invitations(id,invited_email,invite_token,created_at)"
+            ),
+            "profile_members.user_id": f"eq.{user['id']}",
+            "invitations.status": "eq.pending",
+            "invitations.order": "created_at.desc",
+        },
+    )
+    if not profile_rows:
+        raise HTTPException(
+            status_code=403, detail="You do not have access to this profile."
+        )
+
+    rows = profile_rows[0].get("invitations") or []
+    return [
+        {
+            "id": row["id"],
+            "invited_email": row["invited_email"],
+            "created_at": row["created_at"],
+            "shareable_link": f"{APP_PUBLIC_URL.rstrip('/')}/invite?token={row['invite_token']}",
+        }
+        for row in rows
+    ]
+
+
+@api_router.delete("/invitations/{invitation_id}")
+def delete_invitation(
+    invitation_id: uuid.UUID,
+    profile_id: uuid.UUID,
+    authorization: str | None = Header(default=None),
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(str(profile_id), user["id"])
+
+    rows = supabase_rest(
+        "DELETE",
         "invitations",
-        json_data={
-            "profile_id": payload.profile_id,
-            "invited_email": payload.invited_email,
-            "invite_token": invite_token,
-            "status": "pending",
+        params={
+            "id": f"eq.{invitation_id}",
+            "profile_id": f"eq.{profile_id}",
+            "select": "id",
         },
         prefer="return=representation",
     )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
 
-    email_delivered = send_brevo_invite(
-        recipient_email=payload.invited_email,
-        inviter_name=payload.inviter_name,
-        profile_name=payload.profile_name,
-        invite_link=deep_link,
-        fallback_link=fallback_link,
+    return {"deleted": True}
+
+
+@api_router.post("/invitations/resend")
+def resend_invitation(
+    payload: InviteRequest, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(payload.profile_id, user["id"])
+
+    retry_after = _invite_rate_limiter.check(user["id"])
+    if retry_after is not None:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many invitations sent. Please wait before sending more."},
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    existing = supabase_rest(
+        "GET",
+        "invitations",
+        params={
+            "profile_id": f"eq.{payload.profile_id}",
+            "invited_email": f"eq.{payload.invited_email}",
+            "status": "eq.pending",
+            "select": "invite_token",
+            "limit": "1",
+        },
     )
+    if not existing:
+        raise HTTPException(status_code=404, detail="No pending invitation for this address.")
 
-    return {
-        "email_delivered": email_delivered,
-        "invite_token": invite_token,
-        "shareable_link": fallback_link,
-    }
+    return deliver_invitation(payload, existing[0]["invite_token"])
 
 
 @api_router.post("/invitations/accept")

@@ -304,6 +304,18 @@ export const authApi = {
 		if (error) throw error;
 		return data;
 	},
+	async resetPasswordForEmail(email: string) {
+		const { error } = await supabase.auth.resetPasswordForEmail(email);
+		if (error) throw error;
+	},
+	async verifyRecoveryCode(email: string, token: string) {
+		const { error } = await supabase.auth.verifyOtp({ email, token, type: "recovery" });
+		if (error) throw error;
+	},
+	async updatePassword(password: string) {
+		const { error } = await supabase.auth.updateUser({ password });
+		if (error) throw error;
+	},
 };
 
 export const profileApi = {
