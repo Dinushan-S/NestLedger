@@ -141,30 +141,38 @@ export const CURRENCY_INFO: Record<string, { symbol: string; decimals: number; n
 	TWD: { symbol: "NT$", decimals: 2, name: "New Taiwan Dollar" },
 	PKR: { symbol: "₨", decimals: 0, name: "Pakistani Rupee" },
 	BDT: { symbol: "৳", decimals: 2, name: "Bangladeshi Taka" },
+	BGN: { symbol: "лв", decimals: 2, name: "Bulgarian Lev" },
 	NPR: { symbol: "₨", decimals: 0, name: "Nepalese Rupee" },
 	EGP: { symbol: "£", decimals: 2, name: "Egyptian Pound" },
 	NGN: { symbol: "₦", decimals: 2, name: "Nigerian Naira" },
 	KES: { symbol: "KSh", decimals: 2, name: "Kenyan Shilling" },
 	ILS: { symbol: "₪", decimals: 2, name: "Israeli Shekel" },
 	COP: { symbol: "Col$", decimals: 2, name: "Colombian Peso" },
+	CZK: { symbol: "Kč", decimals: 2, name: "Czech Koruna" },
 	CLP: { symbol: "CLP$", decimals: 0, name: "Chilean Peso" },
 	ARS: { symbol: "AR$", decimals: 2, name: "Argentine Peso" },
 	PEN: { symbol: "S/", decimals: 2, name: "Peruvian Sol" },
+	HUF: { symbol: "Ft", decimals: 0, name: "Hungarian Forint" },
+	ISK: { symbol: "kr", decimals: 0, name: "Icelandic Krona" },
+	RON: { symbol: "lei", decimals: 2, name: "Romanian Leu" },
+	UAH: { symbol: "₴", decimals: 2, name: "Ukrainian Hryvnia" },
 };
 
 // Region -> currency for the onboarding default. The device locale's region is
 // the closest thing to a location signal that needs no permission prompt, no IP
 // lookup and no extra dependency. Users still choose their own currency.
 export const REGION_CURRENCY: Record<string, string> = {
-	AE: "AED", AR: "ARS", AU: "AUD", BD: "BDT", BR: "BRL", CA: "CAD",
-	CH: "CHF", CL: "CLP", CN: "CNY", CO: "COP", DE: "EUR", DK: "DKK",
-	EG: "EGP", ES: "EUR", FR: "EUR", GB: "GBP", HK: "HKD", ID: "IDR",
-	IE: "EUR", IL: "ILS", IN: "INR", IT: "EUR", JP: "JPY", KE: "KES",
-	KR: "KRW", KW: "KWD", LK: "LKR", MX: "MXN", MY: "MYR", NG: "NGN",
-	NL: "EUR", NO: "NOK", NP: "NPR", NZ: "NZD", PE: "PEN", PH: "PHP",
-	PK: "PKR", PL: "PLN", PT: "EUR", RU: "RUB", SA: "SAR", SE: "SEK",
-	SG: "SGD", TH: "THB", TR: "TRY", TW: "TWD", US: "USD", VN: "VND",
-	ZA: "ZAR",
+	AE: "AED", AR: "ARS", AU: "AUD", BD: "BDT", BG: "BGN", BH: "BHD",
+	BR: "BRL", CA: "CAD", CH: "CHF", CL: "CLP", CN: "CNY", CO: "COP",
+	CZ: "CZK", DE: "EUR", DK: "DKK", EG: "EGP", ES: "EUR", FR: "EUR",
+	GB: "GBP", HK: "HKD", HR: "EUR", HU: "HUF", ID: "IDR", IE: "EUR",
+	IL: "ILS", IN: "INR", IS: "ISK", IT: "EUR", JP: "JPY", KE: "KES",
+	KR: "KRW", KW: "KWD", LK: "LKR", LT: "EUR", LU: "EUR", LV: "EUR",
+	MT: "EUR", MX: "MXN", MY: "MYR", NG: "NGN", NL: "EUR", NO: "NOK",
+	NP: "NPR", NZ: "NZD", OM: "OMR", PE: "PEN", PH: "PHP", PK: "PKR",
+	PL: "PLN", PT: "EUR", QA: "QAR", RO: "RON", RU: "RUB", SA: "SAR",
+	SE: "SEK", SG: "SGD", SI: "EUR", SK: "EUR", TH: "THB", TR: "TRY",
+	TW: "TWD", UA: "UAH", US: "USD", VN: "VND", ZA: "ZAR",
 };
 
 export const defaultCurrencyForDevice = () => {
