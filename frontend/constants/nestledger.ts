@@ -69,88 +69,151 @@ export const expenseCategories = [
 export const shoppingFilters = ["All", "Pending", "Bought"] as const;
 export const expenseFilters = ["Day", "Week", "Month"] as const;
 
+// Hermes and trimmed ICU builds have no symbol for less common codes and echo the
+// code back ("LKR 1,234"). True when the platform gave us a code, not a symbol.
+const intlEchoedCode = (parts: Intl.NumberFormatPart[], code: string) =>
+	parts.some((part) => part.type === "currency" && part.value === code);
+
+// Number formatting follows the device locale; the currency code comes from the
+// space. Intl already knows each ISO 4217 code's minor units, so only the
+// overrides below are ours. Do not add a per-currency locale: that would force
+// one country's grouping and separators onto every user.
 export const formatCurrency = (value: number, currencyCode?: string | null) => {
 	const code = (currencyCode || "USD").toUpperCase();
-	const info = CURRENCY_INFO[code];
-	const locale = info?.locale ?? "en-US";
-	const symbol = info?.symbol ?? "$";
+	const decimals = CURRENCY_INFO[code]?.decimals;
 	if (!Number.isFinite(value)) value = 0;
+	let parts: Intl.NumberFormatPart[];
 	try {
-		const formatted = new Intl.NumberFormat(locale, {
+		parts = new Intl.NumberFormat(undefined, {
 			style: "currency",
 			currency: code,
-			maximumFractionDigits: info?.decimals ?? 2,
-			minimumFractionDigits: info?.decimals ?? 2,
-		}).format(value);
-		return formatted;
+			...(decimals === undefined
+				? {}
+				: { maximumFractionDigits: decimals, minimumFractionDigits: decimals }),
+		}).formatToParts(value);
 	} catch {
-		return `${symbol} ${value.toLocaleString(locale, { maximumFractionDigits: info?.decimals ?? 2, minimumFractionDigits: info?.decimals ?? 2 })}`;
+		// Only reachable for a malformed code; Intl does not throw on unknown ones.
+		return `${CURRENCY_INFO[code]?.symbol ?? code} ${value.toLocaleString()}`;
+	}
+	// Fall back to our symbol only when the platform echoed the code, so a real
+	// symbol from Intl ("CA$", "CLP$") is never second-guessed.
+	const symbol = intlEchoedCode(parts, code) ? CURRENCY_INFO[code]?.symbol : undefined;
+	return parts
+		.map((part) => (symbol && part.type === "currency" ? symbol : part.value))
+		.join("");
+};
+
+export const CURRENCY_INFO: Record<string, { symbol: string; decimals: number; name: string }> = {
+	USD: { symbol: "$", decimals: 2, name: "US Dollar" },
+	EUR: { symbol: "€", decimals: 2, name: "Euro" },
+	GBP: { symbol: "£", decimals: 2, name: "British Pound" },
+	JPY: { symbol: "¥", decimals: 0, name: "Japanese Yen" },
+	CNY: { symbol: "¥", decimals: 2, name: "Chinese Yuan" },
+	INR: { symbol: "₹", decimals: 2, name: "Indian Rupee" },
+	LKR: { symbol: "Rs.", decimals: 0, name: "Sri Lankan Rupee" },
+	AUD: { symbol: "A$", decimals: 2, name: "Australian Dollar" },
+	CAD: { symbol: "C$", decimals: 2, name: "Canadian Dollar" },
+	SGD: { symbol: "S$", decimals: 2, name: "Singapore Dollar" },
+	MYR: { symbol: "RM", decimals: 2, name: "Malaysian Ringgit" },
+	THB: { symbol: "฿", decimals: 2, name: "Thai Baht" },
+	IDR: { symbol: "Rp", decimals: 0, name: "Indonesian Rupiah" },
+	PHP: { symbol: "₱", decimals: 2, name: "Philippine Peso" },
+	VND: { symbol: "₫", decimals: 0, name: "Vietnamese Dong" },
+	KRW: { symbol: "₩", decimals: 0, name: "South Korean Won" },
+	AED: { symbol: "د.إ", decimals: 2, name: "UAE Dirham" },
+	SAR: { symbol: "﷼", decimals: 2, name: "Saudi Riyal" },
+	QAR: { symbol: "﷼", decimals: 2, name: "Qatari Riyal" },
+	KWD: { symbol: "د.ك", decimals: 3, name: "Kuwaiti Dinar" },
+	BHD: { symbol: "د.ب", decimals: 3, name: "Bahraini Dinar" },
+	OMR: { symbol: "﷼", decimals: 3, name: "Omani Rial" },
+	CHF: { symbol: "Fr", decimals: 2, name: "Swiss Franc" },
+	SEK: { symbol: "kr", decimals: 2, name: "Swedish Krona" },
+	NOK: { symbol: "kr", decimals: 2, name: "Norwegian Krone" },
+	DKK: { symbol: "kr", decimals: 2, name: "Danish Krone" },
+	PLN: { symbol: "zł", decimals: 2, name: "Polish Zloty" },
+	TRY: { symbol: "₺", decimals: 2, name: "Turkish Lira" },
+	RUB: { symbol: "₽", decimals: 2, name: "Russian Ruble" },
+	BRL: { symbol: "R$", decimals: 2, name: "Brazilian Real" },
+	MXN: { symbol: "Mex$", decimals: 2, name: "Mexican Peso" },
+	ZAR: { symbol: "R", decimals: 2, name: "South African Rand" },
+	NZD: { symbol: "NZ$", decimals: 2, name: "New Zealand Dollar" },
+	HKD: { symbol: "HK$", decimals: 2, name: "Hong Kong Dollar" },
+	TWD: { symbol: "NT$", decimals: 2, name: "New Taiwan Dollar" },
+	PKR: { symbol: "₨", decimals: 0, name: "Pakistani Rupee" },
+	BDT: { symbol: "৳", decimals: 2, name: "Bangladeshi Taka" },
+	NPR: { symbol: "₨", decimals: 0, name: "Nepalese Rupee" },
+	EGP: { symbol: "£", decimals: 2, name: "Egyptian Pound" },
+	NGN: { symbol: "₦", decimals: 2, name: "Nigerian Naira" },
+	KES: { symbol: "KSh", decimals: 2, name: "Kenyan Shilling" },
+	ILS: { symbol: "₪", decimals: 2, name: "Israeli Shekel" },
+	COP: { symbol: "Col$", decimals: 2, name: "Colombian Peso" },
+	CLP: { symbol: "CLP$", decimals: 0, name: "Chilean Peso" },
+	ARS: { symbol: "AR$", decimals: 2, name: "Argentine Peso" },
+	PEN: { symbol: "S/", decimals: 2, name: "Peruvian Sol" },
+};
+
+// Region -> currency for the onboarding default. The device locale's region is
+// the closest thing to a location signal that needs no permission prompt, no IP
+// lookup and no extra dependency. Users still choose their own currency.
+export const REGION_CURRENCY: Record<string, string> = {
+	AE: "AED", AR: "ARS", AU: "AUD", BD: "BDT", BR: "BRL", CA: "CAD",
+	CH: "CHF", CL: "CLP", CN: "CNY", CO: "COP", DE: "EUR", DK: "DKK",
+	EG: "EGP", ES: "EUR", FR: "EUR", GB: "GBP", HK: "HKD", ID: "IDR",
+	IE: "EUR", IL: "ILS", IN: "INR", IT: "EUR", JP: "JPY", KE: "KES",
+	KR: "KRW", KW: "KWD", LK: "LKR", MX: "MXN", MY: "MYR", NG: "NGN",
+	NL: "EUR", NO: "NOK", NP: "NPR", NZ: "NZD", PE: "PEN", PH: "PHP",
+	PK: "PKR", PL: "PLN", PT: "EUR", RU: "RUB", SA: "SAR", SE: "SEK",
+	SG: "SGD", TH: "THB", TR: "TRY", TW: "TWD", US: "USD", VN: "VND",
+	ZA: "ZAR",
+};
+
+export const defaultCurrencyForDevice = () => {
+	try {
+		const region = new Intl.DateTimeFormat()
+			.resolvedOptions()
+			.locale.split("-")[1]
+			?.toUpperCase();
+		return (region && REGION_CURRENCY[region]) || "USD";
+	} catch {
+		return "USD";
 	}
 };
 
-export const CURRENCY_INFO: Record<
-	string,
-	{ symbol: string; locale: string; decimals: number }
-> = {
-	USD: { symbol: "$", locale: "en-US", decimals: 2 },
-	EUR: { symbol: "€", locale: "de-DE", decimals: 2 },
-	GBP: { symbol: "£", locale: "en-GB", decimals: 2 },
-	JPY: { symbol: "¥", locale: "ja-JP", decimals: 0 },
-	CNY: { symbol: "¥", locale: "zh-CN", decimals: 2 },
-	INR: { symbol: "₹", locale: "en-IN", decimals: 2 },
-	LKR: { symbol: "Rs.", locale: "en-LK", decimals: 0 },
-	AUD: { symbol: "A$", locale: "en-AU", decimals: 2 },
-	CAD: { symbol: "C$", locale: "en-CA", decimals: 2 },
-	SGD: { symbol: "S$", locale: "en-SG", decimals: 2 },
-	MYR: { symbol: "RM", locale: "ms-MY", decimals: 2 },
-	THB: { symbol: "฿", locale: "th-TH", decimals: 2 },
-	IDR: { symbol: "Rp", locale: "id-ID", decimals: 0 },
-	PHP: { symbol: "₱", locale: "en-PH", decimals: 2 },
-	VND: { symbol: "₫", locale: "vi-VN", decimals: 0 },
-	KRW: { symbol: "₩", locale: "ko-KR", decimals: 0 },
-	AED: { symbol: "د.إ", locale: "ar-AE", decimals: 2 },
-	SAR: { symbol: "﷼", locale: "ar-SA", decimals: 2 },
-	QAR: { symbol: "﷼", locale: "ar-QA", decimals: 2 },
-	KWD: { symbol: "د.ك", locale: "ar-KW", decimals: 3 },
-	BHD: { symbol: "د.ب", locale: "ar-BH", decimals: 3 },
-	OMR: { symbol: "﷼", locale: "ar-OM", decimals: 3 },
-	CHF: { symbol: "Fr", locale: "de-CH", decimals: 2 },
-	SEK: { symbol: "kr", locale: "sv-SE", decimals: 2 },
-	NOK: { symbol: "kr", locale: "nb-NO", decimals: 2 },
-	DKK: { symbol: "kr", locale: "da-DK", decimals: 2 },
-	PLN: { symbol: "zł", locale: "pl-PL", decimals: 2 },
-	TRY: { symbol: "₺", locale: "tr-TR", decimals: 2 },
-	RUB: { symbol: "₽", locale: "ru-RU", decimals: 2 },
-	BRL: { symbol: "R$", locale: "pt-BR", decimals: 2 },
-	MXN: { symbol: "Mex$", locale: "es-MX", decimals: 2 },
-	ZAR: { symbol: "R", locale: "en-ZA", decimals: 2 },
-	NZD: { symbol: "NZ$", locale: "en-NZ", decimals: 2 },
-	HKD: { symbol: "HK$", locale: "en-HK", decimals: 2 },
-	TWD: { symbol: "NT$", locale: "zh-TW", decimals: 2 },
-	PKR: { symbol: "₨", locale: "en-PK", decimals: 0 },
-	BDT: { symbol: "৳", locale: "bn-BD", decimals: 2 },
-	NPR: { symbol: "₨", locale: "ne-NP", decimals: 2 },
-	EGP: { symbol: "£", locale: "ar-EG", decimals: 2 },
-	NGN: { symbol: "₦", locale: "en-NG", decimals: 2 },
-	KES: { symbol: "KSh", locale: "en-KE", decimals: 2 },
-	ILS: { symbol: "₪", locale: "he-IL", decimals: 2 },
-	COP: { symbol: "Col$", locale: "es-CO", decimals: 2 },
-	CLP: { symbol: "CLP$", locale: "es-CL", decimals: 0 },
-	ARS: { symbol: "AR$", locale: "es-AR", decimals: 2 },
-	PEN: { symbol: "S/", locale: "es-PE", decimals: 2 },
+// For a code we have not curated, ask the platform for its symbol. Keeps the
+// picker readable for all the live codes, not just the 46 we ship overrides for.
+export const symbolFor = (code: string): string => {
+	const upper = code.toUpperCase();
+	try {
+		const parts = new Intl.NumberFormat(undefined, {
+			style: "currency",
+			currency: upper,
+		}).formatToParts(0);
+		if (!intlEchoedCode(parts, upper)) {
+			return parts.find((part) => part.type === "currency")!.value;
+		}
+	} catch {
+		// Malformed code; fall through to the curated symbol.
+	}
+	return CURRENCY_INFO[upper]?.symbol ?? upper;
 };
 
-export const currencyOptions = Object.keys(CURRENCY_INFO).map((code) => ({
-	code,
-	symbol: CURRENCY_INFO[code]!.symbol,
-}));
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// A stored "YYYY-MM-DD" is a calendar day with no timezone, but the language
+// parses it as UTC midnight, which lands on the previous day for anyone west of
+// UTC. Build it in local time instead so the day the user picked is the day shown.
+export const parseDateOnly = (value: string): Date => {
+	if (!DATE_ONLY_RE.test(value)) return new Date(value);
+	const [year, month, day] = value.split("-").map(Number) as [number, number, number];
+	return new Date(year, month - 1, day);
+};
 
 export const formatShortDate = (value?: string | null) => {
 	if (!value) {
 		return "—";
 	}
 
-	return new Date(value).toLocaleDateString("en-LK", {
+	return parseDateOnly(value).toLocaleDateString(undefined, {
 		day: "numeric",
 		month: "short",
 		year: "numeric",
@@ -187,7 +250,7 @@ export const startOfMonth = () => {
  * Never returns a date earlier than the plan's actual start_date.
  */
 export const getCycleStart = (planStartDate: string): Date => {
-	const planStart = new Date(planStartDate);
+	const planStart = parseDateOnly(planStartDate);
 	planStart.setHours(0, 0, 0, 0);
 	const cycleDay = planStart.getDate(); // e.g. 10
 
@@ -255,12 +318,17 @@ export const getCycleWindowForCursor = (
 	return { start, end };
 };
 
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+const pad2 = (value: number) => String(value).padStart(2, "0");
 
-export const dateToISO = (date: Date | string) =>
-	typeof date === "string"
-		? date.slice(0, 10)
-		: date.toISOString().slice(0, 10);
+// Local calendar date, NOT UTC. toISOString() would roll to tomorrow for anyone
+// east of UTC after midday, and to yesterday for anyone west of UTC at night.
+const localDateOf = (date: Date) =>
+	`${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+export const todayLocalDate = () => localDateOf(new Date());
+
+export const toLocalDate = (date: Date | string) =>
+	typeof date === "string" ? date.slice(0, 10) : localDateOf(date);
 
 export const monthNames = [
 	"January",

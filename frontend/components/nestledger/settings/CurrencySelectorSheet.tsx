@@ -12,6 +12,7 @@ import {
 
 import { BottomSheet } from '@/components/ui/BottomSheet';
 
+import { useCurrencyCodes } from '../hooks/useCurrencyCodes';
 import {
   buildCurrencySections,
   buildCurrencyViewModels,
@@ -19,12 +20,13 @@ import {
 } from './currencySelector';
 
 const defaultPopularCodes = ['USD', 'EUR', 'GBP', 'LKR', 'INR', 'JPY'];
-const currencyViewModels = buildCurrencyViewModels();
 
 type CurrencySelectorSheetProps = {
   onChange: (value: string) => void;
   onClose: () => void;
   popularCodes?: string[];
+  subtitle?: string;
+  title?: string;
   value: string;
   visible: boolean;
 };
@@ -33,6 +35,8 @@ export function CurrencySelectorSheet({
   onChange,
   onClose,
   popularCodes = defaultPopularCodes,
+  subtitle = 'New spaces you create will use this currency. Existing spaces keep their original currency.',
+  title = 'Choose default currency',
   value,
   visible,
 }: CurrencySelectorSheetProps) {
@@ -40,6 +44,8 @@ export function CurrencySelectorSheet({
   const styles = useThemedStyles(createStyles);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
+  const codes = useCurrencyCodes();
+  const currencyViewModels = useMemo(() => buildCurrencyViewModels(codes), [codes]);
 
   useEffect(() => {
     if (!visible) {
@@ -61,26 +67,22 @@ export function CurrencySelectorSheet({
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <BottomSheet onClose={onClose} scrollable={false}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
+          <TextInput
+            onChangeText={setQuery}
+            placeholder="Search currencies"
+            placeholderTextColor={theme.textMuted}
+            style={styles.searchInput}
+            value={query}
+          />
+        </View>
         <SectionList
           extraData={value}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => item.code}
           keyboardDismissMode="on-drag"
-          ListHeaderComponent={
-            <View style={styles.listHeader}>
-              <Text style={styles.title}>Choose default currency</Text>
-              <Text style={styles.subtitle}>
-                New spaces you create will use this currency. Existing spaces keep their original currency.
-              </Text>
-              <TextInput
-                onChangeText={setQuery}
-                placeholder="Search currencies"
-                placeholderTextColor={theme.textMuted}
-                style={styles.searchInput}
-                value={query}
-              />
-            </View>
-          }
           renderItem={({ item }) => (
             <CurrencyRow
               item={item}
@@ -151,14 +153,19 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  header: {
+    marginBottom: 12,
+  },
+  // The sheet's card is content-sized with only a maxHeight, so a flex:1 list
+  // collapses to nothing unless some ancestor bounds the height. Cap the list
+  // outright so it renders the same whether or not it is nested in a Modal.
   list: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 360,
   },
   listContent: {
     paddingBottom: 32,
-  },
-  listHeader: {
-    marginBottom: 4,
   },
   row: {
     alignItems: 'center',

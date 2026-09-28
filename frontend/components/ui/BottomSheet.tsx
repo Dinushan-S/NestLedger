@@ -87,8 +87,11 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({
     flexShrink: 1,
   },
   nonScrollContent: {
-    flex: 1,
-    minHeight: 0,
+    // Size to content and only shrink when the card hits its maxHeight. `flex: 1`
+    // implies flexBasis 0, which collapses the card to zero height whenever the
+    // sheet is not already inside a bounded-height container (for example a
+    // parent Modal) and leaves just the backdrop visible.
+    flexShrink: 1,
   },
   sheetGrabber: {
     alignSelf: 'center',

@@ -17,6 +17,7 @@ import {
 	startOfMonth,
 	startOfToday,
 	startOfWeek,
+	parseDateOnly,
 } from "@/constants/nestledger";
 
 type ExpenseWindow = (typeof expenseFilters)[number];
@@ -86,16 +87,16 @@ export function buildAvailableViewYears(
 	}
 
 	const years = new Set<number>();
-	years.add(new Date(selectedPlan.start_date).getFullYear());
+	years.add(parseDateOnly(selectedPlan.start_date).getFullYear());
 	years.add(new Date().getFullYear());
 
 	if (selectedPlan.end_date) {
-		years.add(new Date(selectedPlan.end_date).getFullYear());
+		years.add(parseDateOnly(selectedPlan.end_date).getFullYear());
 	}
 
 	profileExpenses
 		.filter((expense) => expense.plan_id === selectedPlan.id)
-		.forEach((expense) => years.add(new Date(expense.date).getFullYear()));
+		.forEach((expense) => years.add(parseDateOnly(expense.date).getFullYear()));
 
 	return [...years].sort();
 }
@@ -109,21 +110,21 @@ export function buildAvailableViewMonths(
 		return [];
 	}
 
-	const anchorDay = new Date(selectedPlan.start_date).getDate();
+	const anchorDay = parseDateOnly(selectedPlan.start_date).getDate();
 
 	const months = new Set<number>();
 	profileExpenses
 		.filter((expense) => expense.plan_id === selectedPlan.id)
 		.forEach((expense) => {
-			const cursor = getCycleCursorForDate(new Date(expense.date), anchorDay);
+			const cursor = getCycleCursorForDate(parseDateOnly(expense.date), anchorDay);
 			if (cursor.year === activeViewYear) {
 				months.add(cursor.month + 1);
 			}
 		});
 
 	const now = new Date();
-	if (activeViewYear === new Date(selectedPlan.start_date).getFullYear()) {
-		months.add(new Date(selectedPlan.start_date).getMonth() + 1);
+	if (activeViewYear === parseDateOnly(selectedPlan.start_date).getFullYear()) {
+		months.add(parseDateOnly(selectedPlan.start_date).getMonth() + 1);
 	}
 	if (activeViewYear === now.getFullYear()) {
 		months.add(now.getMonth() + 1);
@@ -147,14 +148,14 @@ export function filterMonthExpenses({
 		return null;
 	}
 
-	const anchorDay = new Date(selectedPlan.start_date).getDate();
+	const anchorDay = parseDateOnly(selectedPlan.start_date).getDate();
 
 	return profileExpenses.filter((expense) => {
 		if (expense.plan_id !== selectedPlan.id) {
 			return false;
 		}
 
-		const cursor = getCycleCursorForDate(new Date(expense.date), anchorDay);
+		const cursor = getCycleCursorForDate(parseDateOnly(expense.date), anchorDay);
 		return (
 			cursor.year === activeViewYear && cursor.month + 1 === activeViewMonth
 		);
@@ -186,7 +187,7 @@ export function buildCurrentPlanExpenses(
 			return true;
 		}
 
-		return new Date(expense.date) >= new Date(plan.start_date);
+		return parseDateOnly(expense.date) >= parseDateOnly(plan.start_date);
 	});
 }
 
@@ -200,7 +201,7 @@ export function buildCurrentMonthStatsMap(
 		const cycleStart = getCycleStart(plan.start_date);
 		const monthExpenses = profileExpenses.filter(
 			(expense) =>
-				new Date(expense.date) >= cycleStart && expense.plan_id === plan.id,
+				parseDateOnly(expense.date) >= cycleStart && expense.plan_id === plan.id,
 		);
 		const family = monthExpenses
 			.filter((expense) => !expense.paid_by && !expense.is_borrow)
@@ -291,7 +292,7 @@ export function buildCurrentMonthSavingsStatsMap(
 		const entries = savings.filter((entry) => entry.tracker_id === tracker.id);
 		const balance = entries.reduce((sum, entry) => sum + entry.amount, 0);
 		const monthEntries = entries.filter(
-			(entry) => new Date(entry.date) >= monthStart,
+			(entry) => parseDateOnly(entry.date) >= monthStart,
 		);
 		const deposits = monthEntries
 			.filter((entry) => entry.amount > 0)
@@ -367,7 +368,7 @@ export function buildCurrentPlanMonthStats(
 	const monthExpenses = currentPlanExpenses.filter(
 		(expense) =>
 			expense.plan_id === selectedPlan.id &&
-			new Date(expense.date) >= cycleStart,
+			parseDateOnly(expense.date) >= cycleStart,
 	);
 	const monthNonBorrow = monthExpenses.filter((expense) => !expense.is_borrow);
 	const spent = sumPrices(monthNonBorrow.filter((expense) => !expense.paid_by));
@@ -450,19 +451,19 @@ export function filterExpensesForView({
 		return [];
 	}
 
-	const planStartDate = new Date(selectedPlan.start_date);
+	const planStartDate = parseDateOnly(selectedPlan.start_date);
 	const base = profileExpenses.filter(
 		(expense) =>
 			expense.plan_id === selectedPlan.id &&
 			!expense.is_borrow &&
-			new Date(expense.date) >= planStartDate,
+			parseDateOnly(expense.date) >= planStartDate,
 	);
 	const today = startOfToday();
 	const weekStart = startOfWeek();
 	const cycleStart = getCycleStart(selectedPlan.start_date);
 
 	return base.filter((expense) => {
-		const expenseDate = new Date(expense.date);
+		const expenseDate = parseDateOnly(expense.date);
 		const matchesWindow =
 			expenseView === "Day"
 				? expenseDate >= today

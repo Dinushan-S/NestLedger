@@ -10,9 +10,6 @@ function serial<T>(work: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export const localDate = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-
 export async function requireNotificationPermission(request = true) {
   if (Platform.OS === "web") throw new Error("Reminders are available in the mobile app.");
   if (Platform.OS === "android") {

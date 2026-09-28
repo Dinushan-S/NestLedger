@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "lint": "node ./node_modules/eslint/bin/eslint.js .",
     "typecheck": "tsc --noEmit",
-    "test:theme": "node scripts/check-theme.cjs"
+    "test:theme": "node scripts/check-theme.cjs",
+    "test:dates": "node scripts/check-dates.cjs"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",

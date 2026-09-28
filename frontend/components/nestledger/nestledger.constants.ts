@@ -1,7 +1,10 @@
 import {
 	avatarChoices,
+	defaultCurrencyForDevice,
 	expenseCategories,
 	expenseFilters,
+	todayLocalDate,
+	toLocalDate,
 } from "../../constants/nestledger";
 import type { SpaceType } from "../../lib/nestledger-services";
 import type { CreateProfileForm } from "./forms/ProfileFormControls";
@@ -51,7 +54,7 @@ export type ShoppingForm = {
 
 export const defaultCreateProfileForm: CreateProfileForm = {
 	avatarEmoji: avatarChoices[0]!,
-	currency: "USD",
+	currency: defaultCurrencyForDevice(),
 	familyEmoji: avatarChoices[1]!,
 	familyName: "",
 	name: "",
@@ -59,14 +62,13 @@ export const defaultCreateProfileForm: CreateProfileForm = {
 };
 
 export const defaultBudgetForm = (): BudgetForm => {
-	const today = new Date().toISOString().slice(0, 10);
 	const nextMonth = new Date();
 	nextMonth.setDate(nextMonth.getDate() + 30);
 
 	return {
-		endDate: nextMonth.toISOString().slice(0, 10),
+		endDate: toLocalDate(nextMonth),
 		name: "",
-		startDate: today,
+		startDate: todayLocalDate(),
 		totalAmount: "",
 	};
 };
@@ -74,7 +76,7 @@ export const defaultBudgetForm = (): BudgetForm => {
 export const defaultExpenseForm = (): ExpenseForm => ({
 	category: expenseCategories[0]!.key,
 	customCategory: "",
-	date: new Date().toISOString().slice(0, 10),
+	date: todayLocalDate(),
 	description: "",
 	items: [{ name: "", price: "" }],
 	is_borrow: false,

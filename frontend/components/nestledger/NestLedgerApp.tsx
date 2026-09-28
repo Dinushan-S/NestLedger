@@ -42,6 +42,8 @@ import {
 	shoppingCategories,
 	shoppingFilters,
 	getCycleWindowForCursor,
+	parseDateOnly,
+	todayLocalDate,
 } from "../../constants/nestledger";
 import {
 	AppNotification,
@@ -113,7 +115,7 @@ import {
 	type ParsedReceipt,
 } from "./receiptParser";
 import { registerRemotePushWhenSupported } from "./pushNotificationSupport";
-import { cancelExpenseReminders, localDate, restoreDailyReminder, updateDailyReminder } from "./reminders";
+import { cancelExpenseReminders, restoreDailyReminder, updateDailyReminder } from "./reminders";
 
 import { BillTracker as BillTrackerComponent } from "./BillTracker";
 import { SavingsTracker as SavingsTrackerComponent } from "./SavingsTracker";
@@ -232,13 +234,13 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	);
 	const [borrowForm, setBorrowForm] = useState<BorrowForm>({
 		amount: "",
-		date: new Date().toISOString().slice(0, 10),
+		date: todayLocalDate(),
 		description: "",
 	});
 	const [repayForm, setRepayForm] = useState<RepayForm>({
 		amount: "",
 		borrowId: "",
-		date: new Date().toISOString().slice(0, 10),
+		date: todayLocalDate(),
 	});
 	const [showShoppingComposer, setShowShoppingComposer] = useState(false);
 	const [showBoughtComposer, setShowBoughtComposer] = useState(false);
@@ -432,7 +434,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[plans, selectedPlanId],
 	);
 	const selectedPlanAnchorDay = useMemo(
-		() => (selectedPlan ? new Date(selectedPlan.start_date).getDate() : 1),
+		() => (selectedPlan ? parseDateOnly(selectedPlan.start_date).getDate() : 1),
 		[selectedPlan],
 	);
 
@@ -793,7 +795,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!pendingDailyReminder || !sessionUserId || !selectedPlan || selectedPlan.profile_id !== activeProfileId) return;
 		setPendingDailyReminder(false);
 		setEditingExpenseId(null);
-		setExpenseForm({ ...defaultExpenseForm(), date: localDate(new Date()) });
+		setExpenseForm({ ...defaultExpenseForm(), date: todayLocalDate() });
 		setShowExpenseComposer(true);
 	}, [pendingDailyReminder, selectedPlan, sessionUserId, activeProfileId]);
 
@@ -1338,7 +1340,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			name: item.name.trim(),
 			price: Number(item.price),
 		}));
-		const date = new Date(expenseForm.date).toISOString();
+		const date = parseDateOnly(expenseForm.date).toISOString();
 		const description = expenseForm.description.trim() || null;
 		const paidBy = showContribution ? expenseForm.paidBy : null;
 		const usedBy =
@@ -1482,7 +1484,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			customCategory: isKnownCategory
 				? ""
 				: receipt.vendor ?? "Scanned receipt",
-			date: receipt.date ?? localDate(new Date()),
+			date: receipt.date ?? todayLocalDate(),
 			description: receipt.vendor ? `Receipt · ${receipt.vendor}` : "Scanned receipt",
 			items: itemDrafts.length > 0 ? itemDrafts : [{ name: "", price: "" }],
 		});
@@ -1515,7 +1517,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		}
 
 		await runAction(async () => {
-			const borrowDate = new Date(borrowForm.date).toISOString();
+			const borrowDate = parseDateOnly(borrowForm.date).toISOString();
 			const borrowDescription = borrowForm.description.trim() || null;
 			const borrowItem = {
 				name: borrowForm.description.trim() || "Borrowed from budget",
@@ -1581,7 +1583,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			}
 			setBorrowForm({
 				amount: "",
-				date: new Date().toISOString().slice(0, 10),
+				date: todayLocalDate(),
 				description: "",
 			});
 			setShowBorrowComposer(false);
@@ -1628,7 +1630,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			setRepayForm({
 				amount: "",
 				borrowId: "",
-				date: new Date().toISOString().slice(0, 10),
+				date: todayLocalDate(),
 			});
 			setShowRepayComposer(false);
 			void refreshProfileData(activeProfile.id, true);
@@ -2985,8 +2987,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										savings.some(
 											(e) =>
 												e.tracker_id === selectedSavingsTrackerId &&
-												new Date(e.date).getMonth() + 1 === m &&
-												new Date(e.date).getFullYear() === savingsViewYear,
+												parseDateOnly(e.date).getMonth() + 1 === m &&
+												parseDateOnly(e.date).getFullYear() === savingsViewYear,
 										)
 									}
 									onSetMonth={setSavingsViewMonth}
@@ -2999,7 +3001,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 												.filter(
 													(e) => e.tracker_id === selectedSavingsTrackerId,
 												)
-												.map((e) => new Date(e.date).getFullYear()),
+												.map((e) => parseDateOnly(e.date).getFullYear()),
 										),
 									].sort()}
 								/>
@@ -4492,7 +4494,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						setShowBorrowComposer(false);
 						setBorrowForm({
 							amount: "",
-							date: new Date().toISOString().slice(0, 10),
+							date: todayLocalDate(),
 							description: "",
 						});
 						setEditingBorrowId(null);
@@ -4505,7 +4507,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setShowBorrowComposer(false);
 							setBorrowForm({
 								amount: "",
-								date: new Date().toISOString().slice(0, 10),
+								date: todayLocalDate(),
 								description: "",
 							});
 							setEditingBorrowId(null);
@@ -4556,7 +4558,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						setRepayForm({
 							amount: "",
 							borrowId: "",
-							date: new Date().toISOString().slice(0, 10),
+							date: todayLocalDate(),
 						});
 					}}
 					transparent
@@ -4568,7 +4570,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setRepayForm({
 								amount: "",
 								borrowId: "",
-								date: new Date().toISOString().slice(0, 10),
+								date: todayLocalDate(),
 							});
 						}}
 					>
