@@ -1,7 +1,6 @@
+import { useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { ReactNode } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-
-import { theme } from '../../constants/nestledger';
 
 type Props = {
   children: ReactNode;
@@ -10,10 +9,11 @@ type Props = {
 };
 
 export default function BentoCard({ children, style, tone = 'default' }: Props) {
+  const styles = useThemedStyles(createStyles);
   return <View style={[styles.card, tone === 'highlight' && styles.highlight, style]}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   card: {
     backgroundColor: theme.surface,
     borderColor: theme.border,
@@ -28,6 +28,6 @@ const styles = StyleSheet.create({
   },
   highlight: {
     backgroundColor: theme.primarySoft,
-    borderColor: '#D5E3DA',
+    borderColor: theme.border,
   },
 });

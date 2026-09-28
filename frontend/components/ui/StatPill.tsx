@@ -1,5 +1,5 @@
+import { useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { StyleSheet, Text, View } from 'react-native';
-import { theme } from '../../constants/nestledger';
 
 type Props = {
   label: string;
@@ -9,6 +9,7 @@ type Props = {
 };
 
 export default function StatPill({ label, value, sub, valueColor }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
@@ -18,7 +19,7 @@ export default function StatPill({ label, value, sub, valueColor }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   container: {
     backgroundColor: theme.surface,
     borderRadius: 18,

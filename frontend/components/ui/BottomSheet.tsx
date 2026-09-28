@@ -1,3 +1,4 @@
+import { useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
@@ -7,8 +8,6 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-
-import { theme } from '@/constants/nestledger';
 
 type BottomSheetProps = {
   children: ReactNode;
@@ -21,6 +20,7 @@ export function BottomSheet({
   onClose,
   scrollable = true,
 }: BottomSheetProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     // KeyboardAvoidingView must be the outermost flex container so it can lift
     // the bottom-anchored card above the keyboard. It also needs a real
@@ -60,7 +60,7 @@ export function BottomSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   keyboardWrapper: {
     flex: 1,
   },

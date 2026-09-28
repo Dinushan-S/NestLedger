@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { useState, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -16,13 +17,7 @@ import {
 	Member,
 	BudgetPlan,
 } from "../../lib/nestledger";
-import {
-	theme,
-	billCategories,
-	monthNames,
-	formatCurrency,
-	formatShortDate,
-} from "../../constants/nestledger";
+import { billCategories, monthNames, formatCurrency, formatShortDate } from "../../constants/nestledger";
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
@@ -113,6 +108,8 @@ export function BillTracker({
 	onMarkPaid,
 	onDeleteBill,
 }: Props) {
+	const { theme } = useTheme();
+	const s = useThemedStyles(createStyles);
 	const currencyCode = currencyCodeProp ?? "USD";
 	const [showComposer, setShowComposer] = useState(false);
 	const [showPayment, setShowPayment] = useState(false);
@@ -403,7 +400,12 @@ export function BillTracker({
 				)}
 			</View>
 
-			<Modal animationType="slide" transparent visible={showComposer}>
+			<Modal
+				animationType="slide"
+				onRequestClose={() => setShowComposer(false)}
+				transparent
+				visible={showComposer}
+			>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
 						accessibilityLabel="Close bill sheet"
@@ -577,7 +579,15 @@ export function BillTracker({
 				</View>
 			</Modal>
 
-			<Modal animationType="slide" transparent visible={showPayment}>
+			<Modal
+				animationType="slide"
+				onRequestClose={() => {
+					setShowPayment(false);
+					setSelectedBill(null);
+				}}
+				transparent
+				visible={showPayment}
+			>
 				<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
 					<Pressable
 						accessibilityLabel="Close payment sheet"
@@ -689,7 +699,7 @@ export function BillTracker({
 										<View style={s.segmentRow}>
 											<CategoryChip
 												active={paymentForm.paidBy === null}
-												label="Family Budget"
+												label="Budget"
 												onPress={() =>
 													setPaymentForm((f) => ({ ...f, paidBy: null }))
 												}
@@ -724,6 +734,10 @@ export function BillTracker({
 
 			<Modal
 				animationType="slide"
+				onRequestClose={() => {
+					setShowBillDetail(false);
+					setDetailBill(null);
+				}}
 				presentationStyle="pageSheet"
 				visible={showBillDetail}
 			>
@@ -834,7 +848,7 @@ export function BillTracker({
 	);
 }
 
-const s = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	headerRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",

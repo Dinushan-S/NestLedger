@@ -1,12 +1,13 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { StyleSheet, View } from 'react-native';
-
-import { theme } from '../../constants/nestledger';
 
 type Props = {
   progress: number;
 };
 
 export default function ProgressBar({ progress }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const safeProgress = Math.max(0, Math.min(progress, 1));
   const fillColor = safeProgress > 0.85 ? theme.danger : safeProgress > 0.6 ? theme.warning : theme.success;
 
@@ -17,13 +18,13 @@ export default function ProgressBar({ progress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   fill: {
     borderRadius: 999,
     height: 10,
   },
   track: {
-    backgroundColor: '#EDF0EB',
+    backgroundColor: theme.border,
     borderRadius: 999,
     height: 10,
     overflow: 'hidden',

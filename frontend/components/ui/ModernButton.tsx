@@ -1,3 +1,4 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { ReactNode, useRef } from 'react';
 import {
   ActivityIndicator,
@@ -8,8 +9,6 @@ import {
   Text,
   ViewStyle,
 } from 'react-native';
-
-import { theme } from '../../constants/nestledger';
 
 type Props = {
   destructive?: boolean;
@@ -34,6 +33,8 @@ export default function ModernButton({
   text,
   disabled,
 }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const scale = useRef(new Animated.Value(1)).current;
 
   const animateTo = (value: number) => {
@@ -48,6 +49,9 @@ export default function ModernButton({
   return (
     <Animated.View style={[{ transform: [{ scale }] }, style]}>
       <Pressable
+        accessibilityLabel={text}
+        accessibilityRole="button"
+        accessibilityState={{ busy: Boolean(loading), disabled: Boolean(disabled || loading) }}
         disabled={disabled || loading}
         hitSlop={10}
         onPress={onPress}
@@ -57,7 +61,7 @@ export default function ModernButton({
         style={[styles.button, secondary ? styles.secondary : styles.primary, destructive && styles.destructive, disabled && styles.disabled]}
       >
         {loading ? (
-          <ActivityIndicator color={secondary || destructive ? theme.danger : '#FFFFFF'} />
+          <ActivityIndicator color={destructive ? theme.danger : secondary ? theme.primary : theme.onPrimary} />
         ) : (
           <>
             {icon}
@@ -69,7 +73,7 @@ export default function ModernButton({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   button: {
     alignItems: 'center',
     borderRadius: 999,
@@ -91,13 +95,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primary,
   },
   primaryLabel: {
-    color: '#FFFFFF',
+    color: theme.onPrimary,
   },
   secondary: {
     backgroundColor: theme.secondarySoft,
   },
   secondaryLabel: {
-    color: theme.primary,
+    color: theme.text,
   },
   destructive: {
     backgroundColor: theme.dangerSoft,

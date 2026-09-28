@@ -1,6 +1,7 @@
+import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { monthShort, theme } from "../../constants/nestledger";
+import { monthShort } from "../../constants/nestledger";
 import CategoryChip from "./CategoryChip";
 
 type Props = {
@@ -20,6 +21,8 @@ export default function MonthYearSelector({
 	years,
 	hasMonthData,
 }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
 	const yearIdx = years.indexOf(viewYear);
 	const isFirstYear = yearIdx <= 0;
 	const isLastYear = yearIdx >= years.length - 1;
@@ -95,7 +98,7 @@ export default function MonthYearSelector({
 	);
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
 	monthSelectorWrap: {
 		marginBottom: 12,
 	},

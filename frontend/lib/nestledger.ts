@@ -24,6 +24,7 @@ export type SpaceType =
 export type HouseholdProfile = {
 	created_at: string;
 	created_by: string;
+	currency: string;
 	emoji_avatar: string | null;
 	id: string;
 	name: string;
@@ -175,7 +176,7 @@ type AuthPayload = {
 
 type CreateHouseholdPayload = {
 	avatarEmoji: string;
-	currency?: string;
+	currency: string;
 	familyEmoji: string;
 	familyName: string;
 	name: string;
@@ -304,6 +305,18 @@ export const authApi = {
 		if (error) throw error;
 		return data;
 	},
+	async resetPasswordForEmail(email: string) {
+		const { error } = await supabase.auth.resetPasswordForEmail(email);
+		if (error) throw error;
+	},
+	async verifyRecoveryCode(email: string, token: string) {
+		const { error } = await supabase.auth.verifyOtp({ email, token, type: "recovery" });
+		if (error) throw error;
+	},
+	async updatePassword(password: string) {
+		const { error } = await supabase.auth.updateUser({ password });
+		if (error) throw error;
+	},
 };
 
 export const profileApi = {
@@ -354,6 +367,7 @@ export const profileApi = {
 		const profileInsert = {
 			created_at: nowIso(),
 			created_by: payload.user.id,
+			currency: payload.currency,
 			emoji_avatar: payload.familyEmoji,
 			name: payload.familyName.trim(),
 			space_type: payload.spaceType,
@@ -387,11 +401,13 @@ export const profileApi = {
 			.order("joined_at", { ascending: false });
 
 		if (error) throw error;
-		return (
-			((memberships ?? [])
-				.map((item) => item.profile)
-				.filter(Boolean) as unknown as HouseholdProfile[]) ?? []
-		);
+		const profiles = (memberships ?? [])
+			.map((item) => item.profile)
+			.filter(Boolean) as unknown as HouseholdProfile[];
+		if (profiles.some((profile) => !profile.currency)) {
+			throw new Error("Space currency is unavailable. Please contact support.");
+		}
+		return profiles;
 	},
 	async fetchMembers(profileId: string) {
 		const { data: memberships, error } = await supabase
