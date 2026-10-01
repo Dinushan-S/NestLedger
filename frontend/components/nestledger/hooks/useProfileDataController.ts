@@ -6,6 +6,7 @@ import {
   BudgetPlan,
   ExpenseWithItems,
   Member,
+  ExpenseShortcut,
   RecurringBill,
   SavingsEntry,
   SavingsTrackerMeta,
@@ -15,6 +16,7 @@ import {
   expenseApi,
   notificationApi,
   profileApi,
+  expenseShortcutApi,
   savingsApi,
   shoppingApi,
   type AppNotification,
@@ -30,6 +32,7 @@ type UseProfileDataControllerOptions = {
   setNotifications: Dispatch<SetStateAction<AppNotification[]>>;
   setPlans: Dispatch<SetStateAction<BudgetPlan[]>>;
   setProfileExpenses: Dispatch<SetStateAction<ExpenseWithItems[]>>;
+  setExpenseShortcuts: Dispatch<SetStateAction<ExpenseShortcut[]>>;
   setRecurringBills: Dispatch<SetStateAction<RecurringBill[]>>;
   setSavings: Dispatch<SetStateAction<SavingsEntry[]>>;
   setSavingsTrackers: Dispatch<SetStateAction<SavingsTrackerMeta[]>>;
@@ -47,6 +50,7 @@ export function useProfileDataController({
   setNotifications,
   setPlans,
   setProfileExpenses,
+  setExpenseShortcuts,
   setRecurringBills,
   setSavings,
   setSavingsTrackers,
@@ -127,6 +131,19 @@ export function useProfileDataController({
         const activePlanId = selectedPlanIdRef.current;
         if (activePlanId && !nextPlans.some((plan) => plan.id === activePlanId)) {
           setSelectedPlanId(null);
+        }
+
+        try {
+          const nextExpenseShortcuts = await expenseShortcutApi.fetch(profileId);
+          if (sessionUserIdRef.current === userId && request === latestRequest.current) {
+            setExpenseShortcuts(nextExpenseShortcuts);
+          }
+        } catch (error) {
+          if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
+          setExpenseShortcuts([]);
+          if ((error as { code?: string }).code !== 'PGRST205') {
+            onErrorRef.current(error instanceof Error ? error.message : 'Something went wrong.');
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Something went wrong.';

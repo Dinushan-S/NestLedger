@@ -1,4 +1,4 @@
-import type { ExpenseItem, ExpenseWithItems } from "@/lib/nestledger";
+import type { ExpenseItem, ExpenseShortcut, ExpenseWithItems } from "@/lib/nestledger";
 import { expenseCategories } from "../../constants/nestledger";
 import type { ExpenseForm } from "./nestledger.constants";
 
@@ -13,6 +13,34 @@ export type RecentExpenseItemSuggestion = {
 	name: string;
 	price: number;
 };
+
+export function expenseShortcutName(expense: {
+	description: string | null;
+	items: readonly Pick<ExpenseItem, "name">[];
+}): string {
+	return expense.description?.trim() || expense.items.map((item) => item.name).join(", ");
+}
+
+export function expenseShortcutTotal(expense: {
+	items: readonly Pick<ExpenseItem, "price">[];
+}): number {
+	return expense.items.reduce((total, item) => total + item.price, 0);
+}
+
+export function isSavedExpenseShortcut(
+	expense: ExpenseWithItems,
+	shortcuts: readonly ExpenseShortcut[],
+): boolean {
+	const items = expense.items.map(({ name, price }) => ({ name, price }));
+	return shortcuts.some((shortcut) =>
+		shortcut.name === expenseShortcutName(expense) &&
+		shortcut.category === expense.category &&
+		shortcut.description === expense.description &&
+		shortcut.paid_by === expense.paid_by &&
+		shortcut.used_by === expense.used_by &&
+		JSON.stringify(shortcut.items) === JSON.stringify(items),
+	);
+}
 
 /**
  * Applies a selected recent item match to one row in the expense draft.

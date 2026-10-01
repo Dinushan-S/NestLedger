@@ -119,6 +119,19 @@ export type RecurringBill = {
 	created_at: string;
 };
 
+export type ExpenseShortcut = {
+	category: string;
+	created_at: string;
+	created_by: string;
+	description: string | null;
+	id: string;
+	items: { name: string; price: number }[];
+	name: string;
+	paid_by: string | null;
+	profile_id: string;
+	used_by: string | null;
+};
+
 export type BillPayment = {
 	id: string;
 	profile_id: string;
@@ -281,6 +294,7 @@ function tableCrud<T extends { created_at: string; id: string }>(
 const planCrud = tableCrud<BudgetPlan>("budget_plans");
 const billTrackerCrud = tableCrud<BillTrackerMeta>("bill_trackers");
 const recurringBillCrud = tableCrud<RecurringBill>("recurring_bills");
+const expenseShortcutCrud = tableCrud<ExpenseShortcut>("expense_shortcuts");
 const savingsTrackerCrud = tableCrud<SavingsTrackerMeta>("savings_trackers");
 const savingsEntryCrud = tableCrud<SavingsEntry>("savings");
 
@@ -884,6 +898,20 @@ export const billApi = {
 		if (error) throw error;
 		return data as BillPayment;
 	},
+};
+
+export const expenseShortcutApi = {
+	async fetch(profileId: string) {
+		const { data, error } = await supabase
+			.from("expense_shortcuts")
+			.select("*")
+			.eq("profile_id", profileId)
+			.order("created_at", { ascending: false });
+		if (error) throw error;
+		return (data ?? []) as ExpenseShortcut[];
+	},
+	create: expenseShortcutCrud.create,
+	delete: expenseShortcutCrud.remove,
 };
 
 export const savingsApi = {

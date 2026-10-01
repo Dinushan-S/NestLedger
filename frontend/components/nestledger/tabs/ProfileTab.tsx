@@ -1,17 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react";
+import { formatCurrency } from "../../../constants/nestledger";
 import { useTheme } from "../../../lib/theme-context";
 import { useStyles } from "../nestledger.styles";
 import BentoCard from "../../ui/BentoCard";
+import { ModalScaffold } from "../../ui/ModalScaffold";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import type { UserProfile } from "../../../lib/nestledger";
-import { InfoPill, QuickActionCard } from "../nestledger.ui";
+import type { ExpenseShortcut, ExpenseWithItems, UserProfile } from "../../../lib/nestledger";
+import { EmptyState, InfoPill, QuickActionCard } from "../nestledger.ui";
+import { expenseShortcutName, expenseShortcutTotal, isSavedExpenseShortcut } from "../expenseSuggestions";
 
 type Props = {
+	actionBusy: boolean;
+	currency: string;
+	recentExpenses: ExpenseWithItems[];
+	expenseShortcuts: ExpenseShortcut[];
 	userProfile: UserProfile;
 	profileName: string;
 	reminderBusy: boolean;
 	reminderEnabled: boolean;
 	reminderTime: string;
+	onAddExpenseShortcut: (expense: ExpenseWithItems) => Promise<boolean>;
+	onDeleteExpenseShortcut: (shortcut: ExpenseShortcut) => void;
 	onMembers: () => void;
 	onInvite: () => void;
 	onSettings: () => void;
@@ -23,11 +33,17 @@ type Props = {
 };
 
 export default function ProfileTab({
+	actionBusy,
+	currency,
+	recentExpenses,
+	expenseShortcuts,
 	userProfile,
 	profileName,
 	reminderBusy,
 	reminderEnabled,
 	reminderTime,
+	onAddExpenseShortcut,
+	onDeleteExpenseShortcut,
 	onMembers,
 	onInvite,
 	onSettings,
@@ -39,6 +55,7 @@ export default function ProfileTab({
 }: Props) {
 	const { theme } = useTheme();
 	const styles = useStyles();
+	const [showShortcutPicker, setShowShortcutPicker] = useState(false);
 	return (
 		<View style={styles.sectionGap}>
 			<BentoCard tone="highlight">
@@ -81,6 +98,46 @@ export default function ProfileTab({
 					testID="profile-open-switcher"
 				/>
 			</View>
+
+			<BentoCard>
+				<View style={styles.expenseShortcutSection}>
+					<Text style={styles.sectionTitle}>Expense Shortcuts</Text>
+					<Text style={styles.bodyMuted}>Save an expense you use often. Tap it in Add Expense only on the days you need it.</Text>
+					<Pressable
+						accessibilityRole="button"
+						disabled={actionBusy}
+						onPress={() => setShowShortcutPicker(true)}
+						style={styles.addItemButton}
+						testID="profile-add-expense-shortcut"
+					>
+						<Ionicons color={theme.primary} name="add-circle-outline" size={20} />
+						<Text style={styles.addItemText}>Add from history</Text>
+					</Pressable>
+					{expenseShortcuts.length === 0 ? (
+						<Text style={styles.bodyMuted}>No shortcuts saved yet.</Text>
+					) : expenseShortcuts.map((shortcut) => (
+						<View key={shortcut.id} style={styles.expenseShortcutRow}>
+							<View style={styles.expenseShortcutCopy}>
+								<Text style={styles.listTitle}>{shortcut.name}</Text>
+								<Text style={styles.listSubtitle}>
+									{formatCurrency(expenseShortcutTotal(shortcut), currency)} · {shortcut.category}
+								</Text>
+							</View>
+							<Pressable
+								accessibilityLabel={`Delete ${shortcut.name} shortcut`}
+								accessibilityRole="button"
+								disabled={actionBusy}
+								hitSlop={10}
+								onPress={() => onDeleteExpenseShortcut(shortcut)}
+								style={styles.editButton}
+								testID={`delete-expense-shortcut-${shortcut.id}`}
+							>
+								<Ionicons color={theme.danger} name="trash-outline" size={20} />
+							</Pressable>
+						</View>
+					))}
+				</View>
+			</BentoCard>
 
 			<BentoCard>
 				<View style={styles.reminderSection}>
@@ -142,6 +199,40 @@ export default function ProfileTab({
 					) : null}
 				</View>
 			</BentoCard>
+
+			<ModalScaffold
+				closeTestID="close-expense-shortcut-picker"
+				onClose={() => setShowShortcutPicker(false)}
+				title="Choose a past expense"
+				visible={showShortcutPicker}
+			>
+				{recentExpenses.length === 0 ? (
+					<EmptyState body="Add an expense first, then save it here as a shortcut." title="No past expenses yet" />
+				) : recentExpenses.map((expense) => {
+					const isSaved = isSavedExpenseShortcut(expense, expenseShortcuts);
+					return (
+						<Pressable
+							key={expense.id}
+							accessibilityRole="button"
+							accessibilityState={{ disabled: isSaved || actionBusy }}
+							disabled={isSaved || actionBusy}
+							onPress={async () => {
+								if (await onAddExpenseShortcut(expense)) setShowShortcutPicker(false);
+							}}
+							style={[styles.expenseShortcutChoice, (isSaved || actionBusy) && styles.expenseShortcutChoiceDisabled]}
+							testID={`expense-shortcut-source-${expense.id}`}
+						>
+							<View style={styles.expenseShortcutCopy}>
+								<Text style={styles.listTitle}>{expenseShortcutName(expense)}</Text>
+								<Text style={styles.listSubtitle}>
+									{formatCurrency(expenseShortcutTotal(expense), currency)} · {expense.category}
+								</Text>
+							</View>
+							<Ionicons color={isSaved ? theme.success : theme.primary} name={isSaved ? "checkmark-circle-outline" : "add-circle-outline"} size={22} />
+						</Pressable>
+					);
+				})}
+			</ModalScaffold>
 		</View>
 	);
 }

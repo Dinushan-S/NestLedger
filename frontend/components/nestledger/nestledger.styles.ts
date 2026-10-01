@@ -680,6 +680,36 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     fontSize: 15,
     fontWeight: '700',
   },
+  expenseShortcutSection: {
+    gap: 12,
+  },
+  expenseShortcutRow: {
+    alignItems: 'center',
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingBottom: 12,
+  },
+  expenseShortcutCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  expenseShortcutChoice: {
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 64,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  expenseShortcutChoiceDisabled: {
+    opacity: 0.55,
+  },
   rowBetween: {
     alignItems: 'center',
     flexDirection: 'row',

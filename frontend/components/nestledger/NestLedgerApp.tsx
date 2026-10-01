@@ -48,6 +48,7 @@ import {
 	BillPayment,
 	BillTrackerMeta,
 	BudgetPlan,
+	ExpenseShortcut,
 	ExpenseWithItems,
 	HouseholdProfile,
 	Member,
@@ -60,6 +61,7 @@ import {
 	authApi,
 	billApi,
 	budgetApi,
+	expenseShortcutApi,
 	expenseApi,
 	inviteApi,
 	notificationApi,
@@ -102,7 +104,10 @@ import {
 	filterShoppingItems,
 } from "./selectors";
 import {
+	deriveExpenseSuggestions,
 	deriveRecentExpenseItemSuggestions,
+	expenseShortcutName,
+	expenseShortcutTotal,
 	applyRecentItemSuggestionToExpenseForm,
 	type RecentExpenseItemSuggestion,
 } from "./expenseSuggestions";
@@ -210,6 +215,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[],
 	);
 	const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
+	const [expenseShortcuts, setExpenseShortcuts] = useState<ExpenseShortcut[]>([]);
 	const [billPayments, setBillPayments] = useState<BillPayment[]>([]);
 	const [savings, setSavings] = useState<SavingsEntry[]>([]);
 
@@ -217,6 +223,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [showCreateProfile, setShowCreateProfile] = useState(false);
 	const [showBudgetComposer, setShowBudgetComposer] = useState(false);
 	const [showExpenseComposer, setShowExpenseComposer] = useState(false);
+	const [quickAddFeedback, setQuickAddFeedback] = useState<string | null>(null);
+	const quickAddBusy = useRef(false);
 	const [showMoreExpenseCategories, setShowMoreExpenseCategories] = useState(false);
 	const [activeExpenseItemSuggestionIndex, setActiveExpenseItemSuggestionIndex] =
 		useState<number | null>(null);
@@ -387,6 +395,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setBillTrackers([]);
 		setSavingsTrackers([]);
 		setRecurringBills([]);
+		setExpenseShortcuts([]);
 		setSelectedPlanId(null);
 		setPendingDailyReminder(false);
 		setBillPayments([]);
@@ -418,12 +427,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setNotifications,
 		setPlans,
 		setProfileExpenses,
+		setExpenseShortcuts,
 		setRecurringBills,
 		setSavings,
 		setSavingsTrackers,
 		setSelectedPlanId,
 		setShoppingItems,
 	});
+
+	const recentExpenseSuggestions = useMemo(
+		() => deriveExpenseSuggestions(profileExpenses, { limit: Number.MAX_SAFE_INTEGER }),
+		[profileExpenses],
+	);
+	const activeExpenseShortcuts = useMemo(
+		() => expenseShortcuts.filter((shortcut) => shortcut.profile_id === activeProfileId),
+		[activeProfileId, expenseShortcuts],
+	);
 
 	const selectedPlan = useMemo(
 		() => plans.find((plan) => plan.id === selectedPlanId) ?? null,
@@ -786,6 +805,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!pendingDailyReminder || !sessionUserId || !selectedPlan || selectedPlan.profile_id !== activeProfileId) return;
 		setPendingDailyReminder(false);
 		setEditingExpenseId(null);
+		setQuickAddFeedback(null);
 		setExpenseForm({ ...defaultExpenseForm(), date: todayLocalDate() });
 		setShowExpenseComposer(true);
 	}, [pendingDailyReminder, selectedPlan, sessionUserId, activeProfileId]);
@@ -1313,6 +1333,49 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		});
 	};
 
+	const handleCreateExpenseShortcut = async (expense: ExpenseWithItems): Promise<boolean> => {
+		if (!session?.user || !activeProfile || actionBusy) return false;
+		setActionBusy(true);
+		try {
+			const created = await expenseShortcutApi.create({
+				category: expense.category,
+				created_by: session.user.id,
+				description: expense.description,
+				items: expense.items.map(({ name, price }) => ({ name, price })),
+				name: expenseShortcutName(expense),
+				paid_by: expense.paid_by,
+				profile_id: activeProfile.id,
+				used_by: expense.used_by,
+			});
+			setExpenseShortcuts((current) => [created, ...current]);
+			await refreshProfileData(activeProfile.id, true);
+			return true;
+		} catch (error) {
+			announce((error as { code?: string }).code === "PGRST205"
+				? "Expense Shortcuts are not available yet. Please try again later."
+				: extractError(error));
+			return false;
+		} finally {
+			setActionBusy(false);
+		}
+	};
+
+	const handleDeleteExpenseShortcut = (shortcut: ExpenseShortcut) => {
+		showConfirm({
+			body: `Remove ${shortcut.name} from your shortcuts?`,
+			confirmText: "Delete",
+			destructive: true,
+			onConfirm: () => {
+				runAction(async () => {
+					await expenseShortcutApi.delete(shortcut.id);
+					setExpenseShortcuts((current) => current.filter((item) => item.id !== shortcut.id));
+					if (activeProfileId) await refreshProfileData(activeProfileId, true);
+				});
+			},
+			title: "Delete expense shortcut",
+		});
+	};
+
 	const handleAddExpense = async () => {
 		if (!session?.user || !activeProfile || !selectedPlan) {
 			return;
@@ -1478,6 +1541,81 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		}
 	};
 
+	const handleQuickAddExpenseShortcut = async (shortcut: ExpenseShortcut) => {
+		if (!session?.user || !activeProfile || !selectedPlan || selectedPlan.profile_id !== activeProfile.id) {
+			announce("Choose a budget plan before adding this expense.");
+			return;
+		}
+		if (quickAddBusy.current || actionBusy) return;
+		const items = shortcut.items
+			.filter((item) => item.name.trim() && Number.isFinite(item.price))
+			.map((item) => ({ name: item.name.trim(), price: item.price }));
+		if (items.length === 0 || items.length !== shortcut.items.length) {
+			announce("This shortcut has invalid items. Delete it from Profile and save it again.");
+			return;
+		}
+
+		quickAddBusy.current = true;
+		setActionBusy(true);
+		setQuickAddFeedback(null);
+		const hasDraft = JSON.stringify(expenseForm) !== JSON.stringify(defaultExpenseForm());
+		const expenseDraft = expenseForm;
+		const now = new Date().toISOString();
+		const tempId = `temp-${now}-${Math.random().toString(36).slice(2)}`;
+		const totalPrice = expenseShortcutTotal({ items });
+		const paidBy = shortcut.paid_by;
+		const usedBy = shortcut.paid_by === null ? shortcut.used_by : null;
+		const expenseInput = {
+			added_by: session.user.id,
+			category: shortcut.category,
+			date: todayLocalDate(),
+			description: shortcut.description,
+			is_borrow: false,
+			items,
+			paid_by: paidBy,
+			plan_id: selectedPlan.id,
+			profile_id: activeProfile.id,
+			used_by: usedBy,
+		};
+		const optimisticExpense: ExpenseWithItems = {
+			...expenseInput,
+			id: tempId,
+			created_at: now,
+			price: totalPrice,
+			items: items.map((item, index) => ({
+				id: `${tempId}-item-${index}`,
+				expense_id: tempId,
+				created_at: now,
+				...item,
+			})),
+		};
+		setProfileExpenses((current) => [optimisticExpense, ...current]);
+
+		try {
+			try {
+				await expenseApi.addExpense(expenseInput);
+			} catch (error) {
+				setProfileExpenses((current) => current.filter((item) => item.id !== tempId));
+				setExpenseForm(expenseDraft);
+				announce(extractError(error));
+				return;
+			}
+			void notifyOtherMembers(
+				`${userProfile?.name ?? "A member"} added ${items.map((item) => item.name).join(", ")} to ${selectedPlan.name}.`,
+				notificationTypes.expense,
+			).catch(() => undefined);
+			await refreshProfileData(activeProfile.id, true);
+			if (hasDraft) {
+				setQuickAddFeedback(`${shortcut.name} was added to expenses. Your draft is still here.`);
+			} else {
+				setShowExpenseComposer(false);
+			}
+		} finally {
+			quickAddBusy.current = false;
+			setActionBusy(false);
+		}
+	};
+
 	const handleReceiptScanConfirm = (receipt: ParsedReceipt) => {
 		if (!selectedPlan) {
 			announce("Choose a budget plan before scanning a bill.");
@@ -1502,6 +1640,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			description: receipt.vendor ? `Receipt · ${receipt.vendor}` : "Scanned receipt",
 			items: itemDrafts.length > 0 ? itemDrafts : [{ name: "", price: "" }],
 		});
+		setQuickAddFeedback(null);
 		setShowReceiptScanner(false);
 		// Let the scanner modal close before showing the normal expense composer.
 		requestAnimationFrame(() => setShowExpenseComposer(true));
@@ -1692,6 +1831,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const startEditExpense = (expense: ExpenseWithItems) => {
 		setEditingExpenseId(expense.id);
+		setQuickAddFeedback(null);
 		const form = {
 			category:
 				expenseCategories.find((c) => c.key === expense.category)?.key ??
@@ -2615,23 +2755,29 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 									/>
 								) : null}
 
-								{activeTab === "profile" ? (
-									<ProfileTab
-										userProfile={userProfile}
-										profileName={activeProfile.name}
-										reminderBusy={reminderBusy}
-										reminderEnabled={reminderEnabled}
-										reminderTime={reminderTime}
-										onMembers={() => setShowMembers(true)}
-										onInvite={() => setShowInvite(true)}
-										onSettings={primeSettingsForm}
-										onSwitchProfile={() => setShowProfileSwitcher(true)}
-										onToggleReminder={toggleReminder}
-										onReminderTimeChange={setReminderTime}
-										onSaveReminderTime={updateReminderTime}
-										onAndroidKeyboardVisibleChange={setAndroidKeyboardVisible}
-									/>
-								) : null}
+				{activeTab === "profile" ? (
+					<ProfileTab
+						actionBusy={actionBusy}
+						currency={userCurrency}
+						recentExpenses={recentExpenseSuggestions}
+						expenseShortcuts={activeExpenseShortcuts}
+						userProfile={userProfile}
+						profileName={activeProfile.name}
+						reminderBusy={reminderBusy}
+						reminderEnabled={reminderEnabled}
+						reminderTime={reminderTime}
+						onAddExpenseShortcut={handleCreateExpenseShortcut}
+						onDeleteExpenseShortcut={handleDeleteExpenseShortcut}
+						onMembers={() => setShowMembers(true)}
+						onInvite={() => setShowInvite(true)}
+						onSettings={primeSettingsForm}
+						onSwitchProfile={() => setShowProfileSwitcher(true)}
+						onToggleReminder={toggleReminder}
+						onReminderTimeChange={setReminderTime}
+						onSaveReminderTime={updateReminderTime}
+						onAndroidKeyboardVisibleChange={setAndroidKeyboardVisible}
+					/>
+				) : null}
 
 							</ScrollView>
 						)}
@@ -3738,9 +3884,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										<View style={styles.dualActions}>
 											<ModernButton
 												icon={<Ionicons color={theme.onPrimary} name="add" size={18} />}
-												onPress={() => {
-													setShowExpenseComposer(true);
-												}}
+								onPress={() => {
+									setQuickAddFeedback(null);
+									setShowExpenseComposer(true);
+								}}
 												testID="open-add-expense"
 												text="Add expense"
 											/>
@@ -4086,6 +4233,34 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						<Text style={styles.sectionTitle}>
 							{editingExpenseId ? "Edit Expense" : "Add Expense"}
 						</Text>
+						{!editingExpenseId && activeExpenseShortcuts.length > 0 ? (
+							<View style={styles.fieldSection}>
+								<Text style={styles.inputLabel}>Expense Shortcuts</Text>
+								{quickAddFeedback ? <Text style={styles.bodyMuted}>{quickAddFeedback}</Text> : null}
+								{activeExpenseShortcuts.map((shortcut) => (
+									<Pressable
+										key={shortcut.id}
+										accessibilityLabel={`Add ${shortcut.name}, ${c(expenseShortcutTotal(shortcut))}`}
+										accessibilityRole="button"
+										accessibilityState={{ busy: actionBusy, disabled: actionBusy || !selectedPlan }}
+										disabled={actionBusy || !selectedPlan}
+										onPress={() => void handleQuickAddExpenseShortcut(shortcut)}
+										style={[styles.expenseShortcutChoice, (actionBusy || !selectedPlan) && styles.expenseShortcutChoiceDisabled]}
+										testID={`quick-add-expense-shortcut-${shortcut.id}`}
+									>
+										<View style={styles.expenseShortcutCopy}>
+											<Text style={styles.listTitle}>{shortcut.name}</Text>
+											<Text style={styles.listSubtitle}>
+												{c(expenseShortcutTotal(shortcut))} · {shortcut.category}
+											</Text>
+										</View>
+										<Ionicons color={theme.primary} name="add-circle-outline" size={22} />
+									</Pressable>
+								))}
+							</View>
+						) : quickAddFeedback ? (
+							<Text style={styles.bodyMuted}>{quickAddFeedback}</Text>
+						) : null}
 
 						<View style={styles.fieldSection}>
 							<View style={styles.rowBetween}>
