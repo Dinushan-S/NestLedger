@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 
 type UseRealtimeChannelOptions = {
 	activeProfileId: string | null;
+	online: boolean;
 	refreshProfileData: (profileId: string, force?: boolean) => Promise<void>;
 	seenNotificationIds: { current: Set<string> };
 	sessionUserId: string | undefined;
@@ -26,12 +27,13 @@ const PROFILE_TABLES: { filter?: boolean; table: string }[] = [
 
 export function useRealtimeChannel({
 	activeProfileId,
+	online,
 	refreshProfileData,
 	seenNotificationIds,
 	sessionUserId,
 }: UseRealtimeChannelOptions) {
 	useEffect(() => {
-		if (!sessionUserId || !activeProfileId) {
+		if (!online || !sessionUserId || !activeProfileId) {
 			return;
 		}
 
@@ -87,5 +89,5 @@ export function useRealtimeChannel({
 			subscription.remove();
 			supabase.removeChannel(channel);
 		};
-	}, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
+	}, [activeProfileId, online, refreshProfileData, seenNotificationIds, sessionUserId]);
 }

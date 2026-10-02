@@ -9,6 +9,7 @@ import ModernButton from '@/components/ui/ModernButton';
 import { useTheme } from '@/lib/theme-context';
 import { supabase } from '@/lib/supabase';
 import { authApi } from '@/lib/nestledger';
+import { network } from '@/lib/network';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function ResetPasswordScreen() {
     const acceptRecoveryLink = async (url: string | null) => {
       if (!url) return;
       try {
+        await network.check();
         const query = url.split('?')[1]?.split('#')[0] ?? '';
         const fragment = url.split('#')[1] ?? '';
         const params = new URLSearchParams(`${query}&${fragment}`);

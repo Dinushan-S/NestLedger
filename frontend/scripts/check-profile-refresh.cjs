@@ -13,7 +13,9 @@ const moduleObject = { exports: {} };
 vm.runInNewContext(compiled, {
   exports: moduleObject.exports,
   require(name) {
-    if (name === 'react') return { useCallback: (fn) => fn, useRef: (current) => ({ current }) };
+    if (name === 'react') return { useCallback: (fn) => fn, useRef: (current) => ({ current }), useState: (initial) => [initial, () => {}] };
+    if (name === '../nestledger.constants') return { extractError: (error) => error instanceof Error ? error.message : String(error) };
+    if (name === '@/lib/offline') return { getCached: async () => undefined };
     if (name === '@/lib/nestledger') return {
       billApi: { fetchTrackers: empty, fetchRecurringBills: empty, fetchPayments: empty },
       budgetApi: { fetchPlans: empty },
@@ -47,7 +49,7 @@ const { refreshProfileData } = moduleObject.exports.useProfileDataController({
 refreshProfileData('profile', true)
   .then(() => {
     assert.equal(loadedExpenses?.[0]?.id, rows[0].id);
-    assert.equal(reportedError, undefined);
+    assert.equal(reportedError, null);
     console.log('Existing expenses load when shortcut table is missing');
   })
   .catch((error) => { console.error(error.message); process.exitCode = 1; });

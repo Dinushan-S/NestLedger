@@ -10,7 +10,8 @@
     "lint": "node ./node_modules/eslint/bin/eslint.js .",
     "typecheck": "tsc --noEmit",
     "test:theme": "node scripts/check-theme.cjs",
-    "test:dates": "node scripts/check-dates.cjs"
+    "test:dates": "node scripts/check-dates.cjs",
+    "test:offline": "node scripts/check-offline.cjs"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",

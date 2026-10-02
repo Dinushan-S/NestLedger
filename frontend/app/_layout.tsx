@@ -3,10 +3,14 @@ import 'react-native-url-polyfill/auto';
 
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeProvider, useTheme } from '@/lib/theme-context';
+
+// Offline auth refresh failures are expected and handled; the auth client logs them.
+LogBox.ignoreLogs(['Offline. Your saved expenses will sync when connected.']);
 
 function ThemedNavigation() {
   const { isDark, theme } = useTheme();

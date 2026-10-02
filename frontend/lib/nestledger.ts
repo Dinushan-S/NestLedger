@@ -2,7 +2,10 @@ import { Session, User } from "@supabase/supabase-js";
 
 import type { ParsedReceipt } from "../components/nestledger/receiptParser";
 import { appConfig } from "./config";
-import { supabase } from "./supabase";
+import { expenseWidget, expenseWidgetStorage } from "./expenseWidget";
+import { readStoredSession, supabase } from "./supabase";
+import { network, networkFetch } from "./network";
+import { offlineExpenses, withCache } from "./offline";
 
 export type UserProfile = {
 	avatar_emoji: string | null;
@@ -221,7 +224,7 @@ const callBackend = async <T>(
 	accessToken: string,
 	body?: Record<string, unknown>,
 ) => {
-	const response = await fetch(`${backendUrl}${path}`, {
+	const response = await networkFetch(`${backendUrl}${path}`, {
 		body: body ? JSON.stringify(body) : null,
 		headers: {
 			Authorization: `Bearer ${accessToken}`,
@@ -300,33 +303,51 @@ const savingsEntryCrud = tableCrud<SavingsEntry>("savings");
 
 export const authApi = {
 	async getSession() {
+		const stored = await readStoredSession();
+		if (stored || !network.isOnline()) return stored;
 		const { data, error } = await supabase.auth.getSession();
 		if (error) throw error;
 		return data.session;
 	},
 	async signIn(payload: AuthPayload) {
+		await network.check();
 		const { data, error } = await supabase.auth.signInWithPassword(payload);
 		if (error) throw error;
 		return data.session;
 	},
 	async signOut() {
+		try {
+			const { data } = await supabase.auth.getSession();
+			const token = await expenseWidget.token();
+			if (token && data.session?.access_token) {
+				await expenseWidget.revokeSession(token, data.session.access_token);
+			}
+		} catch {
+			// Offline sign-out still clears the device credential; the server session expires.
+		}
+		await expenseWidget.clear().catch(() => undefined);
+		await expenseWidgetStorage.clearOwner().catch(() => undefined);
 		const { error } = await supabase.auth.signOut();
 		if (error) throw error;
 	},
 	async signUp(payload: AuthPayload) {
+		await network.check();
 		const { data, error } = await supabase.auth.signUp(payload);
 		if (error) throw error;
 		return data;
 	},
 	async resetPasswordForEmail(email: string) {
+		await network.check();
 		const { error } = await supabase.auth.resetPasswordForEmail(email);
 		if (error) throw error;
 	},
 	async verifyRecoveryCode(email: string, token: string) {
+		await network.check();
 		const { error } = await supabase.auth.verifyOtp({ email, token, type: "recovery" });
 		if (error) throw error;
 	},
 	async updatePassword(password: string) {
+		await network.check();
 		const { error } = await supabase.auth.updateUser({ password });
 		if (error) throw error;
 	},
@@ -508,151 +529,7 @@ export const budgetApi = {
 	},
 };
 
-type ExpenseInput = Omit<Expense, "created_at" | "id" | "price"> & {
-	items: Omit<ExpenseItem, "created_at" | "expense_id" | "id">[];
-};
-
-export const expenseApi = {
-	/**
-	 * Inserts the expense and its items. `columns` lets the caller ask for only
-	 * what it will read back: "*" for the full row, "id" when it just needs the
-	 * new id to attach something to.
-	 */
-	async addExpense(input: ExpenseInput, columns = "*") {
-		const totalPrice = input.items.reduce((sum, item) => sum + item.price, 0);
-		const { items, description, ...expenseData } = input;
-
-		// Only add description if it has a value.
-		const expensePayload: Record<string, unknown> = {
-			...expenseData,
-			price: totalPrice,
-			created_at: nowIso(),
-		};
-		if (description && description.trim()) {
-			expensePayload.description = description.trim();
-		}
-
-		const { data, error: expenseError } = await supabase
-			.from("expenses")
-			.insert(expensePayload)
-			.select(columns)
-			.single();
-
-		if (expenseError) throw expenseError;
-		// A dynamic select() defeats the generated row type, so narrow it back.
-		const expense = data as unknown as { id: string } & Partial<Expense>;
-
-		if (items.length > 0) {
-			const itemsPayload = items.map((item) => ({
-				...item,
-				expense_id: expense.id,
-				created_at: nowIso(),
-			}));
-
-			const { error: itemsError } = await supabase
-				.from("expense_items")
-				.insert(itemsPayload);
-
-			if (itemsError) throw itemsError;
-		}
-
-		return { ...expense, items } as ExpenseWithItems;
-	},
-	async updateExpense(
-		expenseId: string,
-		updates: Partial<
-			Pick<Expense, "category" | "date" | "description" | "paid_by">
-		>,
-		items?: Omit<ExpenseItem, "created_at" | "expense_id" | "id">[],
-	) {
-		if (items) {
-			const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
-			// The expense update and the old-items delete touch different tables,
-			// so they can share one network round trip.
-			const [{ error: expenseError }, { error: deleteError }] =
-				await Promise.all([
-					supabase
-						.from("expenses")
-						.update({ ...updates, price: totalPrice })
-						.eq("id", expenseId),
-					supabase.from("expense_items").delete().eq("expense_id", expenseId),
-				]);
-
-			if (expenseError) throw expenseError;
-			if (deleteError) throw deleteError;
-
-			// Insert new items
-			if (items.length > 0) {
-				const itemsPayload = items.map((item) => ({
-					...item,
-					expense_id: expenseId,
-					created_at: nowIso(),
-				}));
-				const { error: insertError } = await supabase
-					.from("expense_items")
-					.insert(itemsPayload);
-
-				if (insertError) throw insertError;
-			}
-		} else {
-			const { error } = await supabase
-				.from("expenses")
-				.update(updates)
-				.eq("id", expenseId);
-
-			if (error) throw error;
-		}
-	},
-	async deleteExpense(expenseId: string) {
-		// Check if user is authenticated
-		const {
-			data: { session },
-		} = await supabase.auth.getSession();
-		if (!session) {
-			throw new Error("You must be logged in to delete expenses.");
-		}
-
-		const { data, error } = await supabase
-			.from("expenses")
-			.delete()
-			.eq("id", expenseId)
-			.select("id, profile_id");
-
-		if (error) throw new Error(error.message || "Failed to delete expense");
-
-		// RLS can block delete without returning error - check if row was actually deleted
-		if (!data || data.length === 0) {
-			throw new Error(
-				"Unable to delete expense. You may not have permission to delete this expense.",
-			);
-		}
-	},
-	async clearPlanExpenses(planId: string) {
-		const {
-			data: { session },
-		} = await supabase.auth.getSession();
-		if (!session) {
-			throw new Error("You must be logged in to reset expenses.");
-		}
-
-		const { error } = await supabase
-			.from("expenses")
-			.delete()
-			.eq("plan_id", planId);
-
-		if (error) throw error;
-	},
-	async fetchProfileExpenses(profileId: string) {
-		const { data, error } = await supabase
-			.from("expenses")
-			.select("*, items:expense_items(*)")
-			.eq("profile_id", profileId)
-			.order("date", { ascending: false });
-
-		if (error) throw error;
-		return (data ?? []) as ExpenseWithItems[];
-	},
-};
+export const expenseApi = offlineExpenses;
 
 export const shoppingApi = {
 	async addItem(
@@ -942,3 +819,17 @@ export const savingsApi = {
 
 export const validateSession = (session: Session | null) =>
 	requireValue(session, "Please sign in again to continue.");
+
+// Account-scoped snapshots let every existing screen read its last loaded data offline.
+profileApi.fetchUserProfile = withCache('user-profile', profileApi.fetchUserProfile, null);
+profileApi.fetchAccessibleProfiles = withCache('profiles', profileApi.fetchAccessibleProfiles, []);
+profileApi.fetchMembers = withCache('members', profileApi.fetchMembers, []);
+budgetApi.fetchPlans = withCache('plans', budgetApi.fetchPlans, []);
+shoppingApi.fetchItems = withCache('shopping', shoppingApi.fetchItems, []);
+notificationApi.fetchForUser = withCache('notifications', notificationApi.fetchForUser, []);
+billApi.fetchTrackers = withCache('bill-trackers', billApi.fetchTrackers, []);
+billApi.fetchRecurringBills = withCache('bills', billApi.fetchRecurringBills, []);
+billApi.fetchPayments = withCache('payments', billApi.fetchPayments, []);
+savingsApi.fetchTrackers = withCache('savings-trackers', savingsApi.fetchTrackers, []);
+savingsApi.fetchSavings = withCache('savings', savingsApi.fetchSavings, []);
+expenseShortcutApi.fetch = withCache('shortcuts', expenseShortcutApi.fetch, []);

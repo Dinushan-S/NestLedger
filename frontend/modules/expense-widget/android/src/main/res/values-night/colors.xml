@@ -1,0 +1,7 @@
+<resources>
+  <color name="expense_widget_background">@color/expense_widget_background_dark</color>
+  <color name="expense_widget_row">@color/expense_widget_row_dark</color>
+  <color name="expense_widget_text">@color/expense_widget_text_dark</color>
+  <color name="expense_widget_muted">@color/expense_widget_muted_dark</color>
+  <color name="expense_widget_press">@color/expense_widget_press_dark</color>
+</resources>

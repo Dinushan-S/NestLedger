@@ -11,6 +11,7 @@ import {
 import { useColorScheme } from 'react-native';
 
 import { theme as lightTheme, darkTheme } from '@/constants/nestledger';
+import { expenseWidget } from './expenseWidget';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type AppTheme = typeof lightTheme;
@@ -60,6 +61,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     (themeMode === 'system' && systemScheme === 'dark');
 
   const theme = isDark ? darkTheme : lightTheme;
+
+  useEffect(() => {
+    void expenseWidget.setTheme(themeMode).catch(() => undefined);
+  }, [themeMode, systemScheme]);
 
   return (
     <ThemeContext.Provider value={{ theme, isDark, themeMode, setThemeMode }}>

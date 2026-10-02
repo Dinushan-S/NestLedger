@@ -1,0 +1,17 @@
+<resources>
+  <color name="expense_widget_background_light">#F6F5F2</color>
+  <color name="expense_widget_background_dark">#1E2220</color>
+  <color name="expense_widget_row_light">#E5EFE9</color>
+  <color name="expense_widget_row_dark">#243530</color>
+  <color name="expense_widget_text_light">#2D312F</color>
+  <color name="expense_widget_text_dark">#EBE9E4</color>
+  <color name="expense_widget_muted_light">#6E7370</color>
+  <color name="expense_widget_muted_dark">#A5ADA7</color>
+  <color name="expense_widget_press_light">#405D7B6F</color>
+  <color name="expense_widget_press_dark">#607BA898</color>
+  <color name="expense_widget_background">@color/expense_widget_background_light</color>
+  <color name="expense_widget_row">@color/expense_widget_row_light</color>
+  <color name="expense_widget_text">@color/expense_widget_text_light</color>
+  <color name="expense_widget_muted">@color/expense_widget_muted_light</color>
+  <color name="expense_widget_press">@color/expense_widget_press_light</color>
+</resources>
