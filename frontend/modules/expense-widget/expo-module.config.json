@@ -1,0 +1,9 @@
+{
+  "platforms": ["android", "ios"],
+  "android": {
+    "modules": ["com.nestledger.expensewidget.ExpenseWidgetModule"]
+  },
+  "ios": {
+    "modules": ["ExpenseWidgetModule"]
+  }
+}

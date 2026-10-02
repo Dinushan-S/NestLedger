@@ -1,4 +1,5 @@
-import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
+import { Dispatch, SetStateAction, useCallback, useRef, useState } from 'react';
+import { extractError } from '../nestledger.constants';
 
 import {
   BillPayment,
@@ -23,7 +24,7 @@ import {
 } from '@/lib/nestledger';
 
 type UseProfileDataControllerOptions = {
-  onError: (message: string) => void;
+  onError: (message: string | null) => void;
   selectedPlanId: string | null;
   sessionUserId: string | undefined;
   setBillPayments: Dispatch<SetStateAction<BillPayment[]>>;
@@ -58,7 +59,9 @@ export function useProfileDataController({
   setShoppingItems,
 }: UseProfileDataControllerOptions) {
   const seenNotificationIds = useRef<Set<string>>(new Set());
+  const [widgetDataReadyProfileId, setWidgetDataReadyProfileId] = useState<string | null>(null);
   const lastRefreshRef = useRef(0);
+  const lastProfileIdRef = useRef<string | null>(null);
   const latestRequest = useRef(0);
 
   // Latest prop values, readable from a callback that must never change identity.
@@ -82,9 +85,26 @@ export function useProfileDataController({
       }
 
       const now = Date.now();
-      if (!force && now - lastRefreshRef.current < 1000) {
+      if (!force && lastProfileIdRef.current === profileId && now - lastRefreshRef.current < 1000) {
         return;
       }
+      if (lastProfileIdRef.current !== profileId) {
+        setWidgetDataReadyProfileId(null);
+        setMembers([]);
+        setPlans([]);
+        setProfileExpenses([]);
+        setShoppingItems([]);
+        setNotifications([]);
+        setBillTrackers([]);
+        setSavingsTrackers([]);
+        setRecurringBills([]);
+        setBillPayments([]);
+        setSavings([]);
+        setExpenseShortcuts([]);
+        setSelectedPlanId(null);
+        seenNotificationIds.current.clear();
+      }
+      lastProfileIdRef.current = profileId;
       lastRefreshRef.current = now;
       const request = ++latestRequest.current;
 
@@ -100,7 +120,7 @@ export function useProfileDataController({
           nextBills,
           nextPayments,
           nextSavings,
-        ] = await Promise.all([
+        ] = await Promise.allSettled([
           profileApi.fetchMembers(profileId),
           budgetApi.fetchPlans(profileId),
           expenseApi.fetchProfileExpenses(profileId),
@@ -116,38 +136,51 @@ export function useProfileDataController({
         // Drop the response if the user changed identity or a newer refresh won.
         if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
 
-        setMembers(nextMembers);
-        setPlans(nextPlans);
-        setProfileExpenses(nextExpenses);
-        setShoppingItems(nextShopping);
-        setNotifications(nextNotifications);
-        setBillTrackers(nextBillTrackers);
-        setSavingsTrackers(nextSavingsTrackers);
-        setRecurringBills(nextBills);
-        setBillPayments(nextPayments);
-        setSavings(nextSavings);
-        nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
+        if (nextMembers.status === 'fulfilled') setMembers(nextMembers.value);
+        if (nextPlans.status === 'fulfilled') setPlans(nextPlans.value);
+        if (nextExpenses.status === 'fulfilled') setProfileExpenses(nextExpenses.value);
+        if (nextShopping.status === 'fulfilled') setShoppingItems(nextShopping.value);
+        if (nextNotifications.status === 'fulfilled') {
+          setNotifications(nextNotifications.value);
+          nextNotifications.value.forEach((item) => seenNotificationIds.current.add(item.id));
+        }
+        if (nextBillTrackers.status === 'fulfilled') setBillTrackers(nextBillTrackers.value);
+        if (nextSavingsTrackers.status === 'fulfilled') setSavingsTrackers(nextSavingsTrackers.value);
+        if (nextBills.status === 'fulfilled') setRecurringBills(nextBills.value);
+        if (nextPayments.status === 'fulfilled') setBillPayments(nextPayments.value);
+        if (nextSavings.status === 'fulfilled') setSavings(nextSavings.value);
 
         const activePlanId = selectedPlanIdRef.current;
-        if (activePlanId && !nextPlans.some((plan) => plan.id === activePlanId)) {
+        if (nextPlans.status === 'fulfilled' && activePlanId && !nextPlans.value.some((plan) => plan.id === activePlanId)) {
           setSelectedPlanId(null);
         }
+
+        const results = [nextMembers, nextPlans, nextExpenses, nextShopping, nextNotifications,
+          nextBillTrackers, nextSavingsTrackers, nextBills, nextPayments, nextSavings];
+        const names = ['Members', 'Budgets', 'Expenses', 'Shopping', 'Notifications',
+          'Bill trackers', 'Savings trackers', 'Bills', 'Payments', 'Savings'];
+        const failed = results.flatMap((result, index) =>
+          result.status === 'rejected' ? [`${names[index]}: ${extractError(result.reason)}`] : []);
+        onErrorRef.current(failed.length ? failed.join('\n') : null);
 
         try {
           const nextExpenseShortcuts = await expenseShortcutApi.fetch(profileId);
           if (sessionUserIdRef.current === userId && request === latestRequest.current) {
             setExpenseShortcuts(nextExpenseShortcuts);
+            if (nextPlans.status === 'fulfilled') setWidgetDataReadyProfileId(profileId);
           }
         } catch (error) {
           if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
           setExpenseShortcuts([]);
           if ((error as { code?: string }).code !== 'PGRST205') {
-            onErrorRef.current(error instanceof Error ? error.message : 'Something went wrong.');
+            failed.push(`Expense shortcuts: ${extractError(error)}`);
+            onErrorRef.current(failed.join('\n'));
           }
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Something went wrong.';
-        onErrorRef.current(message);
+        if (sessionUserIdRef.current === userId && request === latestRequest.current) {
+          onErrorRef.current(extractError(error));
+        }
       }
     },
     // Intentionally empty. Every prop this reads goes through a ref above, and
@@ -162,5 +195,6 @@ export function useProfileDataController({
   return {
     refreshProfileData,
     seenNotificationIds,
+    widgetDataReadyProfileId,
   };
 }
