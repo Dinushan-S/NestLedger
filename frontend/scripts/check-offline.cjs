@@ -66,6 +66,11 @@ function load(relative) {
       } };
       if (name.endsWith('/supabase') || name === './supabase') return { supabase, readStoredSession: async () => session };
       if (name === './config') return { appConfig: { supabaseUrl: 'https://database.test', supabaseAnonKey: 'test' } };
+      if (name === './expenseWidget' || name === '@/lib/expenseWidget') return {
+        expenseWidget: { token: async () => null, clear: async () => {}, revokeSession: async () => {} },
+        expenseWidgetStorage: { clearOwner: async () => {} },
+      };
+      if (name === 'expo') return { isRunningInExpoGo: () => true, requireOptionalNativeModule: () => null };
       if (name === '@/lib/config') return { isConfigReady: true };
       if (name === 'react') return hookReact ?? {
         useCallback: (fn) => fn, useRef: (current) => ({ current }), useEffect: (fn) => effects.push(fn),

@@ -2,6 +2,7 @@ import { Session, User } from "@supabase/supabase-js";
 
 import type { ParsedReceipt } from "../components/nestledger/receiptParser";
 import { appConfig } from "./config";
+import { expenseWidget, expenseWidgetStorage } from "./expenseWidget";
 import { readStoredSession, supabase } from "./supabase";
 import { network, networkFetch } from "./network";
 import { offlineExpenses, withCache } from "./offline";
@@ -315,6 +316,17 @@ export const authApi = {
 		return data.session;
 	},
 	async signOut() {
+		try {
+			const { data } = await supabase.auth.getSession();
+			const token = await expenseWidget.token();
+			if (token && data.session?.access_token) {
+				await expenseWidget.revokeSession(token, data.session.access_token);
+			}
+		} catch {
+			// Offline sign-out still clears the device credential; the server session expires.
+		}
+		await expenseWidget.clear().catch(() => undefined);
+		await expenseWidgetStorage.clearOwner().catch(() => undefined);
 		const { error } = await supabase.auth.signOut();
 		if (error) throw error;
 	},

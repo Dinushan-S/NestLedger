@@ -72,6 +72,8 @@ import {
 	validateSession,
 } from "../../lib/nestledger";
 import { isConfigReady } from "../../lib/config";
+import { expenseWidget, expenseWidgetStorage } from "../../lib/expenseWidget";
+import { supabase } from "../../lib/supabase";
 import * as Notifications from "../../lib/notifications";
 import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
@@ -89,6 +91,7 @@ import {
 } from "./forms/ProfileFormControls";
 import { useNestLedgerBootstrap } from "./hooks/useNestLedgerBootstrap";
 import { useProfileDataController } from "./hooks/useProfileDataController";
+import { useExpenseWidgetSetup } from "./hooks/useExpenseWidgetSetup";
 import { useRealtimeChannel } from "./hooks/useRealtimeChannel";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import { network } from "../../lib/network";
@@ -405,7 +408,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setSavings([]);
 	}, []);
 
-	const { refreshProfileData, seenNotificationIds } = useProfileDataController({
+	const { refreshProfileData, seenNotificationIds, widgetDataReadyProfileId } = useProfileDataController({
 		onError: setSetupMessage,
 		selectedPlanId,
 		sessionUserId,
@@ -452,6 +455,14 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		() => plans.find((plan) => plan.id === selectedPlanId) ?? null,
 		[plans, selectedPlanId],
 	);
+	useExpenseWidgetSetup({
+		userId: sessionUserId,
+		profileId: activeProfileId,
+		dataReadyProfileId: widgetDataReadyProfileId,
+		plans,
+		shortcuts: activeExpenseShortcuts,
+		currency: userCurrency,
+	});
 	const selectedPlanAnchorDay = useMemo(
 		() => (selectedPlan ? parseDateOnly(selectedPlan.start_date).getDate() : 1),
 		[selectedPlan],
@@ -620,6 +631,16 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 		refreshProfileData(activeProfileId);
 	}, [activeProfileId, refreshProfileData, seenNotificationIds, sessionUserId]);
+
+	useEffect(() => {
+		const subscription = supabase.auth.onAuthStateChange((event) => {
+			if (event === "SIGNED_OUT") {
+				void expenseWidget.clear().catch(() => undefined)
+					.then(() => expenseWidgetStorage.clearOwner().catch(() => undefined));
+			}
+		});
+		return () => subscription.data.subscription.unsubscribe();
+	}, []);
 
 	// Load contribution-enabled preference per profile
 	useEffect(() => {

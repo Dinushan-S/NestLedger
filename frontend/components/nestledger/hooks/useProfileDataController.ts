@@ -1,4 +1,5 @@
-import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
+import { Dispatch, SetStateAction, useCallback, useRef, useState } from 'react';
+import { extractError } from '../nestledger.constants';
 import { getCached } from '@/lib/offline';
 
 import {
@@ -59,6 +60,7 @@ export function useProfileDataController({
   setShoppingItems,
 }: UseProfileDataControllerOptions) {
   const seenNotificationIds = useRef<Set<string>>(new Set());
+  const [widgetDataReadyProfileId, setWidgetDataReadyProfileId] = useState<string | null>(null);
   const lastRefreshRef = useRef(0);
   const lastProfileIdRef = useRef<string | null>(null);
   const latestRequest = useRef(0);
@@ -87,8 +89,24 @@ export function useProfileDataController({
       if (!force && lastProfileIdRef.current === profileId && now - lastRefreshRef.current < 1000) {
         return;
       }
-      lastRefreshRef.current = now;
+      if (lastProfileIdRef.current !== profileId) {
+        setWidgetDataReadyProfileId(null);
+        setMembers([]);
+        setPlans([]);
+        setProfileExpenses([]);
+        setShoppingItems([]);
+        setNotifications([]);
+        setBillTrackers([]);
+        setSavingsTrackers([]);
+        setRecurringBills([]);
+        setBillPayments([]);
+        setSavings([]);
+        setExpenseShortcuts([]);
+        setSelectedPlanId(null);
+        seenNotificationIds.current.clear();
+      }
       lastProfileIdRef.current = profileId;
+      lastRefreshRef.current = now;
       const request = ++latestRequest.current;
 
       try {
@@ -159,18 +177,20 @@ export function useProfileDataController({
         const names = ['Members', 'Budgets', 'Expenses', 'Shopping', 'Notifications',
           'Bill trackers', 'Savings trackers', 'Bills', 'Payments', 'Savings'];
         const errors = results.flatMap((result, index) => result.status === 'rejected'
-          ? [`${names[index]}: ${(result.reason as { message?: string }).message ?? 'Could not load data.'}`] : []);
+          ? [`${names[index]}: ${extractError(result.reason)}`] : []);
         onErrorRef.current(errors.length ? errors.join('\n') : null);
         try {
           const nextExpenseShortcuts = await expenseShortcutApi.fetch(profileId);
           if (sessionUserIdRef.current === userId && request === latestRequest.current) {
             setExpenseShortcuts(nextExpenseShortcuts);
+            if (nextPlans.status === 'fulfilled') setWidgetDataReadyProfileId(profileId);
           }
         } catch (error) {
           if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
           setExpenseShortcuts([]);
           if ((error as { code?: string }).code !== 'PGRST205') {
-            onErrorRef.current(error instanceof Error ? error.message : 'Something went wrong.');
+            errors.push(`Expense shortcuts: ${extractError(error)}`);
+            onErrorRef.current(errors.join('\n'));
           }
         }
       } catch (error) {
@@ -191,5 +211,6 @@ export function useProfileDataController({
   return {
     refreshProfileData,
     seenNotificationIds,
+    widgetDataReadyProfileId,
   };
 }

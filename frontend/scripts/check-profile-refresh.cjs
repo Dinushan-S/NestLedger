@@ -13,7 +13,8 @@ const moduleObject = { exports: {} };
 vm.runInNewContext(compiled, {
   exports: moduleObject.exports,
   require(name) {
-    if (name === 'react') return { useCallback: (fn) => fn, useRef: (current) => ({ current }) };
+    if (name === 'react') return { useCallback: (fn) => fn, useRef: (current) => ({ current }), useState: (initial) => [initial, () => {}] };
+    if (name === '../nestledger.constants') return { extractError: (error) => error instanceof Error ? error.message : String(error) };
     if (name === '@/lib/offline') return { getCached: async () => undefined };
     if (name === '@/lib/nestledger') return {
       billApi: { fetchTrackers: empty, fetchRecurringBills: empty, fetchPayments: empty },
