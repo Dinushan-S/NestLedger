@@ -90,6 +90,30 @@ const steps: OnboardingStep[] = [
     title: 'Keep the home shopping list live for every member.',
   },
   {
+    body: 'From Profile, save an expense you repeat — groceries, transport, milk — as a shortcut, then log it again in seconds any day you need it.',
+    cards: [
+      { body: 'Pick a past expense in Profile and save it as a named shortcut.', icon: 'bookmark-outline', title: 'Save once' },
+      { body: 'Tap the shortcut in Add Expense and the items fill in for you.', icon: 'flash-outline', title: 'One-tap add' },
+      { body: 'Keep shortcuts one tap away on your home screen without opening the app.', icon: 'phone-portrait-outline', title: 'Home screen widget' },
+    ],
+    highlight: 'Shortcuts work offline too, so you can log the repeat buy without internet.',
+    icon: 'speedometer-outline',
+    kicker: 'Expense Shortcuts',
+    title: 'Log repeated expenses with a single tap.',
+  },
+  {
+    body: 'After you sign in once and open your home space, expenses keep working without internet. Add, edit, or delete an expense and it is saved on your phone, then syncs when you reconnect.',
+    cards: [
+      { body: 'Add or edit expenses with no internet; they store safely on your device.', icon: 'cloud-offline-outline', title: 'Offline saves' },
+      { body: 'When you are back online, queued changes upload automatically.', icon: 'cloud-upload-outline', title: 'Automatically sync' },
+      { body: 'Offline entries count in totals immediately and survive closing the app.', icon: 'pulse-outline', title: 'Always counted' },
+    ],
+    highlight: 'Expenses and shortcuts work offline; receipt scanning and shared updates still need internet.',
+    icon: 'cloud-offline-outline',
+    kicker: 'Works Offline',
+    title: 'Keep tracking expenses even when the internet is out.',
+  },
+  {
     body: 'From Profile, you can invite another person by email or by shareable link. Once they sign in and accept, they join the same home space.',
     cards: [
       { body: 'Send an invite email or copy a link from the Invite action in Profile.', icon: 'mail-open-outline', title: 'Invite' },
