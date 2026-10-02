@@ -1374,9 +1374,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				profile_id: activeProfile.id,
 				used_by: expense.used_by,
 			});
-			setExpenseShortcuts((current) => [created, ...current]);
-			await refreshProfileData(activeProfile.id, true);
-			return true;
+		setExpenseShortcuts((current) => [created, ...current]);
+		void refreshProfileData(activeProfile.id, true);
+		return true;
 		} catch (error) {
 			announce((error as { code?: string }).code === "PGRST205"
 				? "Expense Shortcuts are not available yet. Please try again later."
@@ -1396,7 +1396,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				runAction(async () => {
 					await expenseShortcutApi.delete(shortcut.id);
 					setExpenseShortcuts((current) => current.filter((item) => item.id !== shortcut.id));
-					if (activeProfileId) await refreshProfileData(activeProfileId, true);
+					if (activeProfileId) void refreshProfileData(activeProfileId, true);
 				});
 			},
 			title: "Delete expense shortcut",

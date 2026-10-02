@@ -89,7 +89,8 @@ export function useProfileDataController({
       if (!force && lastProfileIdRef.current === profileId && now - lastRefreshRef.current < 1000) {
         return;
       }
-      if (lastProfileIdRef.current !== profileId) {
+      const firstRefreshForProfile = lastProfileIdRef.current !== profileId;
+      if (firstRefreshForProfile) {
         setWidgetDataReadyProfileId(null);
         setMembers([]);
         setPlans([]);
@@ -110,24 +111,28 @@ export function useProfileDataController({
       const request = ++latestRequest.current;
 
       try {
-        const restore = async <T,>(name: string, setter: Dispatch<SetStateAction<T>>, fallback: NoInfer<T>) => {
-          const value = await getCached<T>(name);
-          if (sessionUserIdRef.current === userId && request === latestRequest.current) setter(value ?? fallback);
-        };
-        await Promise.all([
-          restore(`members:${profileId}`, setMembers, []),
-          restore(`plans:${profileId}`, setPlans, []),
-          restore(`expenses:${profileId}`, setProfileExpenses, []),
-          restore(`shopping:${profileId}`, setShoppingItems, []),
-          restore(`notifications:${profileId}:${userId}`, setNotifications, []),
-          restore(`bill-trackers:${profileId}`, setBillTrackers, []),
-          restore(`savings-trackers:${profileId}`, setSavingsTrackers, []),
-          restore(`bills:${profileId}`, setRecurringBills, []),
-          restore(`payments:${profileId}`, setBillPayments, []),
-          restore(`savings:${profileId}`, setSavings, []),
-          restore(`shortcuts:${profileId}`, setExpenseShortcuts, []),
-        ]);
-        if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
+        // Restore-from-cache only seeds the first load of a profile; re-seeding on
+        // later refreshes would flash stale snapshots over fresher local state.
+        if (firstRefreshForProfile) {
+          const restore = async <T,>(name: string, setter: Dispatch<SetStateAction<T>>, fallback: NoInfer<T>) => {
+            const value = await getCached<T>(name);
+            if (sessionUserIdRef.current === userId && request === latestRequest.current) setter(value ?? fallback);
+          };
+          await Promise.all([
+            restore(`members:${profileId}`, setMembers, []),
+            restore(`plans:${profileId}`, setPlans, []),
+            restore(`expenses:${profileId}`, setProfileExpenses, []),
+            restore(`shopping:${profileId}`, setShoppingItems, []),
+            restore(`notifications:${profileId}:${userId}`, setNotifications, []),
+            restore(`bill-trackers:${profileId}`, setBillTrackers, []),
+            restore(`savings-trackers:${profileId}`, setSavingsTrackers, []),
+            restore(`bills:${profileId}`, setRecurringBills, []),
+            restore(`payments:${profileId}`, setBillPayments, []),
+            restore(`savings:${profileId}`, setSavings, []),
+            restore(`shortcuts:${profileId}`, setExpenseShortcuts, []),
+          ]);
+          if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
+        }
         const [
           nextMembers,
           nextPlans,
