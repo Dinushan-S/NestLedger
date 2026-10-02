@@ -2546,22 +2546,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</Pressable>
 						</View>
 
-						{!offline.online || offline.pending > 0 || offline.error ? (
-							<View style={styles.inlineBanner} accessibilityLiveRegion="polite" testID="offline-status">
-								<Text style={styles.inlineBannerText}>
-									{offline.error
-										? `${offline.pending} saved changes need attention: ${offline.error}`
-										: offline.online
-											? `${offline.pending} saved changes ${offline.syncing ? 'syncing' : 'waiting to sync'}…`
-											: `Offline · ${offline.pending ? `${offline.pending} saved changes will sync when connected.` : 'Expenses save on this device.'}`}
-								</Text>
-								{offline.error && offline.online ? (
-									<Pressable accessibilityRole="button" accessibilityLabel="Retry syncing saved expenses" onPress={() => { void offline.retry(); }}>
-										<Text style={styles.linkText}>Retry</Text>
-									</Pressable>
-								) : null}
-							</View>
-						) : null}
 						{busy ? (
 							<View style={styles.loaderWrap}>
 								<ActivityIndicator color={theme.primary} size="large" />
@@ -4773,6 +4757,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						title="Notifications"
 						visible={showNotifications}
 					>
+						{!offline.online || offline.pending > 0 || offline.error ? (
+							<View style={styles.inlineBanner} accessibilityLiveRegion="polite" testID="offline-status">
+								<Text style={styles.inlineBannerText}>
+									{offline.error
+										? `${offline.pending} saved changes need attention: ${offline.error}`
+										: offline.online
+											? `${offline.pending} saved changes ${offline.syncing ? 'syncing' : 'waiting to sync'}…`
+											: `Offline · ${offline.pending ? `${offline.pending} saved changes will sync when connected.` : 'Expenses save on this device.'}`}
+								</Text>
+								{offline.error && offline.online ? (
+									<Pressable accessibilityRole="button" accessibilityLabel="Retry syncing saved expenses" onPress={() => { void offline.retry(); }}>
+										<Text style={styles.linkText}>Retry</Text>
+									</Pressable>
+								) : null}
+							</View>
+						) : null}
 						{notifications.length > 0 ? (
 							notifications.map((item) => (
 								<Pressable
