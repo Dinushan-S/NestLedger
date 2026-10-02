@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { network } from '@/lib/network';
 import { offlineStore, syncExpenses } from '@/lib/offline';
-import { supabase } from '@/lib/supabase';
+import { readStoredSession, supabase } from '@/lib/supabase';
 
 export function useOfflineSync(userId: string | undefined, profileId: string | null,
   refresh: (profileId: string, force?: boolean) => Promise<void>) {
@@ -39,9 +39,8 @@ export function useOfflineSync(userId: string | undefined, profileId: string | n
     running.current = true;
     setSyncing(true);
     try {
-      const { data, error: authError } = await supabase.auth.getSession();
-      if (authError) throw authError;
-      if (data.session?.user.id !== userId || current !== generation.current) return;
+      const stored = await readStoredSession();
+      if (stored?.user.id !== userId || current !== generation.current) return;
       await syncExpenses(retryErrors);
       if (profileId && current === generation.current) await refresh(profileId, true);
     } catch (cause) {
