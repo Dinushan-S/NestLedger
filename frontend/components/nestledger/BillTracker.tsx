@@ -22,7 +22,7 @@ import BentoCard from "../ui/BentoCard";
 import CategoryChip from "../ui/CategoryChip";
 import ModernButton from "../ui/ModernButton";
 import StatPill from "../ui/StatPill";
-import { SafeWrap } from "./nestledger.ui";
+import { ModalScaffold } from "../ui/ModalScaffold";
 
 type BillPaymentDraft = Omit<BillPayment, "created_at" | "id" | "name">;
 
@@ -732,23 +732,15 @@ export function BillTracker({
 				</View>
 			</Modal>
 
-			<Modal
-				animationType="slide"
-				onRequestClose={() => {
+			<ModalScaffold
+				visible={showBillDetail}
+				closeTestID="bill-detail-close"
+				onClose={() => {
 					setShowBillDetail(false);
 					setDetailBill(null);
 				}}
-				presentationStyle="pageSheet"
-				visible={showBillDetail}
+				title={detailBill?.name ?? "Bill Details"}
 			>
-				<SafeWrap
-					closeTestID="bill-detail-close"
-					onClose={() => {
-						setShowBillDetail(false);
-						setDetailBill(null);
-					}}
-					title={detailBill?.name ?? "Bill Details"}
-				>
 					{detailBill ? (
 						<>
 							<BentoCard>
@@ -842,8 +834,7 @@ export function BillTracker({
 							)}
 						</>
 					) : null}
-				</SafeWrap>
-			</Modal>
+			</ModalScaffold>
 		</View>
 	);
 }

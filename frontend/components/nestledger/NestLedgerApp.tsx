@@ -24,10 +24,7 @@ import {
 	useWindowDimensions,
 	View,
 } from "react-native";
-import {
-	GestureHandlerRootView,
-	Swipeable,
-} from "react-native-gesture-handler";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
 	useSafeAreaInsets,
 	SafeAreaView,
@@ -51,6 +48,7 @@ import {
 	BillPayment,
 	BillTrackerMeta,
 	BudgetPlan,
+	ExpenseShortcut,
 	ExpenseWithItems,
 	HouseholdProfile,
 	Member,
@@ -63,6 +61,7 @@ import {
 	authApi,
 	billApi,
 	budgetApi,
+	expenseShortcutApi,
 	expenseApi,
 	inviteApi,
 	notificationApi,
@@ -105,7 +104,10 @@ import {
 	filterShoppingItems,
 } from "./selectors";
 import {
+	deriveExpenseSuggestions,
 	deriveRecentExpenseItemSuggestions,
+	expenseShortcutName,
+	expenseShortcutTotal,
 	applyRecentItemSuggestionToExpenseForm,
 	type RecentExpenseItemSuggestion,
 } from "./expenseSuggestions";
@@ -213,6 +215,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		[],
 	);
 	const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
+	const [expenseShortcuts, setExpenseShortcuts] = useState<ExpenseShortcut[]>([]);
 	const [billPayments, setBillPayments] = useState<BillPayment[]>([]);
 	const [savings, setSavings] = useState<SavingsEntry[]>([]);
 
@@ -220,6 +223,8 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	const [showCreateProfile, setShowCreateProfile] = useState(false);
 	const [showBudgetComposer, setShowBudgetComposer] = useState(false);
 	const [showExpenseComposer, setShowExpenseComposer] = useState(false);
+	const [quickAddFeedback, setQuickAddFeedback] = useState<string | null>(null);
+	const quickAddBusy = useRef(false);
 	const [showMoreExpenseCategories, setShowMoreExpenseCategories] = useState(false);
 	const [activeExpenseItemSuggestionIndex, setActiveExpenseItemSuggestionIndex] =
 		useState<number | null>(null);
@@ -390,6 +395,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setBillTrackers([]);
 		setSavingsTrackers([]);
 		setRecurringBills([]);
+		setExpenseShortcuts([]);
 		setSelectedPlanId(null);
 		setPendingDailyReminder(false);
 		setBillPayments([]);
@@ -421,12 +427,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setNotifications,
 		setPlans,
 		setProfileExpenses,
+		setExpenseShortcuts,
 		setRecurringBills,
 		setSavings,
 		setSavingsTrackers,
 		setSelectedPlanId,
 		setShoppingItems,
 	});
+
+	const recentExpenseSuggestions = useMemo(
+		() => deriveExpenseSuggestions(profileExpenses, { limit: Number.MAX_SAFE_INTEGER }),
+		[profileExpenses],
+	);
+	const activeExpenseShortcuts = useMemo(
+		() => expenseShortcuts.filter((shortcut) => shortcut.profile_id === activeProfileId),
+		[activeProfileId, expenseShortcuts],
+	);
 
 	const selectedPlan = useMemo(
 		() => plans.find((plan) => plan.id === selectedPlanId) ?? null,
@@ -789,6 +805,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		if (!pendingDailyReminder || !sessionUserId || !selectedPlan || selectedPlan.profile_id !== activeProfileId) return;
 		setPendingDailyReminder(false);
 		setEditingExpenseId(null);
+		setQuickAddFeedback(null);
 		setExpenseForm({ ...defaultExpenseForm(), date: todayLocalDate() });
 		setShowExpenseComposer(true);
 	}, [pendingDailyReminder, selectedPlan, sessionUserId, activeProfileId]);
@@ -929,18 +946,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			return;
 		}
 
-		if (!profileForm.name.trim() || !profileForm.familyName.trim()) {
-			announce("Add your name and the space name first.");
+		const familyName = profileForm.familyName.trim();
+		if (!familyName) {
+			announce("Add a space name first.");
 			return;
 		}
+
+		// Your name is prefilled from the profile and its field is hidden on the
+		// new-space step, so fall back to the space name instead of dead-ending.
+		const name = profileForm.name.trim() || familyName;
 
 		await runAction(async () => {
 			const profile = await profileApi.createHousehold({
 				avatarEmoji: profileForm.avatarEmoji,
 				currency: profileForm.currency,
 				familyEmoji: profileForm.familyEmoji,
-				familyName: profileForm.familyName,
-				name: profileForm.name,
+				familyName,
+				name,
 				spaceType: (profileForm.spaceType as SpaceType) ?? "personal",
 				user: session.user,
 			});
@@ -1311,6 +1333,49 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		});
 	};
 
+	const handleCreateExpenseShortcut = async (expense: ExpenseWithItems): Promise<boolean> => {
+		if (!session?.user || !activeProfile || actionBusy) return false;
+		setActionBusy(true);
+		try {
+			const created = await expenseShortcutApi.create({
+				category: expense.category,
+				created_by: session.user.id,
+				description: expense.description,
+				items: expense.items.map(({ name, price }) => ({ name, price })),
+				name: expenseShortcutName(expense),
+				paid_by: expense.paid_by,
+				profile_id: activeProfile.id,
+				used_by: expense.used_by,
+			});
+			setExpenseShortcuts((current) => [created, ...current]);
+			await refreshProfileData(activeProfile.id, true);
+			return true;
+		} catch (error) {
+			announce((error as { code?: string }).code === "PGRST205"
+				? "Expense Shortcuts are not available yet. Please try again later."
+				: extractError(error));
+			return false;
+		} finally {
+			setActionBusy(false);
+		}
+	};
+
+	const handleDeleteExpenseShortcut = (shortcut: ExpenseShortcut) => {
+		showConfirm({
+			body: `Remove ${shortcut.name} from your shortcuts?`,
+			confirmText: "Delete",
+			destructive: true,
+			onConfirm: () => {
+				runAction(async () => {
+					await expenseShortcutApi.delete(shortcut.id);
+					setExpenseShortcuts((current) => current.filter((item) => item.id !== shortcut.id));
+					if (activeProfileId) await refreshProfileData(activeProfileId, true);
+				});
+			},
+			title: "Delete expense shortcut",
+		});
+	};
+
 	const handleAddExpense = async () => {
 		if (!session?.user || !activeProfile || !selectedPlan) {
 			return;
@@ -1476,6 +1541,81 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		}
 	};
 
+	const handleQuickAddExpenseShortcut = async (shortcut: ExpenseShortcut) => {
+		if (!session?.user || !activeProfile || !selectedPlan || selectedPlan.profile_id !== activeProfile.id) {
+			announce("Choose a budget plan before adding this expense.");
+			return;
+		}
+		if (quickAddBusy.current || actionBusy) return;
+		const items = shortcut.items
+			.filter((item) => item.name.trim() && Number.isFinite(item.price))
+			.map((item) => ({ name: item.name.trim(), price: item.price }));
+		if (items.length === 0 || items.length !== shortcut.items.length) {
+			announce("This shortcut has invalid items. Delete it from Profile and save it again.");
+			return;
+		}
+
+		quickAddBusy.current = true;
+		setActionBusy(true);
+		setQuickAddFeedback(null);
+		const hasDraft = JSON.stringify(expenseForm) !== JSON.stringify(defaultExpenseForm());
+		const expenseDraft = expenseForm;
+		const now = new Date().toISOString();
+		const tempId = `temp-${now}-${Math.random().toString(36).slice(2)}`;
+		const totalPrice = expenseShortcutTotal({ items });
+		const paidBy = shortcut.paid_by;
+		const usedBy = shortcut.paid_by === null ? shortcut.used_by : null;
+		const expenseInput = {
+			added_by: session.user.id,
+			category: shortcut.category,
+			date: todayLocalDate(),
+			description: shortcut.description,
+			is_borrow: false,
+			items,
+			paid_by: paidBy,
+			plan_id: selectedPlan.id,
+			profile_id: activeProfile.id,
+			used_by: usedBy,
+		};
+		const optimisticExpense: ExpenseWithItems = {
+			...expenseInput,
+			id: tempId,
+			created_at: now,
+			price: totalPrice,
+			items: items.map((item, index) => ({
+				id: `${tempId}-item-${index}`,
+				expense_id: tempId,
+				created_at: now,
+				...item,
+			})),
+		};
+		setProfileExpenses((current) => [optimisticExpense, ...current]);
+
+		try {
+			try {
+				await expenseApi.addExpense(expenseInput);
+			} catch (error) {
+				setProfileExpenses((current) => current.filter((item) => item.id !== tempId));
+				setExpenseForm(expenseDraft);
+				announce(extractError(error));
+				return;
+			}
+			void notifyOtherMembers(
+				`${userProfile?.name ?? "A member"} added ${items.map((item) => item.name).join(", ")} to ${selectedPlan.name}.`,
+				notificationTypes.expense,
+			).catch(() => undefined);
+			await refreshProfileData(activeProfile.id, true);
+			if (hasDraft) {
+				setQuickAddFeedback(`${shortcut.name} was added to expenses. Your draft is still here.`);
+			} else {
+				setShowExpenseComposer(false);
+			}
+		} finally {
+			quickAddBusy.current = false;
+			setActionBusy(false);
+		}
+	};
+
 	const handleReceiptScanConfirm = (receipt: ParsedReceipt) => {
 		if (!selectedPlan) {
 			announce("Choose a budget plan before scanning a bill.");
@@ -1500,6 +1640,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			description: receipt.vendor ? `Receipt · ${receipt.vendor}` : "Scanned receipt",
 			items: itemDrafts.length > 0 ? itemDrafts : [{ name: "", price: "" }],
 		});
+		setQuickAddFeedback(null);
 		setShowReceiptScanner(false);
 		// Let the scanner modal close before showing the normal expense composer.
 		requestAnimationFrame(() => setShowExpenseComposer(true));
@@ -1690,6 +1831,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const startEditExpense = (expense: ExpenseWithItems) => {
 		setEditingExpenseId(expense.id);
+		setQuickAddFeedback(null);
 		const form = {
 			category:
 				expenseCategories.find((c) => c.key === expense.category)?.key ??
@@ -2293,19 +2435,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 									);
 								})}
 							</View>
-							<ModernButton
-								onPress={() => setProfileSetupStep("details")}
-								testID="space-type-next"
-								text="Continue →"
-							/>
-							{!isFirstSetup ? (
+							<View style={styles.setupActionsRow}>
 								<ModernButton
-									onPress={() => setShowCreateProfile(false)}
-									secondary
-									testID="create-profile-cancel"
-									text="Cancel"
+									onPress={() => setProfileSetupStep("details")}
+									style={{ flex: 1 }}
+									testID="space-type-next"
+									text="Continue →"
 								/>
-							) : null}
+								{!isFirstSetup ? (
+									<ModernButton
+										onPress={() => setShowCreateProfile(false)}
+										secondary
+										style={{ flex: 1 }}
+										testID="create-profile-cancel"
+										text="Cancel"
+									/>
+								) : null}
+							</View>
 						</BentoCard>
 					</ScrollView>
 				</SafeAreaView>
@@ -2334,24 +2480,32 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							{SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.emoji}{" "}
 							{SPACE_TYPES.find((s) => s.type === profileForm.spaceType)?.label}
 						</Text>
-						<ProfileFormFields form={profileForm} onChange={setProfileForm} />
+						<ProfileFormFields
+							form={profileForm}
+							onChange={setProfileForm}
+							spaceOnly={!isFirstSetup}
+						/>
 						{setupMessage ? (
 							<Text style={styles.errorText}>{setupMessage}</Text>
 						) : null}
-						<ModernButton
-							loading={actionBusy}
-							onPress={handleCreateProfile}
-							testID="create-profile-submit"
-							text={isFirstSetup ? "Create space" : "Create space"}
-						/>
-						{!isFirstSetup ? (
+						<View style={styles.setupActionsRow}>
 							<ModernButton
-								onPress={() => setShowCreateProfile(false)}
-								secondary
-								testID="create-profile-cancel"
-								text="Cancel"
+								loading={actionBusy}
+								onPress={handleCreateProfile}
+								style={{ flex: 1 }}
+								testID="create-profile-submit"
+								text="Create space"
 							/>
-						) : null}
+							{!isFirstSetup ? (
+								<ModernButton
+									onPress={() => setShowCreateProfile(false)}
+									secondary
+									style={{ flex: 1 }}
+									testID="create-profile-cancel"
+									text="Cancel"
+								/>
+							) : null}
+						</View>
 					</BentoCard>
 				</ScrollView>
 			</SafeAreaView>
@@ -2406,7 +2560,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					<ModernButton
 						onPress={() => {
 							setProfileSetupStep("type");
-							setProfileForm({ ...defaultCreateProfileForm, currency: userProfile?.currency ?? "USD" });
+							setProfileForm({
+								...defaultCreateProfileForm,
+								avatarEmoji: userProfile?.avatar_emoji ?? avatarChoices[0]!,
+								currency: userProfile?.currency ?? "USD",
+								name: userProfile?.name ?? "",
+							});
 							setShowCreateProfile(true);
 						}}
 						secondary
@@ -2596,23 +2755,29 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 									/>
 								) : null}
 
-								{activeTab === "profile" ? (
-									<ProfileTab
-										userProfile={userProfile}
-										profileName={activeProfile.name}
-										reminderBusy={reminderBusy}
-										reminderEnabled={reminderEnabled}
-										reminderTime={reminderTime}
-										onMembers={() => setShowMembers(true)}
-										onInvite={() => setShowInvite(true)}
-										onSettings={primeSettingsForm}
-										onSwitchProfile={() => setShowProfileSwitcher(true)}
-										onToggleReminder={toggleReminder}
-										onReminderTimeChange={setReminderTime}
-										onSaveReminderTime={updateReminderTime}
-										onAndroidKeyboardVisibleChange={setAndroidKeyboardVisible}
-									/>
-								) : null}
+				{activeTab === "profile" ? (
+					<ProfileTab
+						actionBusy={actionBusy}
+						currency={userCurrency}
+						recentExpenses={recentExpenseSuggestions}
+						expenseShortcuts={activeExpenseShortcuts}
+						userProfile={userProfile}
+						profileName={activeProfile.name}
+						reminderBusy={reminderBusy}
+						reminderEnabled={reminderEnabled}
+						reminderTime={reminderTime}
+						onAddExpenseShortcut={handleCreateExpenseShortcut}
+						onDeleteExpenseShortcut={handleDeleteExpenseShortcut}
+						onMembers={() => setShowMembers(true)}
+						onInvite={() => setShowInvite(true)}
+						onSettings={primeSettingsForm}
+						onSwitchProfile={() => setShowProfileSwitcher(true)}
+						onToggleReminder={toggleReminder}
+						onReminderTimeChange={setReminderTime}
+						onSaveReminderTime={updateReminderTime}
+						onAndroidKeyboardVisibleChange={setAndroidKeyboardVisible}
+					/>
+				) : null}
 
 							</ScrollView>
 						)}
@@ -2677,16 +2842,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					onClose={() => setShowAnalyse(false)}
 				/>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => {
-						setShowBudgetComposer(false);
-						setEditingPlanId(null);
-						setBudgetForm(defaultBudgetForm());
-					}}
-					presentationStyle="pageSheet"
-					visible={showBudgetComposer}
-				>
 					<ModalScaffold
 						closeTestID="close-budget-modal"
 						onClose={() => {
@@ -2695,6 +2850,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setBudgetForm(defaultBudgetForm());
 						}}
 						title={editingPlanId ? "Edit Budget Plan" : "Create Budget Plan"}
+						visible={showBudgetComposer}
 					>
 						<LabeledInput
 							label="Plan name"
@@ -2736,17 +2892,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							text={editingPlanId ? "Update plan" : "Save plan"}
 						/>
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => {
-						setShowNewPlanComposer(false);
-						setNewPlanName("");
-					}}
-					presentationStyle="pageSheet"
-					visible={showNewPlanComposer}
-				>
 					<ModalScaffold
 						closeTestID="close-new-plan-modal"
 						onClose={() => {
@@ -2754,6 +2900,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setNewPlanName("");
 						}}
 						title="New plan"
+						visible={showNewPlanComposer}
 					>
 						<View style={styles.segmentRow}>
 							<CategoryChip
@@ -2838,21 +2985,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						)}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => {
-						setEditingBillTrackerId(null);
-						setEditingSavingsTrackerId(null);
-						setEditBillTrackerForm({ name: "" });
-						setEditSavingsTrackerForm({ name: "" });
-					}}
-					presentationStyle="pageSheet"
-					visible={
-						Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)
-					}
-				>
 					<ModalScaffold
 						closeTestID="close-edit-tracker-modal"
 						onClose={() => {
@@ -2862,6 +2995,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							setEditSavingsTrackerForm({ name: "" });
 						}}
 						title="Edit tracker"
+						visible={
+							Boolean(editingBillTrackerId) || Boolean(editingSavingsTrackerId)
+						}
 					>
 						{editingBillTrackerId ? (
 							<>
@@ -2898,14 +3034,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setSelectedBillTrackerId(null)}
-					presentationStyle="pageSheet"
-					visible={Boolean(selectedBillTrackerId)}
-				>
 					<ModalScaffold
 						closeTestID="close-bill-tracker-detail"
 						onClose={() => setSelectedBillTrackerId(null)}
@@ -2913,6 +3042,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							billTrackers.find((t) => t.id === selectedBillTrackerId)?.name ??
 							"Bill Tracker"
 						}
+						visible={Boolean(selectedBillTrackerId)}
 					>
 						{selectedBillTrackerId ? (
 							<>
@@ -2980,14 +3110,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setSelectedSavingsTrackerId(null)}
-					presentationStyle="pageSheet"
-					visible={Boolean(selectedSavingsTrackerId)}
-				>
 					<ModalScaffold
 						closeTestID="close-savings-tracker-detail"
 						onClose={() => setSelectedSavingsTrackerId(null)}
@@ -2995,6 +3118,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							savingsTrackers.find((t) => t.id === selectedSavingsTrackerId)
 								?.name ?? "Savings Tracker"
 						}
+						visible={Boolean(selectedSavingsTrackerId)}
 					>
 						{selectedSavingsTrackerId ? (
 							<>
@@ -3079,18 +3203,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setSelectedPlanId(null)}
-					presentationStyle="pageSheet"
-					visible={Boolean(selectedPlan)}
-				>
 					<ModalScaffold
 						closeTestID="close-budget-detail-modal"
 						onClose={() => setSelectedPlanId(null)}
 						title={selectedPlan?.name ?? "Budget plan"}
+						visible={Boolean(selectedPlan)}
 					>
 						{selectedPlan ? (
 							<>
@@ -3766,9 +3884,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 										<View style={styles.dualActions}>
 											<ModernButton
 												icon={<Ionicons color={theme.onPrimary} name="add" size={18} />}
-												onPress={() => {
-													setShowExpenseComposer(true);
-												}}
+								onPress={() => {
+									setQuickAddFeedback(null);
+									setShowExpenseComposer(true);
+								}}
 												testID="open-add-expense"
 												text="Add expense"
 											/>
@@ -4098,7 +4217,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</>
 						)}
 					</ModalScaffold>
-				</Modal>
 
 				<Modal animationType="slide" onRequestClose={() => setShowReceiptScanner(false)} transparent visible={showReceiptScanner}>
 					<ReceiptScannerSheet
@@ -4115,6 +4233,34 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 						<Text style={styles.sectionTitle}>
 							{editingExpenseId ? "Edit Expense" : "Add Expense"}
 						</Text>
+						{!editingExpenseId && activeExpenseShortcuts.length > 0 ? (
+							<View style={styles.fieldSection}>
+								<Text style={styles.inputLabel}>Expense Shortcuts</Text>
+								{quickAddFeedback ? <Text style={styles.bodyMuted}>{quickAddFeedback}</Text> : null}
+								{activeExpenseShortcuts.map((shortcut) => (
+									<Pressable
+										key={shortcut.id}
+										accessibilityLabel={`Add ${shortcut.name}, ${c(expenseShortcutTotal(shortcut))}`}
+										accessibilityRole="button"
+										accessibilityState={{ busy: actionBusy, disabled: actionBusy || !selectedPlan }}
+										disabled={actionBusy || !selectedPlan}
+										onPress={() => void handleQuickAddExpenseShortcut(shortcut)}
+										style={[styles.expenseShortcutChoice, (actionBusy || !selectedPlan) && styles.expenseShortcutChoiceDisabled]}
+										testID={`quick-add-expense-shortcut-${shortcut.id}`}
+									>
+										<View style={styles.expenseShortcutCopy}>
+											<Text style={styles.listTitle}>{shortcut.name}</Text>
+											<Text style={styles.listSubtitle}>
+												{c(expenseShortcutTotal(shortcut))} · {shortcut.category}
+											</Text>
+										</View>
+										<Ionicons color={theme.primary} name="add-circle-outline" size={22} />
+									</Pressable>
+								))}
+							</View>
+						) : quickAddFeedback ? (
+							<Text style={styles.bodyMuted}>{quickAddFeedback}</Text>
+						) : null}
 
 						<View style={styles.fieldSection}>
 							<View style={styles.rowBetween}>
@@ -4616,16 +4762,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					</BottomSheet>
 				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowMembers(false)}
-					presentationStyle="pageSheet"
-					visible={showMembers}
-				>
 					<ModalScaffold
 						closeTestID="close-members-modal"
 						onClose={() => setShowMembers(false)}
 						title="Members"
+						visible={showMembers}
 					>
 						{members.map((member) => (
 							<BentoCard key={member.id}>
@@ -4650,18 +4791,12 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</BentoCard>
 						))}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowInvite(false)}
-					presentationStyle="pageSheet"
-					visible={showInvite}
-				>
 					<ModalScaffold
 						closeTestID="close-invite-modal"
 						onClose={() => setShowInvite(false)}
 						title="Invite Member"
+						visible={showInvite}
 					>
 						<Text style={styles.bodyMuted}>
 							Send an email invite or share the generated link. The invite opens
@@ -4703,14 +4838,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</BentoCard>
 						) : null}
 					</ModalScaffold>
-				</Modal>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowNotifications(false)}
-					presentationStyle="pageSheet"
-					visible={showNotifications}
-				>
 					<ModalScaffold
 						closeTestID="close-notifications-modal"
 						onClose={() => setShowNotifications(false)}
@@ -4734,6 +4862,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</Pressable>
 						}
 						title="Notifications"
+						visible={showNotifications}
 					>
 						{notifications.length > 0 ? (
 							notifications.map((item) => (
@@ -4767,7 +4896,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							/>
 						)}
 					</ModalScaffold>
-				</Modal>
 
 				<ProfileSettingsModal
 					actionBusy={actionBusy}
@@ -4787,16 +4915,11 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					visible={showProfileSettings}
 				/>
 
-				<Modal
-					animationType="slide"
-					onRequestClose={() => setShowExpenseFilters(false)}
-					presentationStyle="pageSheet"
-					visible={showExpenseFilters}
-				>
 					<ModalScaffold
 						closeTestID="close-expense-filters-modal"
 						onClose={() => setShowExpenseFilters(false)}
 						title="Filter Expenses"
+						visible={showExpenseFilters}
 					>
 						<Text style={styles.inputLabel}>Time window</Text>
 						<View style={styles.segmentRow}>
@@ -4826,7 +4949,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							))}
 						</View>
 					</ModalScaffold>
-				</Modal>
 			</SafeAreaView>
 		</GestureHandlerRootView>
 	);

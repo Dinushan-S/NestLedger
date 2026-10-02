@@ -38,7 +38,10 @@ for (const palette of [palettes.darkTheme, palettes.theme, palettes.darkTheme]) 
   assert.equal(styles.input.color, palette.text, 'Input text must follow the selected theme');
   assert.equal(styles.cardTitle.color, palette.text, 'Card text must follow the selected theme');
   assert.equal(styles.bodyMuted.color, palette.textMuted, 'Secondary text must follow the selected theme');
-  assert.equal(styles.currencyChipActive.backgroundColor, palette.primarySoft, 'Selected options must follow the theme');
+  // A selected/active option must follow the palette. currencyChipActive used to
+  // cover this but died with the bento-grid currency picker; spaceTypeCardActive
+  // is the live equivalent.
+  assert.equal(styles.spaceTypeCardActive.backgroundColor, palette.primarySoft, 'Selected options must follow the theme');
 }
 console.log('Theme switching styles passed (dark → light → dark).');
 

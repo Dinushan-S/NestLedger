@@ -1,11 +1,10 @@
 import { parseDateOnly, toLocalDate } from '@/constants/nestledger';
-import { useTheme, useThemedStyles, type AppTheme } from '@/lib/theme-context';
+import { useTheme } from '@/lib/theme-context';
 import { useState } from "react";
 import {
 	Modal,
 	Platform,
 	Pressable,
-	ScrollView,
 	StyleSheet,
 	Text,
 	View,
@@ -269,63 +268,3 @@ export function ConfirmModal({
 		</Modal>
 	);
 }
-
-export function SafeWrap({
-	children,
-	closeTestID,
-	onClose,
-	title,
-}: {
-	children: React.ReactNode;
-	closeTestID?: string;
-	onClose: () => void;
-	title: string;
-}) {
-	const { theme } = useTheme();
-	const safeWrapStyles = useThemedStyles(createStyles);
-	return (
-		<View style={safeWrapStyles.screen}>
-			<View style={safeWrapStyles.header}>
-				<Pressable hitSlop={10} onPress={onClose} testID={closeTestID}>
-					<Ionicons color={theme.text} name="close-outline" size={28} />
-				</Pressable>
-				<Text style={safeWrapStyles.title}>{title}</Text>
-				<View />
-			</View>
-			<ScrollView
-				contentContainerStyle={safeWrapStyles.content}
-				keyboardShouldPersistTaps="handled"
-				nestedScrollEnabled
-				showsVerticalScrollIndicator={false}
-			>
-				{children}
-			</ScrollView>
-		</View>
-	);
-}
-
-const createStyles = (theme: AppTheme) => StyleSheet.create({
-	screen: {
-		backgroundColor: theme.background,
-		flex: 1,
-	},
-	header: {
-		alignItems: "center",
-		borderBottomColor: theme.border,
-		borderBottomWidth: 1,
-		flexDirection: "row",
-		justifyContent: "space-between",
-		paddingHorizontal: 20,
-		paddingVertical: 16,
-	},
-	title: {
-		color: theme.text,
-		fontSize: 18,
-		fontWeight: "700",
-	},
-	content: {
-		gap: 14,
-		padding: 20,
-		paddingBottom: 40,
-	},
-});

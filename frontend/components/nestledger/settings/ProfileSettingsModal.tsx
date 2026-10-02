@@ -1,8 +1,6 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Alert,
-	Linking,
-	Modal,
 	Platform,
 	Pressable,
 	StyleSheet,
@@ -10,6 +8,7 @@ import {
 	Text,
 	View,
 } from "react-native";
+import * as WebBrowser from "expo-web-browser";
 
 import { CURRENCY_INFO } from "@/constants/nestledger";
 import { useTheme, type ThemeMode } from "@/lib/theme-context";
@@ -166,16 +165,11 @@ export function ProfileSettingsModal({
 
 	return (
 		<>
-			<Modal
-				animationType="slide"
-				onRequestClose={closeSettings}
-				presentationStyle="pageSheet"
-				visible={visible}
-			>
 				<ModalScaffold
 					closeTestID="close-settings-modal"
 					onClose={closeSettings}
 					title="Profile Settings"
+					visible={visible}
 				>
 					{/* ── Personal profile ── */}
 					<SettingsSection item={settingsSections[0]!}>
@@ -345,7 +339,13 @@ export function ProfileSettingsModal({
 					{/* ── About & legal ── */}
 					<SettingsSection item={settingsSections[4]!}>
 						<Pressable
-							onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+							onPress={() => {
+								void WebBrowser.openBrowserAsync(PRIVACY_POLICY_URL, {
+									presentationStyle:
+										WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+									showTitle: true,
+								});
+							}}
 							style={styles.linkRow}
 							testID="settings-privacy-policy"
 						>
@@ -359,7 +359,6 @@ export function ProfileSettingsModal({
 						</Pressable>
 					</SettingsSection>
 				</ModalScaffold>
-			</Modal>
 
 			<CurrencySelectorSheet
 				onChange={(currency) => onChange({ ...profileForm, currency })}

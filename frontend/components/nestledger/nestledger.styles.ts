@@ -56,16 +56,25 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     fontWeight: '600',
   },
   spaceTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   spaceTypeCard: {
+    alignItems: 'center',
     backgroundColor: theme.surface,
     borderColor: theme.border,
     borderRadius: 16,
     borderWidth: 1,
+    flexGrow: 1,
     gap: 2,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    width: '48%',
+  },
+  setupActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   spaceTypeCardActive: {
     backgroundColor: theme.primarySoft,
@@ -79,14 +88,16 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     color: theme.text,
     fontSize: 15,
     fontWeight: '700',
+    textAlign: 'center',
   },
   spaceTypeLabelActive: {
     color: theme.primary,
   },
   spaceTypeDesc: {
     color: theme.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   spaceTypeDescActive: {
     color: theme.primary,
@@ -185,44 +196,7 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-  },
-  currencyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  currencyChip: {
-    alignItems: 'center',
-    backgroundColor: theme.surface,
-    borderColor: theme.border,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  currencyChipActive: {
-    backgroundColor: theme.primarySoft,
-    borderColor: theme.primary,
-  },
-  currencyChipCode: {
-    color: theme.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  currencyChipCodeActive: {
-    color: theme.primary,
-  },
-  currencyChipSymbol: {
-    color: theme.textMuted,
-    fontSize: 12,
-  },
-  currencyChipSymbolActive: {
-    color: theme.primary,
-  },
-  badge: {
+  },  badge: {
     alignItems: 'center',
     backgroundColor: theme.secondary,
     borderRadius: 999,
@@ -705,6 +679,36 @@ const createStyles = (theme: AppTheme) => StyleSheet.create({  analyseCardRow: {
     color: theme.text,
     fontSize: 15,
     fontWeight: '700',
+  },
+  expenseShortcutSection: {
+    gap: 12,
+  },
+  expenseShortcutRow: {
+    alignItems: 'center',
+    borderBottomColor: theme.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingBottom: 12,
+  },
+  expenseShortcutCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  expenseShortcutChoice: {
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 64,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  expenseShortcutChoiceDisabled: {
+    opacity: 0.55,
   },
   rowBetween: {
     alignItems: 'center',

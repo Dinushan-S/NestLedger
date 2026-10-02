@@ -170,6 +170,10 @@ assert.ok(
 // ("$", "€", "CA$", "CLP$", "¥") it wins; where it echoes the code back
 // (Hermes, trimmed ICU) our curated symbol is substituted. A symbol may legally
 // start with the letters, e.g. "CLP$", so only a code followed by a space counts.
+//
+// Scope: this only guarantees the curated CURRENCY_INFO codes. The live currency
+// API adds ~120 codes with no curated entry, so those can still render as a bare
+// ticker. That is a known, accepted ceiling - see useCurrencyCodes.ts.
 for (const [code] of Object.entries(CURRENCY_INFO)) {
   const rendered = formatCurrency(1234.5, code);
   assert.ok(
@@ -253,6 +257,18 @@ assert.equal(
   'REGION_CURRENCY has duplicate region keys',
 );
 assert.equal(REGION_CURRENCY.SG, 'SGD', 'Singapore must map to SGD');
+// Shape checks above cannot catch a well-formed but wrong mapping (e.g. AU: "NZD"),
+// so pin the three that were missing until every curated currency has a region.
+assert.equal(REGION_CURRENCY.BH, 'BHD', 'Bahrain must map to BHD');
+assert.equal(REGION_CURRENCY.OM, 'OMR', 'Oman must map to OMR');
+assert.equal(REGION_CURRENCY.QA, 'QAR', 'Qatar must map to QAR');
+assert.equal(
+  Object.keys(CURRENCY_INFO).filter(
+    (c) => !regionEntries.some(([, currency]) => currency === c),
+  ).length,
+  0,
+  'every curated currency should have at least one region default',
+);
 assert.equal(defaultCurrencyForDevice().length, 3, 'device default must stay an ISO code');
 
 console.log(

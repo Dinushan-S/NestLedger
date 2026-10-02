@@ -61,7 +61,7 @@ export function CurrencySelectorSheet({
         query: deferredQuery,
         viewModels: currencyViewModels,
       }),
-    [deferredQuery, popularCodes, value],
+    [currencyViewModels, deferredQuery, popularCodes, value],
   );
 
   return (

@@ -1,13 +1,15 @@
 import base64
+import hashlib
 import logging
 import os
 import re
+import secrets
 import smtplib
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,7 @@ import requests
 import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
@@ -171,6 +173,21 @@ class DeleteSpaceRequest(BaseModel):
     profile_id: str
 
 
+class WidgetSessionRequest(BaseModel):
+    profile_id: uuid.UUID
+
+
+class WidgetRevokeRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+
+
+class WidgetExpenseRequest(BaseModel):
+    shortcut_id: uuid.UUID
+    plan_id: uuid.UUID
+    tap_id: uuid.UUID
+    date: date
+
+
 class ReceiptExtractRequest(BaseModel):
     image_base64: str
     mime_type: str = "image/jpeg"
@@ -279,6 +296,86 @@ def ensure_profile_member(profile_id: str, user_id: str) -> None:
         raise HTTPException(
             status_code=403, detail="You do not have access to this profile."
         )
+
+
+@api_router.post("/widget/session")
+def create_widget_session(
+    payload: WidgetSessionRequest, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    ensure_profile_member(str(payload.profile_id), user["id"])
+    token = secrets.token_urlsafe(48)
+    supabase_rest(
+        "POST",
+        "widget_sessions",
+        json_data={
+            "user_id": user["id"],
+            "profile_id": str(payload.profile_id),
+            "token_hash": hashlib.sha256(token.encode("ascii")).hexdigest(),
+        },
+        prefer="return=minimal",
+    )
+    return {"token": token}
+
+
+@api_router.delete("/widget/session")
+def revoke_widget_session(
+    payload: WidgetRevokeRequest, authorization: str | None = Header(default=None)
+):
+    user = get_current_user(authorization)
+    supabase_rest(
+        "DELETE",
+        "widget_sessions",
+        params={
+            "token_hash": f"eq.{hashlib.sha256(payload.token.encode('utf-8')).hexdigest()}",
+            "user_id": f"eq.{user['id']}",
+        },
+    )
+    return {"ok": True}
+
+
+@api_router.post("/widget/expense")
+def add_widget_expense(
+    payload: WidgetExpenseRequest, authorization: str | None = Header(default=None)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing widget token.")
+    token = authorization.removeprefix("Bearer ")
+    if not token or len(token) > 256:
+        raise HTTPException(status_code=401, detail="Invalid widget token.")
+    ensure_backend_config()
+    response = requests.post(
+        f"{SUPABASE_URL}/rest/v1/rpc/add_widget_expense",
+        headers=build_rest_headers(),
+        json={
+            "p_token_hash": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            "p_shortcut_id": str(payload.shortcut_id),
+            "p_plan_id": str(payload.plan_id),
+            "p_tap_id": str(payload.tap_id),
+            "p_date": payload.date.isoformat(),
+        },
+        timeout=25,
+    )
+    if not response.ok:
+        try:
+            message = response.json().get("message", "")
+        except ValueError:
+            message = ""
+        failures = {
+            "WIDGET_SESSION_INVALID": (401, "Widget access expired. Open the app to reconnect."),
+            "WIDGET_ACCESS_DENIED": (403, "You no longer have access to this profile."),
+            "WIDGET_SHORTCUT_NOT_FOUND": (404, "Expense shortcut is no longer available."),
+            "WIDGET_PLAN_NOT_FOUND": (404, "Budget plan is no longer available."),
+            "WIDGET_SHORTCUT_INVALID": (422, "Expense shortcut has invalid items."),
+            "WIDGET_DATE_INVALID": (422, "Expense date is outside the allowed range."),
+            "WIDGET_TAP_CONFLICT": (409, "This tap was already used for another expense."),
+        }
+        status, detail = failures.get(message, (502, "Could not add the widget expense."))
+        if status == 502:
+            logger.error("Widget expense RPC failed (status=%s): %s", response.status_code, response.text)
+        raise HTTPException(status_code=status, detail=detail)
+    result = response.json()[0]
+    return {"expense_id": result["expense_id"], "created": result["created"]}
 
 
 def send_brevo_invite(

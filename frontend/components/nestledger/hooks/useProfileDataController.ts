@@ -6,6 +6,7 @@ import {
   BudgetPlan,
   ExpenseWithItems,
   Member,
+  ExpenseShortcut,
   RecurringBill,
   SavingsEntry,
   SavingsTrackerMeta,
@@ -15,6 +16,7 @@ import {
   expenseApi,
   notificationApi,
   profileApi,
+  expenseShortcutApi,
   savingsApi,
   shoppingApi,
   type AppNotification,
@@ -30,6 +32,7 @@ type UseProfileDataControllerOptions = {
   setNotifications: Dispatch<SetStateAction<AppNotification[]>>;
   setPlans: Dispatch<SetStateAction<BudgetPlan[]>>;
   setProfileExpenses: Dispatch<SetStateAction<ExpenseWithItems[]>>;
+  setExpenseShortcuts: Dispatch<SetStateAction<ExpenseShortcut[]>>;
   setRecurringBills: Dispatch<SetStateAction<RecurringBill[]>>;
   setSavings: Dispatch<SetStateAction<SavingsEntry[]>>;
   setSavingsTrackers: Dispatch<SetStateAction<SavingsTrackerMeta[]>>;
@@ -47,6 +50,7 @@ export function useProfileDataController({
   setNotifications,
   setPlans,
   setProfileExpenses,
+  setExpenseShortcuts,
   setRecurringBills,
   setSavings,
   setSavingsTrackers,
@@ -55,13 +59,25 @@ export function useProfileDataController({
 }: UseProfileDataControllerOptions) {
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const lastRefreshRef = useRef(0);
-  const currentUser = useRef(sessionUserId);
-  currentUser.current = sessionUserId;
   const latestRequest = useRef(0);
+
+  // Latest prop values, readable from a callback that must never change identity.
+  // These are only ever read while a refresh is in flight, so a ref gives the
+  // same result as a dependency without recreating the callback. That matters:
+  // useRealtimeChannel depends on refreshProfileData, so recreating it tears down
+  // and re-registers all ten realtime subscriptions. Selecting a different budget
+  // plan used to do exactly that.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  const selectedPlanIdRef = useRef(selectedPlanId);
+  selectedPlanIdRef.current = selectedPlanId;
+  const sessionUserIdRef = useRef(sessionUserId);
+  sessionUserIdRef.current = sessionUserId;
 
   const refreshProfileData = useCallback(
     async (profileId: string, force?: boolean) => {
-      if (!sessionUserId) {
+      const userId = sessionUserIdRef.current;
+      if (!userId) {
         return;
       }
 
@@ -89,7 +105,7 @@ export function useProfileDataController({
           budgetApi.fetchPlans(profileId),
           expenseApi.fetchProfileExpenses(profileId),
           shoppingApi.fetchItems(profileId),
-          notificationApi.fetchForUser(profileId, sessionUserId),
+          notificationApi.fetchForUser(profileId, userId),
           billApi.fetchTrackers(profileId),
           savingsApi.fetchTrackers(profileId),
           billApi.fetchRecurringBills(profileId),
@@ -97,7 +113,8 @@ export function useProfileDataController({
           savingsApi.fetchSavings(profileId),
         ]);
 
-        if (currentUser.current !== sessionUserId || request !== latestRequest.current) return;
+        // Drop the response if the user changed identity or a newer refresh won.
+        if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
 
         setMembers(nextMembers);
         setPlans(nextPlans);
@@ -111,24 +128,35 @@ export function useProfileDataController({
         setSavings(nextSavings);
         nextNotifications.forEach((item) => seenNotificationIds.current.add(item.id));
 
-        if (selectedPlanId && !nextPlans.some((plan) => plan.id === selectedPlanId)) {
+        const activePlanId = selectedPlanIdRef.current;
+        if (activePlanId && !nextPlans.some((plan) => plan.id === activePlanId)) {
           setSelectedPlanId(null);
+        }
+
+        try {
+          const nextExpenseShortcuts = await expenseShortcutApi.fetch(profileId);
+          if (sessionUserIdRef.current === userId && request === latestRequest.current) {
+            setExpenseShortcuts(nextExpenseShortcuts);
+          }
+        } catch (error) {
+          if (sessionUserIdRef.current !== userId || request !== latestRequest.current) return;
+          setExpenseShortcuts([]);
+          if ((error as { code?: string }).code !== 'PGRST205') {
+            onErrorRef.current(error instanceof Error ? error.message : 'Something went wrong.');
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Something went wrong.';
-        onError(message);
+        onErrorRef.current(message);
       }
     },
-    // State setters from useState are referentially stable for the component's
-    // lifetime, so they are deliberately left out of this dependency list. The
-    // signature keeps them flat rather than passing a bag object, because a fresh
-    // object literal every render would change this callback's identity every
-    // render and make useRealtimeChannel resubscribe on every render.
-    [
-      onError,
-      selectedPlanId,
-      sessionUserId,
-    ],
+    // Intentionally empty. Every prop this reads goes through a ref above, and
+    // state setters are referentially stable for the component's lifetime, so
+    // nothing here should ever change the callback's identity. The flat
+    // signature matters for the same reason: a bag object would be a fresh
+    // literal each render and defeat this entirely.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   return {
