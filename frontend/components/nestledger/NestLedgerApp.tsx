@@ -90,6 +90,9 @@ import {
 import { useNestLedgerBootstrap } from "./hooks/useNestLedgerBootstrap";
 import { useProfileDataController } from "./hooks/useProfileDataController";
 import { useRealtimeChannel } from "./hooks/useRealtimeChannel";
+import { useOfflineSync } from "./hooks/useOfflineSync";
+import { network } from "../../lib/network";
+import { offlineStore, syncExpenses } from "../../lib/offline";
 import {
 	buildAvailableViewMonths,
 	buildAvailableViewYears,
@@ -402,21 +405,6 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setSavings([]);
 	}, []);
 
-	useNestLedgerBootstrap({
-		activeProfileId,
-		onSchemaMissing: isSchemaMissing,
-		onSessionCleared: resetSessionState,
-		sessionUserId,
-		setActiveProfileId,
-		setBooting,
-		setBusy,
-		setProfileLoaded,
-		setProfiles,
-		setSession,
-		setSetupMessage,
-		setUserProfile,
-	});
-
 	const { refreshProfileData, seenNotificationIds } = useProfileDataController({
 		onError: setSetupMessage,
 		selectedPlanId,
@@ -433,6 +421,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		setSavingsTrackers,
 		setSelectedPlanId,
 		setShoppingItems,
+	});
+	const offline = useOfflineSync(sessionUserId, activeProfileId, refreshProfileData);
+	useNestLedgerBootstrap({
+		activeProfileId,
+		online: offline.online,
+		onSchemaMissing: isSchemaMissing,
+		onSessionCleared: resetSessionState,
+		sessionUserId,
+		setActiveProfileId,
+		setBooting,
+		setBusy,
+		setProfileLoaded,
+		setProfiles,
+		setSession,
+		setSetupMessage,
+		setUserProfile,
 	});
 
 	const recentExpenseSuggestions = useMemo(
@@ -658,6 +662,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	useRealtimeChannel({
 		activeProfileId,
+		online: offline.online,
 		refreshProfileData,
 		seenNotificationIds,
 		sessionUserId,
@@ -711,7 +716,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	}, [activeProfileId, refreshProfileData, selectedSavingsTrackerId]);
 
 	useEffect(() => {
-		if (!session) {
+		if (!session || !offline.online) {
 			return;
 		}
 
@@ -754,7 +759,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		// Remote push is unsupported on a simulator, and on Android inside Expo Go.
 		const canRegister = Device.isDevice && !(Platform.OS === "android" && isRunningInExpoGo());
 		if (canRegister) void register();
-	}, [session]);
+	}, [session, offline.online]);
 
 	// Route notification taps (foreground, background, and cold start) to the relevant screen.
 	const lastNotificationResponse = Notifications.useLastNotificationResponse();
@@ -1082,7 +1087,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 	};
 
 	const notifyOtherMembers = async (message: string, type: string) => {
-		if (!session?.user || !activeProfile) {
+		if (!network.isOnline() || !session?.user || !activeProfile) {
 			return;
 		}
 
@@ -1252,6 +1257,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 		paymentName: string | null,
 	) => {
 		if (!activeProfile || !session?.user) return;
+		if (!network.isOnline()) { announce('Bill payments need internet. You can record an expense offline.'); return; }
 		await runAction(async () => {
 			// The payment row and the linked budget expense are independent writes,
 			// so they still share one round trip. allSettled rather than all: if the
@@ -1425,120 +1431,38 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 				? expenseForm.usedBy
 				: null;
 
-		// Edit path is optimistic like the add path: apply the new values locally
-		// and dismiss immediately, then persist + reconcile in the background.
-		if (editingExpenseId) {
-			const editingId = editingExpenseId;
-			const original = profileExpenses.find((e) => e.id === editingId);
-			const editedAt = new Date().toISOString();
-			const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
-			setProfileExpenses((current) =>
-				current.map((e) =>
-					e.id === editingId
-						? {
-								...e,
-								category,
-								date,
-								description,
-								paid_by: paidBy,
-								used_by: usedBy,
-								price: totalPrice,
-								items: items.map((item, index) => ({
-									id: `${editingId}-item-${index}`,
-									expense_id: editingId,
-									created_at: editedAt,
-									name: item.name,
-									price: item.price,
-								})),
-							}
-						: e,
-				),
-			);
+		if (actionBusy) return;
+		setActionBusy(true);
+		try {
+			if (editingExpenseId) {
+				await expenseApi.updateExpense(editingExpenseId, {
+					category, date, description, paid_by: paidBy, used_by: usedBy,
+				}, items);
+			} else {
+				const saved = await expenseApi.addExpense({
+					added_by: session.user.id, category, date, description,
+					is_borrow: expenseForm.is_borrow, items, paid_by: paidBy,
+					plan_id: selectedPlan.id, profile_id: selectedPlan.profile_id, used_by: usedBy,
+				});
+				setProfileExpenses((current) => [saved, ...current]);
+				void syncExpenses().then(async () => {
+					if (!(await offlineStore.status()).ids.includes(saved.id)) {
+						await notifyOtherMembers(
+							`${userProfile?.name ?? "A member"} added ${items.map((item) => item.name).join(", ")} to ${selectedPlan.name}.`,
+							notificationTypes.expense,
+						);
+					}
+				}).catch(() => undefined);
+			}
+			// Dismiss only after the local write succeeds; network work stays in the background.
 			setExpenseForm(defaultExpenseForm());
 			setEditingExpenseId(null);
 			setShowExpenseComposer(false);
-
-			try {
-				await expenseApi.updateExpense(
-					editingId,
-					{
-						category,
-						date,
-						description,
-						paid_by: paidBy,
-						used_by: usedBy,
-					} as any,
-					items,
-				);
-				await refreshProfileData(activeProfile.id, true);
-			} catch (error) {
-				// Roll back the optimistic edit and surface the failure.
-				if (original) {
-					setProfileExpenses((current) =>
-						current.map((e) => (e.id === editingId ? original : e)),
-					);
-				}
-				setEditingExpenseId(editingId);
-				setExpenseForm(expenseDraft);
-				setShowExpenseComposer(true);
-				announce(extractError(error));
-			}
-			return;
-		}
-
-		// Add path is optimistic: show the new entry and dismiss the composer
-		// immediately, then persist + reconcile in the background. This keeps the
-		// save feeling instant instead of waiting on the insert + full refresh.
-		const now = new Date().toISOString();
-		const tempId = `temp-${now}-${Math.random().toString(36).slice(2)}`;
-		const totalPrice = items.reduce((sum, item) => sum + item.price, 0);
-		const expenseInput = {
-			added_by: session.user.id,
-			category,
-			date,
-			description,
-			is_borrow: expenseForm.is_borrow,
-			items,
-			paid_by: paidBy,
-			plan_id: selectedPlan.id,
-			profile_id: selectedPlan.profile_id,
-			used_by: usedBy,
-		};
-		const optimisticExpense: ExpenseWithItems = {
-			...expenseInput,
-			id: tempId,
-			created_at: now,
-			price: totalPrice,
-			items: items.map((item, index) => ({
-				id: `${tempId}-item-${index}`,
-				expense_id: tempId,
-				created_at: now,
-				name: item.name,
-				price: item.price,
-			})),
-		};
-		const itemNames = items.map((i) => i.name).join(", ");
-
-		setProfileExpenses((current) => [optimisticExpense, ...current]);
-		setExpenseForm(defaultExpenseForm());
-		setEditingExpenseId(null);
-		setShowExpenseComposer(false);
-
-		try {
-			await expenseApi.addExpense(expenseInput);
-			await notifyOtherMembers(
-				`${userProfile?.name ?? "A member"} added ${itemNames} to ${selectedPlan.name}.`,
-				notificationTypes.expense,
-			);
-			// Reconcile: the refresh replaces the temp entry with the real persisted one.
-			await refreshProfileData(activeProfile.id, true);
+			void refreshProfileData(activeProfile.id, true);
 		} catch (error) {
-			// Roll back the optimistic entry and surface the failure.
-			setProfileExpenses((current) => current.filter((e) => e.id !== tempId));
 			setExpenseForm(expenseDraft);
-			setShowExpenseComposer(true);
 			announce(extractError(error));
-		}
+		} finally { setActionBusy(false); }
 	};
 
 	const handleQuickAddExpenseShortcut = async (shortcut: ExpenseShortcut) => {
@@ -1554,62 +1478,23 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 			announce("This shortcut has invalid items. Delete it from Profile and save it again.");
 			return;
 		}
-
 		quickAddBusy.current = true;
 		setActionBusy(true);
 		setQuickAddFeedback(null);
 		const hasDraft = JSON.stringify(expenseForm) !== JSON.stringify(defaultExpenseForm());
-		const expenseDraft = expenseForm;
-		const now = new Date().toISOString();
-		const tempId = `temp-${now}-${Math.random().toString(36).slice(2)}`;
-		const totalPrice = expenseShortcutTotal({ items });
-		const paidBy = shortcut.paid_by;
-		const usedBy = shortcut.paid_by === null ? shortcut.used_by : null;
-		const expenseInput = {
-			added_by: session.user.id,
-			category: shortcut.category,
-			date: todayLocalDate(),
-			description: shortcut.description,
-			is_borrow: false,
-			items,
-			paid_by: paidBy,
-			plan_id: selectedPlan.id,
-			profile_id: activeProfile.id,
-			used_by: usedBy,
-		};
-		const optimisticExpense: ExpenseWithItems = {
-			...expenseInput,
-			id: tempId,
-			created_at: now,
-			price: totalPrice,
-			items: items.map((item, index) => ({
-				id: `${tempId}-item-${index}`,
-				expense_id: tempId,
-				created_at: now,
-				...item,
-			})),
-		};
-		setProfileExpenses((current) => [optimisticExpense, ...current]);
-
 		try {
-			try {
-				await expenseApi.addExpense(expenseInput);
-			} catch (error) {
-				setProfileExpenses((current) => current.filter((item) => item.id !== tempId));
-				setExpenseForm(expenseDraft);
-				announce(extractError(error));
-				return;
-			}
-			void notifyOtherMembers(
-				`${userProfile?.name ?? "A member"} added ${items.map((item) => item.name).join(", ")} to ${selectedPlan.name}.`,
-				notificationTypes.expense,
-			).catch(() => undefined);
-			await refreshProfileData(activeProfile.id, true);
-			if (hasDraft) {
-				setQuickAddFeedback(`${shortcut.name} was added to expenses. Your draft is still here.`);
-			} else {
-				setShowExpenseComposer(false);
-			}
+			const saved = await expenseApi.addExpense({
+				added_by: session.user.id, category: shortcut.category, date: todayLocalDate(),
+				description: shortcut.description, is_borrow: false, items, paid_by: shortcut.paid_by,
+				plan_id: selectedPlan.id, profile_id: activeProfile.id,
+				used_by: shortcut.paid_by === null ? shortcut.used_by : null,
+			});
+			setProfileExpenses((current) => [saved, ...current]);
+			void refreshProfileData(activeProfile.id, true);
+			if (hasDraft) setQuickAddFeedback(`${shortcut.name} was added to expenses. Your draft is still here.`);
+			else setShowExpenseComposer(false);
+		} catch (error) {
+			announce(extractError(error));
 		} finally {
 			quickAddBusy.current = false;
 			setActionBusy(false);
@@ -1951,6 +1836,7 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	const handleConfirmBought = async () => {
 		if (!session?.user || !activeProfile || !pendingBoughtItem) return;
+		if (!network.isOnline()) { announce('Updating shared shopping needs internet. You can record an expense offline.'); return; }
 
 		await runAction(async () => {
 			if (!boughtForm.planId) {
@@ -1995,6 +1881,10 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 					},
 					"id",
 				);
+				await syncExpenses();
+				if ((await offlineStore.status()).ids.includes(newExpense.id)) {
+					throw new Error('Expense saved on this device. Sync it before marking the shopping item bought.');
+				}
 
 				const updated = await shoppingApi.markBought(
 					pendingBoughtItem.id,
@@ -2257,6 +2147,9 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 
 	if (booting) {
 		return <SplashScreen />;
+	}
+	if (session && profileLoaded && !offline.online && !profiles.length) {
+		return <CenteredState title="You're offline" body="Connect once to load your spaces and budgets. After that, you can track expenses offline." />;
 	}
 
 	if (!session) {
@@ -2653,6 +2546,22 @@ export default function NestLedgerApp({ initialInviteToken }: Props) {
 							</Pressable>
 						</View>
 
+						{!offline.online || offline.pending > 0 || offline.error ? (
+							<View style={styles.inlineBanner} accessibilityLiveRegion="polite" testID="offline-status">
+								<Text style={styles.inlineBannerText}>
+									{offline.error
+										? `${offline.pending} saved changes need attention: ${offline.error}`
+										: offline.online
+											? `${offline.pending} saved changes ${offline.syncing ? 'syncing' : 'waiting to sync'}…`
+											: `Offline · ${offline.pending ? `${offline.pending} saved changes will sync when connected.` : 'Expenses save on this device.'}`}
+								</Text>
+								{offline.error && offline.online ? (
+									<Pressable accessibilityRole="button" accessibilityLabel="Retry syncing saved expenses" onPress={() => { void offline.retry(); }}>
+										<Text style={styles.linkText}>Retry</Text>
+									</Pressable>
+								) : null}
+							</View>
+						) : null}
 						{busy ? (
 							<View style={styles.loaderWrap}>
 								<ActivityIndicator color={theme.primary} size="large" />

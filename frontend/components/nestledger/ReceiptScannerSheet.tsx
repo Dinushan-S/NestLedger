@@ -15,6 +15,7 @@ import {
 
 import { receiptApi } from "../../lib/nestledger";
 import { supabase } from "../../lib/supabase";
+import { network } from "../../lib/network";
 import { useTheme } from "../../lib/theme-context";
 import ModernButton from "../ui/ModernButton";
 import { BottomSheet } from "../ui/BottomSheet";
@@ -113,6 +114,7 @@ export function ReceiptScannerSheet({ currency, onClose, onConfirm, session, vis
 			setBusy(true);
 			setError(null);
 			try {
+				if (!network.isOnline()) throw new Error('Receipt scanning needs internet. You can add expense items manually while offline.');
 				const activeSession = session ?? (await supabase.auth.getSession()).data.session;
 				if (!activeSession) {
 					throw new Error("You must be logged in to scan a receipt.");

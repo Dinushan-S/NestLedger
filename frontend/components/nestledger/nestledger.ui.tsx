@@ -26,7 +26,7 @@ export function SplashScreen() {
 	return (
 		<SafeAreaView style={[styles.screen, { paddingTop: insets.top }]}>
 			<CenteredState
-				body="Syncing your shared home space..."
+				body="Opening your saved home space..."
 				title="NestLedger"
 			/>
 		</SafeAreaView>

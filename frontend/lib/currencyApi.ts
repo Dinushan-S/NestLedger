@@ -8,6 +8,7 @@
 //
 // Rates are also available at this host, but nothing in the app converts between
 // currencies, so there is no reason to fetch them.
+import { network, networkFetch } from './network';
 const ENDPOINT = "https://open.er-api.com/v6/latest/USD";
 
 const isCodeList = (value: unknown): value is string[] =>
@@ -16,8 +17,9 @@ const isCodeList = (value: unknown): value is string[] =>
 	value.every((code) => typeof code === "string" && /^[A-Z]{3}$/.test(code));
 
 export async function fetchLiveCurrencyCodes(): Promise<string[]> {
+	if (!network.isOnline()) return [];
 	try {
-		const response = await fetch(ENDPOINT);
+		const response = await networkFetch(ENDPOINT);
 		if (!response.ok) return [];
 		const payload = (await response.json()) as { result?: string; rates?: unknown };
 		if (payload.result !== "success" || !isCodeList(Object.keys(payload.rates ?? {}))) {
